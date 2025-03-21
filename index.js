@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import axios from "axios";
+import cheerio from "cheerio";
 
 dotenv.config();
 
@@ -31,7 +33,7 @@ app.use(express.json());
 // ✅ 환경 변수
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // sk-proj- 키도 가능
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // ✅ 네이버 가격 API
 app.get("/api/naver-price", async (req, res) => {
@@ -71,7 +73,7 @@ app.post("/api/gpt-review", async (req, res) => {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`, // sk-proj- 키
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -84,7 +86,6 @@ app.post("/api/gpt-review", async (req, res) => {
 
     const data = await response.json();
 
-    // ✅ GPT 응답 로그
     console.log("🧠 GPT 응답 전체:\n", JSON.stringify(data, null, 2));
 
     const review = data.choices?.[0]?.message?.content || "한줄평 생성 실패";
@@ -96,6 +97,67 @@ app.post("/api/gpt-review", async (req, res) => {
     console.error("❌ GPT API 요청 오류:", error);
     res.status(500).json({ error: "GPT API 요청 실패" });
   }
+});
+
+// ✅ CPU 벤치마크 점수 크롤링 함수
+const fetchCpuBenchmark = async (cpuName) => {
+  try {
+    const searchQuery = encodeURIComponent(cpuName);
+    const url = `https://www.cpubenchmark.net/cpu.php?cpu=${searchQuery}`;
+
+    console.log(`🔍 [CPU 벤치마크 데이터 요청] ${url}`);
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
+
+    // ✅ PassMark 벤치마크 점수 가져오기
+    const scoreText = $("#mark").text().trim();
+    const benchmarkScore = scoreText.replace(/\D/g, ""); // 숫자만 추출
+
+    console.log(`✅ [CPU 벤치마크 점수] ${cpuName}: ${benchmarkScore}`);
+    return benchmarkScore || "점수 없음";
+  } catch (error) {
+    console.error(`❌ [CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
+    return "점수 없음";
+  }
+};
+
+// ✅ GPU 벤치마크 점수 크롤링 함수
+const fetchGpuBenchmark = async (gpuName) => {
+  try {
+    const searchQuery = encodeURIComponent(gpuName);
+    const url = `https://www.videocardbenchmark.net/gpu.php?gpu=${searchQuery}`;
+
+    console.log(`🔍 [GPU 벤치마크 데이터 요청] ${url}`);
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
+
+    // ✅ PassMark 벤치마크 점수 가져오기
+    const scoreText = $("#mark").text().trim();
+    const benchmarkScore = scoreText.replace(/\D/g, ""); // 숫자만 추출
+
+    console.log(`✅ [GPU 벤치마크 점수] ${gpuName}: ${benchmarkScore}`);
+    return benchmarkScore || "점수 없음";
+  } catch (error) {
+    console.error(`❌ [GPU 벤치마크 가져오기 실패] ${gpuName}:`, error);
+    return "점수 없음";
+  }
+};
+
+// ✅ 벤치마크 API 엔드포인트 추가
+app.get("/api/cpu-benchmark", async (req, res) => {
+  const cpuName = req.query.cpu;
+  if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
+
+  const score = await fetchCpuBenchmark(cpuName);
+  res.json({ cpu: cpuName, benchmarkScore: score });
+});
+
+app.get("/api/gpu-benchmark", async (req, res) => {
+  const gpuName = req.query.gpu;
+  if (!gpuName) return res.status(400).json({ error: "GPU 이름이 필요합니다." });
+
+  const score = await fetchGpuBenchmark(gpuName);
+  res.json({ gpu: gpuName, benchmarkScore: score });
 });
 
 // ✅ 서버 실행
