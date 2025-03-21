@@ -96,10 +96,8 @@ const fetchCpuBenchmark = async (cpuName) => {
     const { data: html } = await axios.get(url);
     const $ = cheerio.load(html);
 
-    const normalize = (str) =>
-      str.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-    const targetName = normalize(cpuName);
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const target = normalize(cpuName);
 
     let scores = [];
 
@@ -107,9 +105,9 @@ const fetchCpuBenchmark = async (cpuName) => {
       const name = $(row).find("td").eq(0).text().trim();
       const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
 
-      const normalizedName = normalize(name);
+      const normalizedName = normalize(name.split("@")[0]);
 
-      if (normalizedName.startsWith(targetName) && !isNaN(score)) {
+      if (normalizedName === target && !isNaN(score)) {
         scores.push(score);
       }
     });
@@ -121,13 +119,15 @@ const fetchCpuBenchmark = async (cpuName) => {
     const singleCore = Math.min(...scores).toString();
     const multiCore = Math.max(...scores).toString();
 
-    console.log(`✅ [Geekbench HTML 크롤링] ${cpuName} ➜ Single: ${singleCore}, Multi: ${multiCore}`);
+    console.log(`✅ [Geekbench 점수] ${cpuName} ➜ Single: ${singleCore}, Multi: ${multiCore}`);
     return { singleCore, multiCore };
+
   } catch (error) {
     console.error(`❌ [Geekbench 크롤링 오류] ${cpuName}:`, error.message);
     return { singleCore: "점수 없음", multiCore: "점수 없음", error: error.message };
   }
 };
+
 
 
 
