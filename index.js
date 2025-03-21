@@ -84,35 +84,44 @@ app.post("/api/gpt-review", async (req, res) => {
 });
 
 // ✅ Geekbench CPU 벤치마크 목록에서 점수 크롤링
+import axios from "axios";
+import * as cheerio from "cheerio";
+
+// Geekbench CPU 벤치마크 점수 크롤링 함수
 const fetchCpuBenchmark = async (cpuName) => {
   try {
-    const query = cpuName.toLowerCase().replace(/ /g, "-");
-    const url = `https://browser.geekbench.com/search?q=${query}`;
-    console.log(`🔍 [Geekbench 검색 요청] ${url}`);
+    const url = `https://browser.geekbench.com/processor-benchmarks`;
+    console.log(`🔍 [Geekbench CPU 목록 페이지 요청] ${url}`);
 
-    const searchHtml = await axios.get(url);
-    const $search = cheerio.load(searchHtml.data);
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
 
-    const firstResultLink = $search("a.result-title").attr("href");
-    if (!firstResultLink) throw new Error("Geekbench 개별 CPU 페이지를 찾을 수 없음");
+    let found = false;
+    let singleCore = "점수 없음";
+    let multiCore = "점수 없음";
 
-    const detailUrl = `https://browser.geekbench.com${firstResultLink}`;
-    console.log(`🔗 [Geekbench 상세 페이지] ${detailUrl}`);
+    $(".table tbody tr").each((_, element) => {
+      const name = $(element).find("td.name").text().trim().toLowerCase();
+      const single = $(element).find("td.score:nth-child(2)").text().trim();
+      const multi = $(element).find("td.score:nth-child(3)").text().trim();
 
-    const detailHtml = await axios.get(detailUrl);
-    const $detail = cheerio.load(detailHtml.data);
+      if (name.includes(cpuName.toLowerCase())) {
+        singleCore = single;
+        multiCore = multi;
+        found = true;
+        return false; // 루프 중단
+      }
+    });
 
-    // ✅ 정확히 지정된 선택자
-    const scores = $detail(".score").map((i, el) => $detail(el).text().replace(/[^\d]/g, "")).get();
+    if (!found) {
+      throw new Error(`CPU 이름 (${cpuName})을 Geekbench 목록에서 찾을 수 없음.`);
+    }
 
-    const singleCore = scores[0] || "점수 없음";
-    const multiCore = scores[1] || "점수 없음";
-
-    console.log(`✅ [Geekbench 점수] Single: ${singleCore}, Multi: ${multiCore}`);
+    console.log(`✅ [Geekbench 점수] ${cpuName} Single: ${singleCore}, Multi: ${multiCore}`);
 
     return { singleCore, multiCore };
   } catch (error) {
-    console.error(`❌ [Geekbench CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
+    console.error(`❌ [Geekbench CPU 벤치마크 가져오기 실패] ${cpuName}:`, error.message);
     return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
