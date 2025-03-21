@@ -10,18 +10,13 @@ const app = express();
 // ✅ CORS 허용할 도메인 목록
 const allowedOrigins = [
   "https://goodpricepc.vercel.app",
-  "https://pc-site-frontend.vercel.app"
 ];
 
 // ✅ CORS 설정
 app.use(cors({
   origin: (origin, callback) => {
-    // 로컬 요청 또는 origin이 없을 경우 허용
-    if (!origin) return callback(null, true);
-    
-    // origin 도메인만 추출해서 비교
+    if (!origin) return callback(null, true); // 서버 자체 요청 허용
     const cleanOrigin = origin.split("/")[0] + "//" + origin.split("/")[2];
-    
     if (allowedOrigins.includes(cleanOrigin)) {
       callback(null, true);
     } else {
@@ -33,9 +28,10 @@ app.use(cors({
 
 app.use(express.json());
 
+// ✅ 환경 변수
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // sk-proj- 키도 가능
 
 // ✅ 네이버 가격 API
 app.get("/api/naver-price", async (req, res) => {
@@ -65,7 +61,7 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT 한줄평 API
+// ✅ GPT 프록시 한줄평 API (sk-proj- 키 대응)
 app.post("/api/gpt-review", async (req, res) => {
   const { partName } = req.body;
 
@@ -75,7 +71,7 @@ app.post("/api/gpt-review", async (req, res) => {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${OPENAI_API_KEY}`, // sk-proj- 키
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -88,14 +84,13 @@ app.post("/api/gpt-review", async (req, res) => {
 
     const data = await response.json();
 
-    // ✅ GPT 응답 전체 로그 추가
+    // ✅ GPT 응답 로그
     console.log("🧠 GPT 응답 전체:", JSON.stringify(data, null, 2));
 
     const review = data.choices?.[0]?.message?.content || "한줄평 생성 실패";
-
     console.log(`🧠 [GPT 한줄평] ${partName} ➜ ${review}`);
-    res.json({ review });
 
+    res.json({ review });
   } catch (error) {
     console.error("❌ GPT API 요청 오류:", error);
     res.status(500).json({ error: "GPT API 요청 실패" });
@@ -104,4 +99,6 @@ app.post("/api/gpt-review", async (req, res) => {
 
 // ✅ 서버 실행
 const PORT = 5000;
-app.listen(PORT, () => console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
+});
