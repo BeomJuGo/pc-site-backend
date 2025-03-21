@@ -86,29 +86,37 @@ app.post("/api/gpt-review", async (req, res) => {
 // ✅ Geekbench CPU 벤치마크 목록에서 점수 크롤링
 const fetchCpuBenchmark = async (cpuName) => {
   try {
-    const url = "https://browser.geekbench.com/processor-benchmarks";
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
+    const query = cpuName.toLowerCase().replace(/ /g, "-");
+    const url = `https://browser.geekbench.com/search?q=${query}`;
+    console.log(`🔍 [Geekbench 검색 요청] ${url}`);
 
-    let benchmarkScore = { singleCore: "점수 없음", multiCore: "점수 없음" };
+    const searchHtml = await axios.get(url);
+    const $search = cheerio.load(searchHtml.data);
 
-    $("table.benchmark-chart-table tbody tr").each((_, el) => {
-      const name = $(el).find("td.name").text().trim().toLowerCase();
+    const firstResultLink = $search("a.result-title").attr("href");
+    if (!firstResultLink) throw new Error("Geekbench 개별 CPU 페이지를 찾을 수 없음");
 
-      if (name.includes(cpuName.toLowerCase())) {
-        const singleCore = $(el).find("td.score").eq(0).text().replace(/,/g, "");
-        const multiCore = $(el).find("td.score").eq(1).text().replace(/,/g, "");
-        benchmarkScore = { singleCore, multiCore };
-        return false;
-      }
-    });
+    const detailUrl = `https://browser.geekbench.com${firstResultLink}`;
+    console.log(`🔗 [Geekbench 상세 페이지] ${detailUrl}`);
 
-    return benchmarkScore;
+    const detailHtml = await axios.get(detailUrl);
+    const $detail = cheerio.load(detailHtml.data);
+
+    // ✅ 정확히 지정된 선택자
+    const scores = $detail(".score").map((i, el) => $detail(el).text().replace(/[^\d]/g, "")).get();
+
+    const singleCore = scores[0] || "점수 없음";
+    const multiCore = scores[1] || "점수 없음";
+
+    console.log(`✅ [Geekbench 점수] Single: ${singleCore}, Multi: ${multiCore}`);
+
+    return { singleCore, multiCore };
   } catch (error) {
-    console.error("❌ CPU 벤치마크 가져오기 실패:", error);
+    console.error(`❌ [Geekbench CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
     return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
+
 
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
