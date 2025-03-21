@@ -80,38 +80,46 @@ app.post("/api/gpt-review", async (req, res) => {
 });
 
 const fetchCpuBenchmark = async (cpuName) => {
-  const singleUrl = "https://www.cpu-monkey.com/en/cpu_benchmark-cinebench_2024_single_core";
-  const multiUrl = "https://www.cpu-monkey.com/en/cpu_benchmark-cinebench_2024_multi_core";
-
-  let singleCoreScore = "점수 없음";
-  let multiCoreScore = "점수 없음";
-
   try {
-    const [singleHtml, multiHtml] = await Promise.all([
-      axios.get(singleUrl),
-      axios.get(multiUrl),
-    ]);
+    const query = cpuName.toLowerCase().replace(/\s+/g, "-");
+    const url = `https://www.cpu-monkey.com/en/cpu-${query}`;
 
-    const $single = cheerio.load(singleHtml.data);
-    const $multi = cheerio.load(multiHtml.data);
+    console.log(`🔍 [CPU-Monkey 페이지 요청] ${url}`);
 
-    $single("table.benchmark_table tr").each((_, row) => {
-      if ($single(row).text().toLowerCase().includes(cpuName.toLowerCase())) {
-        singleCoreScore = $single(row).find("td").eq(2).text().trim();
-        return false;
+    const { data } = await axios.get(url, {
+      headers: {
+        // ✅ 브라우저 헤더로 위장하여 요청 차단 우회
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        Accept: "text/html",
+      },
+    });
+
+    const $ = cheerio.load(data);
+
+    let singleCoreScore = null;
+    let multiCoreScore = null;
+
+    $("table tr").each((_, elem) => {
+      const label = $(elem).find("td").first().text().trim();
+
+      if (label.includes("Geekbench 6 (Single-Core)")) {
+        singleCoreScore = $(elem).find("td").eq(1).text().trim();
+      }
+      if (label.includes("Geekbench 6 (Multi-Core)")) {
+        multiCoreScore = $(elem).find("td").eq(1).text().trim();
       }
     });
 
-    $multi("table.benchmark_table tr").each((_, row) => {
-      if ($multi(row).text().toLowerCase().includes(cpuName.toLowerCase())) {
-        multiCoreScore = $multi(row).find("td").eq(2).text().trim();
-        return false;
-      }
-    });
-
-    if (singleCoreScore === "점수 없음" && multiCoreScore === "점수 없음") {
-      throw new Error("싱글/멀티코어 점수를 모두 찾을 수 없습니다.");
+    if (!singleCoreScore || !multiCoreScore) {
+      throw new Error(
+        `점수 추출 실패 (싱글코어: ${singleCoreScore || "없음"}, 멀티코어: ${multiCoreScore || "없음"})`
+      );
     }
+
+    console.log(
+      `✅ [CPU-Monkey Geekbench 6 점수] ${cpuName} ➜ Single: ${singleCoreScore}, Multi: ${multiCoreScore}`
+    );
 
     return { singleCore: singleCoreScore, multiCore: multiCoreScore };
   } catch (error) {
@@ -119,6 +127,7 @@ const fetchCpuBenchmark = async (cpuName) => {
     return { singleCore: "점수 없음", multiCore: "점수 없음", error: error.message };
   }
 };
+
 
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
