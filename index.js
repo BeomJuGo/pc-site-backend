@@ -59,7 +59,7 @@ app.get("/api/naver-price", async (req, res) => {
 
 app.post("/api/gpt-review", async (req, res) => {
   const { partName } = req.body;
-  const prompt = `${partName}의 특징을 간단히 요약한 한줄평을 만들어줘.`;
+  const prompt = `${partName}의 장단점을 한줄평으로 짧게 적어 줘`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
