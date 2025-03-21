@@ -82,18 +82,14 @@ app.post("/api/gpt-review", async (req, res) => {
 const fetchCpuBenchmark = async (cpuName) => {
   try {
     const query = cpuName.toLowerCase().replace(/\s+/g, "-");
-    const url = `https://www.cpu-monkey.com/en/cpu-${query}`;
+    const targetUrl = `https://www.cpu-monkey.com/en/cpu-${query}`;
+    const apiKey = process.env.SCRAPER_API_KEY; // 환경 변수에 저장
 
-    console.log(`🔍 [CPU-Monkey 페이지 요청] ${url}`);
+    const url = `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}`;
 
-    const { data } = await axios.get(url, {
-      headers: {
-        // ✅ 브라우저 헤더로 위장하여 요청 차단 우회
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-        Accept: "text/html",
-      },
-    });
+    console.log(`🔍 [CPU-Monkey 페이지 요청 via Proxy] ${url}`);
+
+    const { data } = await axios.get(url);
 
     const $ = cheerio.load(data);
 
@@ -127,6 +123,7 @@ const fetchCpuBenchmark = async (cpuName) => {
     return { singleCore: "점수 없음", multiCore: "점수 없음", error: error.message };
   }
 };
+
 
 
 app.get("/api/cpu-benchmark", async (req, res) => {
