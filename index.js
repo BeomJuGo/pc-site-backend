@@ -102,23 +102,28 @@ app.post("/api/gpt-review", async (req, res) => {
 // ✅ CPU 벤치마크 점수 크롤링 함수
 const fetchCpuBenchmark = async (cpuName) => {
   try {
-    const formattedName = cpuName.replace(/ /g, "+");
-    const url = `https://www.cpubenchmark.net/cpu.php?cpu=${formattedName}`;
+    const searchQuery = cpuName.replace(/\s+/g, "+");
+    const url = `https://www.cpubenchmark.net/cpu.php?cpu=${searchQuery}`;
+    console.log("🔍 [CPU 벤치마크 요청 URL]:", url);
 
-    console.log(`🔍 [CPU 벤치마크 요청] ${url}`);
-    const { data } = await axios.get(url);
+    const { data } = await axios.get(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      }
+    });
+
     const $ = cheerio.load(data);
-
-    const scoreText = $("#mark").text().trim();
-    const benchmarkScore = scoreText.replace(/\D/g, "");
+    const scoreText = $("span.count").first().text().trim();
+    const benchmarkScore = scoreText.replace(/,/g, ""); // 쉼표 제거
 
     console.log(`✅ [CPU 벤치마크 점수] ${cpuName}: ${benchmarkScore}`);
     return benchmarkScore || "점수 없음";
   } catch (error) {
-    console.error(`❌ [CPU 벤치마크 가져오기 실패] ${cpuName}:`, error.message);
+    console.error(`❌ [CPU 벤치마크 크롤링 실패] ${cpuName}:`, error.message);
     return "점수 없음";
   }
 };
+
 
 
 
