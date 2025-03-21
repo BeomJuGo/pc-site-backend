@@ -149,12 +149,14 @@ const fetchGpuBenchmark = async (gpuName) => {
 };
 
 // ✅ 벤치마크 API 엔드포인트 추가
-// ✅ 테스트용 벤치마크 API
-app.get("/api/test-cpu-benchmark", async (req, res) => {
-  const cpuName = req.query.cpu || "Intel Core i7-13700k";
+app.get("/api/cpu-benchmark", async (req, res) => {
+  const cpuName = req.query.cpu;
+  if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
+
   const score = await fetchCpuBenchmark(cpuName);
   res.json({ cpu: cpuName, benchmarkScore: score });
 });
+
 
 
 app.get("/api/gpu-benchmark", async (req, res) => {
