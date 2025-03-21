@@ -83,14 +83,16 @@ const fetchCpuBenchmark = async (cpuName) => {
   try {
     const query = cpuName.toLowerCase().replace(/\s+/g, "-");
     const targetUrl = `https://www.cpu-monkey.com/en/cpu-${query}`;
-    const apiKey = process.env.SCRAPER_API_KEY; // 환경 변수에 저장
+    const apiKey = process.env.SCRAPER_API_KEY; // <- 정확히 참조해야 함!
+
+    if (!apiKey) {
+      throw new Error("SCRAPER_API_KEY 환경 변수가 없습니다."); // 이 부분 명확히 로깅!
+    }
 
     const url = `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(targetUrl)}`;
-
     console.log(`🔍 [CPU-Monkey 페이지 요청 via Proxy] ${url}`);
 
     const { data } = await axios.get(url);
-
     const $ = cheerio.load(data);
 
     let singleCoreScore = null;
@@ -98,7 +100,6 @@ const fetchCpuBenchmark = async (cpuName) => {
 
     $("table tr").each((_, elem) => {
       const label = $(elem).find("td").first().text().trim();
-
       if (label.includes("Geekbench 6 (Single-Core)")) {
         singleCoreScore = $(elem).find("td").eq(1).text().trim();
       }
@@ -108,21 +109,19 @@ const fetchCpuBenchmark = async (cpuName) => {
     });
 
     if (!singleCoreScore || !multiCoreScore) {
-      throw new Error(
-        `점수 추출 실패 (싱글코어: ${singleCoreScore || "없음"}, 멀티코어: ${multiCoreScore || "없음"})`
-      );
+      throw new Error(`점수 추출 실패 (싱글코어: ${singleCoreScore || "없음"}, 멀티코어: ${multiCoreScore || "없음"})`);
     }
 
-    console.log(
-      `✅ [CPU-Monkey Geekbench 6 점수] ${cpuName} ➜ Single: ${singleCoreScore}, Multi: ${multiCoreScore}`
-    );
+    console.log(`✅ [Geekbench 6 점수] ${cpuName} ➜ Single: ${singleCoreScore}, Multi: ${multiCoreScore}`);
 
     return { singleCore: singleCoreScore, multiCore: multiCoreScore };
+
   } catch (error) {
     console.error(`❌ [CPU 벤치마크 에러] ${cpuName}:`, error.message);
     return { singleCore: "점수 없음", multiCore: "점수 없음", error: error.message };
   }
 };
+
 
 
 
