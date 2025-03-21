@@ -90,25 +90,26 @@ app.post("/api/gpt-review", async (req, res) => {
 });
 
 // ✅ Geekbench CPU 벤치마크 점수 크롤링 함수 (정적 HTML)
-// Geekbench 기준 정확한 이름 매칭 방식
 const fetchCpuBenchmark = async (cpuName) => {
   try {
     const url = `https://browser.geekbench.com/processor-benchmarks`;
     const { data: html } = await axios.get(url);
     const $ = cheerio.load(html);
 
-    let scores = [];
-
-    // 입력된 이름 정규화 함수 (공백 제거 + 소문자 처리)
-    const normalize = (name) => name.toLowerCase().replace(/\s+/g, "");
+    const normalize = (str) =>
+      str.toLowerCase().replace(/[^a-z0-9]/g, "");
 
     const targetName = normalize(cpuName);
+
+    let scores = [];
 
     $("table tbody tr").each((_, row) => {
       const name = $(row).find("td").eq(0).text().trim();
       const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
 
-      if (normalize(name) === targetName && !isNaN(score)) {
+      const normalizedName = normalize(name);
+
+      if (normalizedName.startsWith(targetName) && !isNaN(score)) {
         scores.push(score);
       }
     });
@@ -127,6 +128,7 @@ const fetchCpuBenchmark = async (cpuName) => {
     return { singleCore: "점수 없음", multiCore: "점수 없음", error: error.message };
   }
 };
+
 
 
 // GPU는 아직 미지원
