@@ -7,9 +7,28 @@ dotenv.config();
 
 const app = express();
 
-// ✅ CORS 설정 (프론트 주소 허용)
+// ✅ CORS 허용할 도메인 목록
+const allowedOrigins = [
+  "https://goodpricepc.vercel.app",
+  "https://pc-site-frontend.vercel.app"
+];
+
+// ✅ CORS 설정
 app.use(cors({
-  origin: "https://goodpricepc.vercel.app/cpu"
+  origin: (origin, callback) => {
+    // 로컬 요청 또는 origin이 없을 경우 허용
+    if (!origin) return callback(null, true);
+    
+    // origin 도메인만 추출해서 비교
+    const cleanOrigin = origin.split("/")[0] + "//" + origin.split("/")[2];
+    
+    if (allowedOrigins.includes(cleanOrigin)) {
+      callback(null, true);
+    } else {
+      console.warn(`❌ CORS 차단됨: ${origin}`);
+      callback(new Error("CORS 차단: " + origin));
+    }
+  }
 }));
 
 app.use(express.json());
@@ -39,7 +58,6 @@ app.get("/api/naver-price", async (req, res) => {
     const data = await response.json();
     console.log(`✅ [네이버 API 응답]`, data);
 
-    res.setHeader("Access-Control-Allow-Origin", "*");
     res.json(data);
   } catch (error) {
     console.error("❌ 네이버 쇼핑 API 요청 오류:", error);
