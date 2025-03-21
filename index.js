@@ -95,28 +95,47 @@ app.post("/api/gpt-review", async (req, res) => {
 // ✅ Geekbench 기반 CPU 벤치마크 크롤링 함수
 const fetchCpuBenchmarkGeekbench = async (cpuName) => {
   try {
-    const searchQuery = cpuName.replace(/ /g, "-").toLowerCase();
-    const url = `https://browser.geekbench.com/search?q=${encodeURIComponent(cpuName)}`;
+    const searchQuery = encodeURIComponent(cpuName);
+    const searchUrl = `https://browser.geekbench.com/search?q=${searchQuery}`;
 
-    console.log(`🔍 [Geekbench 데이터 요청] ${url}`);
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
+    console.log(`🔍 [Geekbench 검색 요청] ${searchUrl}`);
+    
+    // 1️⃣ Geekbench 검색 결과 페이지 가져오기
+    const { data: searchPage } = await axios.get(searchUrl);
+    const $search = cheerio.load(searchPage);
 
-    // ✅ Geekbench 점수 추출 (검색 결과 페이지의 첫 번째 CPU 정보)
-    const firstResult = $("table tbody tr").first();
-    const benchmarkScore = firstResult.find("td").eq(2).text().trim(); // Single-Core 점수
+    // 2️⃣ 첫 번째 검색 결과의 개별 CPU 벤치마크 페이지 링크 추출
+    const firstResult = $search("a.result-link").attr("href");
+    if (!firstResult) throw new Error("Geekbench 개별 CPU 페이지를 찾을 수 없음");
 
-    if (!benchmarkScore || isNaN(benchmarkScore)) {
+    const cpuPageUrl = `https://browser.geekbench.com${firstResult}`;
+    console.log(`🔍 [Geekbench 개별 CPU 페이지 요청] ${cpuPageUrl}`);
+
+    // 3️⃣ 개별 CPU 페이지 가져오기
+    const { data: cpuPage } = await axios.get(cpuPageUrl);
+    const $cpu = cheerio.load(cpuPage);
+
+    // 4️⃣ Geekbench 벤치마크 점수 추출
+    const multiCoreScore = $cpu(".score.multicore").text().trim();
+    const singleCoreScore = $cpu(".score.singlecore").text().trim();
+
+    if (!multiCoreScore || !singleCoreScore) {
       throw new Error("Geekbench 점수를 찾을 수 없음");
     }
 
-    console.log(`✅ [CPU 벤치마크 점수] ${cpuName}: ${benchmarkScore}`);
-    return benchmarkScore || "점수 없음";
+    console.log(`✅ [Geekbench 점수] ${cpuName} - 멀티코어: ${multiCoreScore}, 싱글코어: ${singleCoreScore}`);
+
+    return {
+      singleCore: singleCoreScore,
+      multiCore: multiCoreScore
+    };
+
   } catch (error) {
     console.error(`❌ [Geekbench CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
-    return "점수 없음";
+    return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
+
 
 // ✅ 벤치마크 API 엔드포인트 추가 (Geekbench)
 app.get("/api/cpu-benchmark", async (req, res) => {
