@@ -9,7 +9,7 @@ const app = express();
 
 // ✅ CORS 설정 (프론트 주소 허용)
 app.use(cors({
-  origin: "https://pc-site-frontend.vercel.app"
+  origin: "https://goodpricepc.vercel.app/cpu"
 }));
 
 app.use(express.json());
