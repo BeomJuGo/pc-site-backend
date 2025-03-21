@@ -9,9 +9,9 @@ const app = express();
 
 // ✅ CORS 설정 추가
 app.use(cors({
-  origin: "http://localhost:3000",  // 프론트엔드에서 요청 허용
-  methods: ["GET"]
+  origin: "https://pc-site-frontend.vercel.app"
 }));
+
 
 app.use(express.json());
 
