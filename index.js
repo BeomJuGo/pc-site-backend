@@ -93,6 +93,7 @@ app.post("/api/gpt-review", async (req, res) => {
 });
 
 // ✅ 수정된 Geekbench CPU 벤치마크 점수 크롤링 함수
+// ✅ 수정된 Geekbench CPU 벤치마크 점수 크롤링 함수
 const fetchCpuBenchmark = async (cpuName) => {
   try {
     const url = `https://browser.geekbench.com/processor-benchmarks`;
@@ -107,8 +108,10 @@ const fetchCpuBenchmark = async (cpuName) => {
 
     $(".table tbody tr").each((_, element) => {
       const name = $(element).find("td.name").text().trim().toLowerCase();
-      const single = $(element).find("td.score:nth-child(2)").text().trim();
-      const multi = $(element).find("td.score:nth-child(3)").text().trim();
+
+      // Single-Core 및 Multi-Core의 정확한 td 순서에 맞춰 인덱스 지정
+      const single = $(element).find("td:nth-child(2)").text().trim();
+      const multi = $(element).find("td:nth-child(3)").text().trim();
 
       if (name.includes(cpuName.toLowerCase())) {
         singleCore = single;
@@ -130,6 +133,7 @@ const fetchCpuBenchmark = async (cpuName) => {
     return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
+
 
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
