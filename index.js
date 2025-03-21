@@ -95,30 +95,38 @@ app.post("/api/gpt-review", async (req, res) => {
 // ✅ 수정된 Geekbench CPU 벤치마크 점수 크롤링 함수
 const fetchCpuBenchmark = async (cpuName) => {
   try {
-    const query = cpuName.toLowerCase().replace(/[\s-]/g, "_");
+    // CPU 이름 정리 (소문자, 공백과 하이픈은 언더스코어로 변경, 괄호 제거)
+    const query = cpuName
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/-/g, "_")
+      .replace(/[()]/g, "");
+
     const url = `https://www.cpu-monkey.com/en/cpu-${query}`;
-    console.log(`🔍 [CPU-Monkey CPU 페이지 요청] ${url}`);
+    console.log(`🔍 [CPU-Monkey 페이지 요청] ${url}`);
 
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
 
-    // Single-Core Score
-    const singleCoreLabel = $("td:contains('Geekbench 6 (Single-Core)')").first();
-    const singleCoreScore = singleCoreLabel.next("td").text().trim();
+    let singleCoreScore = "점수 없음";
+    let multiCoreScore = "점수 없음";
 
-    // Multi-Core Score
-    const multiCoreLabel = $("td:contains('Geekbench 6 (Multi-Core)')").first();
-    const multiCoreScore = multiCoreLabel.next("td").text().trim();
-
-    if (!singleCoreScore || !multiCoreScore) {
-      throw new Error("CPU-Monkey 점수를 찾을 수 없음");
-    }
+    // 싱글코어, 멀티코어 점수를 명확한 선택자로 크롤링
+    $("table tr").each((_, elem) => {
+      const label = $(elem).find("td").first().text().trim();
+      if (label.includes("Geekbench 6 (Single-Core)")) {
+        singleCoreScore = $(elem).find("td").eq(1).text().trim();
+      }
+      if (label.includes("Geekbench 6 (Multi-Core)")) {
+        multiCoreScore = $(elem).find("td").eq(1).text().trim();
+      }
+    });
 
     console.log(`✅ [CPU-Monkey 점수] ${cpuName} Single: ${singleCoreScore}, Multi: ${multiCoreScore}`);
 
     return { singleCore: singleCoreScore, multiCore: multiCoreScore };
   } catch (error) {
-    console.error(`❌ [CPU-Monkey CPU 벤치마크 가져오기 실패] ${cpuName}:`, error.message);
+    console.error(`❌ [CPU-Monkey CPU 벤치마크 실패] ${cpuName}:`, error.message);
     return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
