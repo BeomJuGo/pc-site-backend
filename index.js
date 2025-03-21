@@ -88,6 +88,9 @@ app.post("/api/gpt-review", async (req, res) => {
 
     const data = await response.json();
 
+    // ✅ GPT 응답 전체 로그 추가
+    console.log("🧠 GPT 응답 전체:", JSON.stringify(data, null, 2));
+
     const review = data.choices?.[0]?.message?.content || "한줄평 생성 실패";
 
     console.log(`🧠 [GPT 한줄평] ${partName} ➜ ${review}`);
