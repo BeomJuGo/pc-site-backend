@@ -77,7 +77,7 @@ app.post("/api/gpt-review", async (req, res) => {
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 30,
+        max_tokens: 150,  // ✅ 30 → 150으로 증가 (더 긴 응답 받기)
         temperature: 0.7
       })
     });
@@ -85,12 +85,13 @@ app.post("/api/gpt-review", async (req, res) => {
     const data = await response.json();
 
     // ✅ GPT 응답 로그
-    console.log("🧠 GPT 응답 전체:", JSON.stringify(data, null, 2));
+    console.log("🧠 GPT 응답 전체:\n", JSON.stringify(data, null, 2));
 
     const review = data.choices?.[0]?.message?.content || "한줄평 생성 실패";
     console.log(`🧠 [GPT 한줄평] ${partName} ➜ ${review}`);
 
     res.json({ review });
+
   } catch (error) {
     console.error("❌ GPT API 요청 오류:", error);
     res.status(500).json({ error: "GPT API 요청 실패" });
