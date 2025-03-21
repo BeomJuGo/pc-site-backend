@@ -10,14 +10,11 @@ dotenv.config();
 const app = express();
 
 // ✅ CORS 허용할 도메인 목록
-const allowedOrigins = [
-  "https://goodpricepc.vercel.app",
-];
+const allowedOrigins = ["https://goodpricepc.vercel.app"];
 
-// ✅ CORS 설정
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // 서버 자체 요청 허용
+    if (!origin) return callback(null, true);
     const cleanOrigin = origin.split("/")[0] + "//" + origin.split("/")[2];
     if (allowedOrigins.includes(cleanOrigin)) {
       callback(null, true);
@@ -55,7 +52,6 @@ app.get("/api/naver-price", async (req, res) => {
 
     const data = await response.json();
     console.log(`✅ [네이버 API 응답]`, data);
-
     res.json(data);
   } catch (error) {
     console.error("❌ 네이버 쇼핑 API 요청 오류:", error);
@@ -63,10 +59,9 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT 프록시 한줄평 API (sk-proj- 키 대응)
+// ✅ GPT 프록시 한줄평 API
 app.post("/api/gpt-review", async (req, res) => {
   const { partName } = req.body;
-
   const prompt = `${partName}의 특징을 간단히 요약한 한줄평을 만들어줘.`;
 
   try {
@@ -79,92 +74,57 @@ app.post("/api/gpt-review", async (req, res) => {
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 150,  // ✅ 30 → 150으로 증가 (더 긴 응답 받기)
+        max_tokens: 150,
         temperature: 0.7
       })
     });
 
     const data = await response.json();
-
     console.log("🧠 GPT 응답 전체:\n", JSON.stringify(data, null, 2));
 
     const review = data.choices?.[0]?.message?.content || "한줄평 생성 실패";
     console.log(`🧠 [GPT 한줄평] ${partName} ➜ ${review}`);
 
     res.json({ review });
-
   } catch (error) {
     console.error("❌ GPT API 요청 오류:", error);
     res.status(500).json({ error: "GPT API 요청 실패" });
   }
 });
 
-// ✅ CPU 벤치마크 점수 크롤링 함수
-const fetchCpuBenchmark = async (cpuName) => {
+// ✅ Geekbench 기반 CPU 벤치마크 크롤링 함수
+const fetchCpuBenchmarkGeekbench = async (cpuName) => {
   try {
-    const searchQuery = encodeURIComponent(cpuName);
-    const url = `https://www.cpubenchmark.net/cpu.php?cpu=${searchQuery}`;
+    const searchQuery = cpuName.replace(/ /g, "-").toLowerCase();
+    const url = `https://browser.geekbench.com/search?q=${encodeURIComponent(cpuName)}`;
 
-    console.log(`🔍 [CPU 벤치마크 데이터 요청] ${url}`);
+    console.log(`🔍 [Geekbench 데이터 요청] ${url}`);
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
 
-    // ✅ 올바른 선택자로 변경
-    const scoreElement = $("td:contains('Average CPU Mark')").next();
-    const benchmarkScore = scoreElement.text().trim().replace(/,/g, "");
+    // ✅ Geekbench 점수 추출 (검색 결과 페이지의 첫 번째 CPU 정보)
+    const firstResult = $("table tbody tr").first();
+    const benchmarkScore = firstResult.find("td").eq(2).text().trim(); // Single-Core 점수
+
+    if (!benchmarkScore || isNaN(benchmarkScore)) {
+      throw new Error("Geekbench 점수를 찾을 수 없음");
+    }
 
     console.log(`✅ [CPU 벤치마크 점수] ${cpuName}: ${benchmarkScore}`);
     return benchmarkScore || "점수 없음";
   } catch (error) {
-    console.error(`❌ [CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
+    console.error(`❌ [Geekbench CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
     return "점수 없음";
   }
 };
 
-
-
-
-
-
-// ✅ GPU 벤치마크 점수 크롤링 함수
-const fetchGpuBenchmark = async (gpuName) => {
-  try {
-    const searchQuery = encodeURIComponent(gpuName);
-    const url = `https://www.videocardbenchmark.net/gpu.php?gpu=${searchQuery}`;
-
-    console.log(`🔍 [GPU 벤치마크 데이터 요청] ${url}`);
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
-
-    // ✅ PassMark 벤치마크 점수 가져오기
-    const scoreText = $("#mark").text().trim();
-    const benchmarkScore = scoreText.replace(/\D/g, ""); // 숫자만 추출
-
-    console.log(`✅ [GPU 벤치마크 점수] ${gpuName}: ${benchmarkScore}`);
-    return benchmarkScore || "점수 없음";
-  } catch (error) {
-    console.error(`❌ [GPU 벤치마크 가져오기 실패] ${gpuName}:`, error);
-    return "점수 없음";
-  }
-};
-
-// ✅ 벤치마크 API 엔드포인트 추가
+// ✅ 벤치마크 API 엔드포인트 추가 (Geekbench)
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
   if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
 
-  const score = await fetchCpuBenchmark(cpuName);
+  const score = await fetchCpuBenchmarkGeekbench(cpuName);
   res.json({ cpu: cpuName, benchmarkScore: score });
-});
-
-
-
-app.get("/api/gpu-benchmark", async (req, res) => {
-  const gpuName = req.query.gpu;
-  if (!gpuName) return res.status(400).json({ error: "GPU 이름이 필요합니다." });
-
-  const score = await fetchGpuBenchmark(gpuName);
-  res.json({ gpu: gpuName, benchmarkScore: score });
 });
 
 // ✅ 서버 실행
@@ -172,4 +132,3 @@ const PORT = 5000;
 app.listen(PORT, () => {
   console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
 });
-
