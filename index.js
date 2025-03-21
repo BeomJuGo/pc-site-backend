@@ -9,8 +9,9 @@ dotenv.config();
 
 const app = express();
 
-// ✅ CORS 허용할 도메인 목록
-const allowedOrigins = ["https://goodpricepc.vercel.app"];
+const allowedOrigins = [
+  "https://goodpricepc.vercel.app",
+];
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -27,12 +28,10 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ 환경 변수
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 네이버 가격 API
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}`;
@@ -52,6 +51,7 @@ app.get("/api/naver-price", async (req, res) => {
 
     const data = await response.json();
     console.log(`✅ [네이버 API 응답]`, data);
+
     res.json(data);
   } catch (error) {
     console.error("❌ 네이버 쇼핑 API 요청 오류:", error);
@@ -59,7 +59,6 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT 프록시 한줄평 API
 app.post("/api/gpt-review", async (req, res) => {
   const { partName } = req.body;
   const prompt = `${partName}의 특징을 간단히 요약한 한줄평을 만들어줘.`;
@@ -86,67 +85,63 @@ app.post("/api/gpt-review", async (req, res) => {
     console.log(`🧠 [GPT 한줄평] ${partName} ➜ ${review}`);
 
     res.json({ review });
+
   } catch (error) {
     console.error("❌ GPT API 요청 오류:", error);
     res.status(500).json({ error: "GPT API 요청 실패" });
   }
 });
 
-// ✅ Geekbench 기반 CPU 벤치마크 크롤링 함수
-const fetchCpuBenchmarkGeekbench = async (cpuName) => {
+const fetchCpuBenchmark = async (cpuName) => {
   try {
-    const searchQuery = encodeURIComponent(cpuName);
-    const searchUrl = `https://browser.geekbench.com/search?q=${searchQuery}`;
+    const query = cpuName.toLowerCase().replace(/ /g, "-");
+    const url = `https://browser.geekbench.com/search?q=${query}`;
+    console.log(`🔍 [Geekbench 검색 요청] ${url}`);
 
-    console.log(`🔍 [Geekbench 검색 요청] ${searchUrl}`);
-    
-    // 1️⃣ Geekbench 검색 결과 페이지 가져오기
-    const { data: searchPage } = await axios.get(searchUrl);
-    const $search = cheerio.load(searchPage);
+    const searchHtml = await axios.get(url);
+    const $search = cheerio.load(searchHtml.data);
 
-    // 2️⃣ 첫 번째 검색 결과의 개별 CPU 벤치마크 페이지 링크 추출
-    const firstResult = $search("a.result-link").attr("href");
-    if (!firstResult) throw new Error("Geekbench 개별 CPU 페이지를 찾을 수 없음");
+    const firstResultLink = $search("a.result-title").attr("href");
+    if (!firstResultLink) throw new Error("Geekbench 개별 CPU 페이지를 찾을 수 없음");
 
-    const cpuPageUrl = `https://browser.geekbench.com${firstResult}`;
-    console.log(`🔍 [Geekbench 개별 CPU 페이지 요청] ${cpuPageUrl}`);
+    const detailUrl = `https://browser.geekbench.com${firstResultLink}`;
+    console.log(`🔗 [Geekbench 상세 페이지] ${detailUrl}`);
 
-    // 3️⃣ 개별 CPU 페이지 가져오기
-    const { data: cpuPage } = await axios.get(cpuPageUrl);
-    const $cpu = cheerio.load(cpuPage);
+    const detailHtml = await axios.get(detailUrl);
+    const $detail = cheerio.load(detailHtml.data);
 
-    // 4️⃣ Geekbench 벤치마크 점수 추출
-    const multiCoreScore = $cpu(".score.multicore").text().trim();
-    const singleCoreScore = $cpu(".score.singlecore").text().trim();
+    const singleCore = $detail(".score:nth-of-type(1)").text().replace(/[^\d]/g, "");
+    const multiCore = $detail(".score:nth-of-type(2)").text().replace(/[^\d]/g, "");
 
-    if (!multiCoreScore || !singleCoreScore) {
-      throw new Error("Geekbench 점수를 찾을 수 없음");
-    }
+    console.log(`✅ [Geekbench 점수] Single: ${singleCore}, Multi: ${multiCore}`);
 
-    console.log(`✅ [Geekbench 점수] ${cpuName} - 멀티코어: ${multiCoreScore}, 싱글코어: ${singleCoreScore}`);
-
-    return {
-      singleCore: singleCoreScore,
-      multiCore: multiCoreScore
-    };
-
+    return { singleCore, multiCore };
   } catch (error) {
     console.error(`❌ [Geekbench CPU 벤치마크 가져오기 실패] ${cpuName}:`, error);
     return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
 
+const fetchGpuBenchmark = async (gpuName) => {
+  return { benchmarkScore: "지원 예정" };
+};
 
-// ✅ 벤치마크 API 엔드포인트 추가 (Geekbench)
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
   if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
 
-  const score = await fetchCpuBenchmarkGeekbench(cpuName);
+  const score = await fetchCpuBenchmark(cpuName);
   res.json({ cpu: cpuName, benchmarkScore: score });
 });
 
-// ✅ 서버 실행
+app.get("/api/gpu-benchmark", async (req, res) => {
+  const gpuName = req.query.gpu;
+  if (!gpuName) return res.status(400).json({ error: "GPU 이름이 필요합니다." });
+
+  const score = await fetchGpuBenchmark(gpuName);
+  res.json({ gpu: gpuName, benchmarkScore: score });
+});
+
 const PORT = 5000;
 app.listen(PORT, () => {
   console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
