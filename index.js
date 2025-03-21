@@ -100,7 +100,6 @@ app.post("/api/gpt-review", async (req, res) => {
 });
 
 // ✅ CPU 벤치마크 점수 크롤링 함수
-// ✅ CPU 벤치마크 점수 크롤링 함수 (수정 완료)
 const fetchCpuBenchmark = async (cpuName) => {
   try {
     const searchQuery = encodeURIComponent(cpuName);
@@ -110,9 +109,9 @@ const fetchCpuBenchmark = async (cpuName) => {
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
 
-    // ✅ 점수가 포함된 부분을 찾음
-    const scoreText = $(".right-desc .mark-new").first().text().trim();
-    const benchmarkScore = scoreText.replace(/,/g, ""); // 쉼표 제거
+    // ✅ 올바른 선택자로 변경
+    const scoreElement = $("td:contains('Average CPU Mark')").next();
+    const benchmarkScore = scoreElement.text().trim().replace(/,/g, "");
 
     console.log(`✅ [CPU 벤치마크 점수] ${cpuName}: ${benchmarkScore}`);
     return benchmarkScore || "점수 없음";
@@ -121,6 +120,7 @@ const fetchCpuBenchmark = async (cpuName) => {
     return "점수 없음";
   }
 };
+
 
 
 
