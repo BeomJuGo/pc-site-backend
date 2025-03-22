@@ -1,3 +1,4 @@
+// ✅ 백엔드 index.js (GPT로 한줄평 & 사양 요약 포함)
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -15,21 +16,24 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn(`❌ CORS 차단됨: ${origin}`);
       callback(new Error("CORS 차단: " + origin));
     }
   },
 }));
+
 app.use(express.json());
 
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 네이버 가격 조회
+// ✅ 네이버 가격 API
 app.get("/api/naver-price", async (req, res) => {
+  const query = encodeURIComponent(req.query.query);
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}`;
+
   try {
-    const query = encodeURIComponent(req.query.query);
-    const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}`;
     const response = await fetch(url, {
       headers: {
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -43,89 +47,92 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT 한줄평 + 사양 요약
+// ✅ GPT 한줄평
 app.post("/api/gpt-review", async (req, res) => {
   const { partName } = req.body;
-  const prompt = `
-"${partName}" 부품에 대해 다음 두 가지 정보를 요약해줘:
-1. AI 한줄평 (장단점 요약)
-2. 주요 사양 (코어, 클럭, 전력 등 요약)
-
-아래 형식으로:
-한줄평: ...
-사양요약: ...
-  `.trim();
+  const prompt = `${partName}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`;
 
   try {
-    const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-        max_tokens: 300,
-      }),
+        max_tokens: 200,
+        temperature: 0.7
+      })
     });
 
-    const data = await gptRes.json();
-    const content = data.choices?.[0]?.message?.content || "";
-
-    const reviewMatch = content.match(/한줄평[:\-]?\s*(.+)/i);
-    const specMatch = content.match(/사양요약[:\-]?\s*(.+)/i);
-
-    const review = reviewMatch?.[1]?.trim() || "한줄평 없음";
-    const specSummary = specMatch?.[1]?.trim() || "사양 정보 없음";
-
-    res.json({ review, specSummary });
+    const data = await response.json();
+    const review = data.choices?.[0]?.message?.content || "한줄평 생성 실패";
+    res.json({ review });
   } catch (error) {
-    res.status(500).json({ review: "한줄평 오류", specSummary: "사양 오류" });
+    res.status(500).json({ error: "GPT 요청 실패" });
   }
 });
 
-// ✅ Geekbench CPU 점수
-const fetchCpuBenchmark = async (cpuName) => {
+// ✅ GPT 사양 요약
+app.post("/api/gpt-spec-summary", async (req, res) => {
+  const { partName } = req.body;
+  const prompt = `${partName}의 주요 사양을 요약해서 알려줘. 코어 수, 스레드 수, L2/L3 캐시, 베이스 클럭, 부스트 클럭 위주로 간단하게 정리해줘. 예시: 코어: 6, 스레드: 12, ...`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+        temperature: 0.7
+      })
+    });
+
+    const data = await response.json();
+    const specSummary = data.choices?.[0]?.message?.content || "사양 요약 실패";
+    res.json({ specSummary });
+  } catch (error) {
+    res.status(500).json({ error: "GPT 사양 요약 실패" });
+  }
+});
+
+// ✅ CPU 벤치마크 (정적 HTML)
+app.get("/api/cpu-benchmark", async (req, res) => {
+  const cpuName = req.query.cpu;
+  if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
+
   try {
     const url = "https://browser.geekbench.com/processor-benchmarks";
     const { data: html } = await axios.get(url);
     const $ = cheerio.load(html);
-    const scores = [];
 
-    $("table tbody tr").each((_, el) => {
-      const name = $(el).find("td").eq(0).text().trim();
-      const score = parseInt($(el).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
-      if (name.toLowerCase().includes(cpuName.toLowerCase())) {
+    const scores = [];
+    $("table tbody tr").each((_, row) => {
+      const name = $(row).find("td").eq(0).text().trim();
+      const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
+      if (name.toLowerCase().includes(cpuName.toLowerCase()) && !isNaN(score)) {
         scores.push(score);
       }
     });
 
-    return {
-      singleCore: Math.min(...scores).toString(),
-      multiCore: Math.max(...scores).toString(),
-    };
-  } catch {
-    return { singleCore: "점수 없음", multiCore: "점수 없음" };
+    const singleCore = Math.min(...scores).toString();
+    const multiCore = Math.max(...scores).toString();
+
+    res.json({ cpu: cpuName, benchmarkScore: { singleCore, multiCore } });
+  } catch (error) {
+    res.status(500).json({ error: "벤치마크 크롤링 실패" });
   }
-};
-
-app.get("/api/cpu-benchmark", async (req, res) => {
-  const cpu = req.query.cpu;
-  if (!cpu) return res.status(400).json({ error: "CPU 이름 필요" });
-
-  const score = await fetchCpuBenchmark(cpu);
-  res.json({ cpu, benchmarkScore: score });
-});
-
-// ✅ GPU (미지원)
-app.get("/api/gpu-benchmark", async (req, res) => {
-  res.json({ benchmarkScore: "지원 예정" });
 });
 
 // ✅ 서버 실행
 const PORT = 5000;
 app.listen(PORT, () => {
-  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+  console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
 });
