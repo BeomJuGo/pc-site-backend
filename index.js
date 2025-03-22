@@ -86,39 +86,42 @@ app.post("/api/gpt-review", async (req, res) => {
 const fetchCpuBenchmark = async (cpuName) => {
   try {
     const url = "https://browser.geekbench.com/processor-benchmarks";
+    console.log(`🔍 [Geekbench 페이지 요청] ${url}`);
+
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
 
-    const rows = $("table tbody tr").filter((i, el) => {
-      const name = $(el).find("td").first().text().trim().toLowerCase();
-      return name.includes(cpuName.toLowerCase());
+    const rows = $("table tbody tr");
+    const matched = [];
+
+    rows.each((_, row) => {
+      const name = $(row).find("td").eq(0).text().trim();
+      const scoreText = $(row).find("td").eq(1).text().trim().replace(/,/g, "");
+      const score = parseInt(scoreText, 10);
+
+      if (name.toLowerCase().includes(cpuName.toLowerCase())) {
+        matched.push({ name, score });
+      }
     });
 
-    if (rows.length === 0) throw new Error("CPU 항목을 찾을 수 없음");
+    if (matched.length === 0) {
+      throw new Error("❌ 해당 CPU 이름을 포함하는 항목을 찾을 수 없습니다.");
+    }
 
-    let single = 0, multi = 0;
-    rows.each((_, el) => {
-      const name = $(el).find("td").first().text().trim();
-      const score = parseInt($(el).find("td").eq(1).text().replace(/,/g, ""));
+    // 점수로 정렬하여 낮은 점수 = 싱글, 높은 점수 = 멀티
+    matched.sort((a, b) => a.score - b.score);
 
-      if (score > single) single = score;
-      if (score > multi) multi = score;
-    });
+    const singleCore = matched[0]?.score || "점수 없음";
+    const multiCore = matched[matched.length - 1]?.score || "점수 없음";
 
-    return { singleCore: single, multiCore: multi };
+    console.log(`✅ [Geekbench 점수] ${cpuName} ➜ Single: ${singleCore}, Multi: ${multiCore}`);
+    return { singleCore, multiCore };
   } catch (error) {
     console.error(`❌ [CPU 벤치마크 에러] ${cpuName}:`, error.message);
     return { singleCore: "점수 없음", multiCore: "점수 없음" };
   }
 };
 
-app.get("/api/cpu-benchmark", async (req, res) => {
-  const cpuName = req.query.cpu;
-  if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
-
-  const benchmarkScore = await fetchCpuBenchmark(cpuName);
-  res.json({ cpu: cpuName, benchmarkScore });
-});
 
 // ✅ GPU 벤치마크 (추후 확장 예정)
 app.get("/api/gpu-benchmark", async (req, res) => {
