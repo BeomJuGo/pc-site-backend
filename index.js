@@ -13,17 +13,16 @@ const allowedOrigins = [
 ];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    const cleanOrigin = origin.split("/")[0] + "//" + origin.split("/")[2];
-    if (allowedOrigins.includes(cleanOrigin)) {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn(`❌ CORS 차단됨: ${origin}`);
-      callback(new Error("CORS 차단: " + origin));
+      callback(new Error("CORS 차단됨: " + origin));
     }
-  }
+  },
 }));
+
 
 app.use(express.json());
 
