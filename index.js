@@ -8,9 +8,8 @@ import * as cheerio from "cheerio";
 dotenv.config();
 const app = express();
 
-const allowedOrigins = [
-  "https://goodpricepc.vercel.app",
-];
+// ✅ CORS 허용 도메인
+const allowedOrigins = ["https://goodpricepc.vercel.app"];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -23,7 +22,6 @@ app.use(cors({
   },
 }));
 
-
 app.use(express.json());
 
 // ✅ 환경 변수
@@ -31,7 +29,9 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 네이버 가격 API
+//
+// ✅ 네이버 쇼핑 가격 검색
+//
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}`;
@@ -53,7 +53,9 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT API - 부품 한줄평
+//
+// ✅ GPT 프록시 요청 (한줄평)
+//
 app.post("/api/gpt-review", async (req, res) => {
   const { partName } = req.body;
   const prompt = `${partName}의 특징을 간단히 요약한 한줄평을 만들어줘.`;
@@ -82,7 +84,9 @@ app.post("/api/gpt-review", async (req, res) => {
   }
 });
 
-// ✅ CPU 벤치마크 (Geekbench 기준)
+//
+// ✅ Geekbench CPU 벤치마크 크롤링
+//
 const fetchCpuBenchmark = async (cpuName) => {
   try {
     const url = "https://browser.geekbench.com/processor-benchmarks";
@@ -108,7 +112,6 @@ const fetchCpuBenchmark = async (cpuName) => {
       throw new Error("❌ 해당 CPU 이름을 포함하는 항목을 찾을 수 없습니다.");
     }
 
-    // 점수로 정렬하여 낮은 점수 = 싱글, 높은 점수 = 멀티
     matched.sort((a, b) => a.score - b.score);
 
     const singleCore = matched[0]?.score || "점수 없음";
@@ -122,17 +125,30 @@ const fetchCpuBenchmark = async (cpuName) => {
   }
 };
 
+//
+// ✅ CPU 벤치마크 API 엔드포인트
+//
+app.get("/api/cpu-benchmark", async (req, res) => {
+  const cpuName = req.query.cpu;
+  if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
 
-// ✅ GPU 벤치마크 (추후 확장 예정)
+  const benchmarkScore = await fetchCpuBenchmark(cpuName);
+  res.json({ cpu: cpuName, benchmarkScore });
+});
+
+//
+// ✅ GPU 벤치마크 (추후 확장)
+//
 app.get("/api/gpu-benchmark", async (req, res) => {
   const gpuName = req.query.gpu;
   if (!gpuName) return res.status(400).json({ error: "GPU 이름이 필요합니다." });
 
-  // 추후 GPU 벤치마크 크롤링 구현 예정
   res.json({ gpu: gpuName, benchmarkScore: "지원 예정" });
 });
 
-// ✅ 부품 상세 + 가격 변동 API (추후 DB 연동 시)
+//
+// ✅ 부품 상세 + 가격 변동 API (DB 미연동 상태)
+//
 app.get("/api/part-detail", async (req, res) => {
   const { category, id } = req.query;
   res.json({ error: "DB 연동 시 구현 예정" });
@@ -140,10 +156,12 @@ app.get("/api/part-detail", async (req, res) => {
 
 app.get("/api/price-history", async (req, res) => {
   const { category, id } = req.query;
-  res.json([]); // dummy
+  res.json([]); // 더미 데이터
 });
 
-// ✅ 서버 실행
+//
+// ✅ 서버 시작
+//
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
