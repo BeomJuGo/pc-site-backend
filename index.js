@@ -28,10 +28,14 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 네이버 가격 + 이미지 API
+// ✅ 네이버 가격 + 이미지 API (최대 100개 + 정렬 + 페이지네이션)
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
-  const url = https://openapi.naver.com/v1/search/shop.json?query=${query};
+  const start = req.query.start || 1;          // 시작 인덱스 (1 ~ 1000)
+  const display = req.query.display || 40;     // 한 번에 가져올 개수 (최대 100)
+  const sort = req.query.sort || "asc";        // 정렬: sim | date | asc | dsc
+
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}&start=${start}&display=${display}&sort=${sort}`;
 
   try {
     const response = await fetch(url, {
@@ -43,6 +47,7 @@ app.get("/api/naver-price", async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
+    console.error("❌ 네이버 API 오류:", error.message);
     res.status(500).json({ error: "네이버 API 요청 실패" });
   }
 });
