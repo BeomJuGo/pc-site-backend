@@ -32,7 +32,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
   const start = req.query.start || 1;          // 시작 인덱스 (1 ~ 1000)
-  const display = req.query.display || 40;     // 한 번에 가져올 개수 (최대 100)
+  const display = Math.min(Number(req.query.display) || 40, 100);     // 한 번에 가져올 개수 (최대 100)
   const sort = req.query.sort || "asc";        // 정렬: sim | date | asc | dsc
 
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}&start=${start}&display=${display}&sort=${sort}`;
