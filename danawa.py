@@ -28,22 +28,31 @@ class DanawaProduct:
         self.price_trend = []
 
     def fetch_info(self):
+        print("✅ 상품 URL:", self.url)
+
         res = self.session.get(self.url, headers={"User-Agent": "Mozilla/5.0"})
         soup = BeautifulSoup(res.text, "html.parser")
 
         script_tag = soup.find("script", text=re.compile("priceChartData"))
-        if not script_tag:
+        print("✅ 스크립트 태그 있음:", bool(script_tag))
+
+        if not script_tag or not script_tag.string:
+            print("❌ 스크립트 태그가 없거나 비어 있음")
             return
 
-        # 가격 데이터 파싱
         matched = re.search(r'priceChartData\s*=\s*(\[.*?\]);', script_tag.string, re.DOTALL)
+        print("✅ 정규식 매칭:", bool(matched))
+
         if not matched:
+            print("❌ 정규표현식으로 가격 정보 찾지 못함")
             return
 
         import json
         try:
             chart_data = json.loads(matched.group(1))
-        except:
+            print("✅ 파싱된 데이터 개수:", len(chart_data))
+        except Exception as e:
+            print("❌ JSON 파싱 실패:", str(e))
             return
 
         self.price_trend = [
