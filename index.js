@@ -28,11 +28,12 @@ app.use(cors({
 
 app.use(express.json());
 
+// ✅ 환경변수
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 네이버 가격 + 이미지 API
+// ✅ 네이버 쇼핑 가격 및 이미지
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
   const start = req.query.start || 1;
@@ -56,7 +57,7 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT 정보 요약 API
+// ✅ GPT 정보 통합 (한줄평 + 사양 요약)
 app.post("/api/gpt-info", async (req, res) => {
   const { partName } = req.body;
 
@@ -106,7 +107,7 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
-// ✅ CPU 벤치마크 크롤링
+// ✅ CPU 벤치마크
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
   if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
@@ -139,7 +140,7 @@ app.get("/api/cpu-benchmark", async (req, res) => {
   }
 });
 
-// ✅ 서버 실행
+// ✅ 서버 시작
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
