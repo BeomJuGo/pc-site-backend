@@ -1,1 +1,2 @@
-danawa-py
+beautifulsoup4
+requests
