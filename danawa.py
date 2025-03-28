@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import datetime
+import sys
 
 class Danawa:
     def __init__(self):
@@ -28,31 +29,31 @@ class DanawaProduct:
         self.price_trend = []
 
     def fetch_info(self):
-        print("✅ 상품 URL:", self.url)
+        sys.stderr.write(f"✅ 상품 URL: {self.url}\n")
 
         res = self.session.get(self.url, headers={"User-Agent": "Mozilla/5.0"})
         soup = BeautifulSoup(res.text, "html.parser")
 
         script_tag = soup.find("script", text=re.compile("priceChartData"))
-        print("✅ 스크립트 태그 있음:", bool(script_tag))
+        sys.stderr.write(f"✅ 스크립트 태그 있음: {bool(script_tag)}\n")
 
         if not script_tag or not script_tag.string:
-            print("❌ 스크립트 태그가 없거나 비어 있음")
+            sys.stderr.write("❌ 스크립트 태그가 없거나 비어 있음\n")
             return
 
         matched = re.search(r'priceChartData\s*=\s*(\[.*?\]);', script_tag.string, re.DOTALL)
-        print("✅ 정규식 매칭:", bool(matched))
+        sys.stderr.write(f"✅ 정규식 매칭: {bool(matched)}\n")
 
         if not matched:
-            print("❌ 정규표현식으로 가격 정보 찾지 못함")
+            sys.stderr.write("❌ 정규표현식으로 가격 정보 찾지 못함\n")
             return
 
         import json
         try:
             chart_data = json.loads(matched.group(1))
-            print("✅ 파싱된 데이터 개수:", len(chart_data))
+            sys.stderr.write(f"✅ 파싱된 데이터 개수: {len(chart_data)}\n")
         except Exception as e:
-            print("❌ JSON 파싱 실패:", str(e))
+            sys.stderr.write(f"❌ JSON 파싱 실패: {str(e)}\n")
             return
 
         self.price_trend = [
