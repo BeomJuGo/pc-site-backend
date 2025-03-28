@@ -17,7 +17,8 @@ class Danawa:
         if not link_tag:
             return []
 
-        product_url = "https:" + link_tag["href"]
+        href = link_tag["href"]
+        product_url = href if href.startswith("http") else "https:" + href
         return [DanawaProduct(product_url, self.session)]
 
 class DanawaProduct:
