@@ -10,13 +10,7 @@ import { spawn } from "child_process";
 dotenv.config();
 const app = express();
 
-const allowedOrigins = [
-  "https://goodpricepc.vercel.app",
-  "http://localhost:3000"
-];
-
-import cors from "cors";
-
+// ✅ CORS 설정 (중복 제거 + 명확하게 허용)
 app.use(cors({
   origin: "https://goodpricepc.vercel.app",
   methods: ["GET", "POST", "OPTIONS"],
