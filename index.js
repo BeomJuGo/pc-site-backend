@@ -1,9 +1,11 @@
+// ✅ index.js
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { spawn } from "child_process";
 
 dotenv.config();
 const app = express();
@@ -139,6 +141,33 @@ app.get("/api/cpu-benchmark", async (req, res) => {
     console.error("❌ 벤치마크 크롤링 실패:", error.message);
     res.status(500).json({ error: "벤치마크 크롤링 실패" });
   }
+});
+
+// ✅ 가격 추이 크롤링 (Python 실행)
+app.get("/api/price-history", (req, res) => {
+  const { partName } = req.query;
+  if (!partName) return res.status(400).json({ error: "partName 파라미터 필요" });
+
+  const process = spawn("python3", ["crawl_price.py", partName]);
+
+  let data = "";
+  process.stdout.on("data", (chunk) => {
+    data += chunk;
+  });
+
+  process.stderr.on("data", (err) => {
+    console.error("❌ Python stderr:", err.toString());
+  });
+
+  process.on("close", () => {
+    try {
+      const result = JSON.parse(data);
+      res.json(result);
+    } catch (err) {
+      console.error("❌ JSON 파싱 실패:", err.message);
+      res.status(500).json({ error: "크롤링 실패" });
+    }
+  });
 });
 
 // ✅ 서버 실행
