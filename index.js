@@ -16,15 +16,9 @@ const allowedOrigins = [
 ];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`❌ CORS 차단됨: ${origin}`);
-      callback(new Error("CORS 차단: " + origin));
-    }
-  },
-  credentials: true,
+  origin: "*", // 모든 origin 허용 (또는 필요한 origin만)
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json());
