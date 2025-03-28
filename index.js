@@ -15,8 +15,10 @@ const allowedOrigins = [
   "http://localhost:3000"
 ];
 
+import cors from "cors";
+
 app.use(cors({
-  origin: "*", // 모든 origin 허용 (또는 필요한 origin만)
+  origin: "https://goodpricepc.vercel.app",
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
