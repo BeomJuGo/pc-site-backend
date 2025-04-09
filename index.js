@@ -1,20 +1,25 @@
-// ✅ index.js
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { spawn } from "child_process";
 
 dotenv.config();
 const app = express();
 
-// ✅ CORS 설정 (중복 제거 + 명확하게 허용)
+// ✅ 허용된 Origin
+const allowedOrigins = ["https://goodpricepc.vercel.app"];
+
 app.use(cors({
-  origin: "https://goodpricepc.vercel.app",
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`❌ CORS 차단됨: ${origin}`);
+      callback(new Error("CORS 차단: " + origin));
+    }
+  },
 }));
 
 app.use(express.json());
@@ -35,22 +40,14 @@ app.get("/api/naver-price", async (req, res) => {
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
       },
     });
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("❌ 네이버 응답 오류:", text);
-      return res.status(response.status).json({ error: "네이버 API 응답 실패" });
-    }
-
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error("❌ 네이버 API 요청 실패:", error.message);
     res.status(500).json({ error: "네이버 API 요청 실패" });
   }
 });
 
-// ✅ GPT 한줄평 + 사양 요약 통합 API
+// ✅ GPT 통합 API (한줄평 + 주요 사양)
 app.post("/api/gpt-info", async (req, res) => {
   const { partName } = req.body;
 
@@ -95,12 +92,12 @@ app.post("/api/gpt-info", async (req, res) => {
 
     res.json({ review, specSummary });
   } catch (error) {
-    console.error("❌ GPT 요청 실패:", error.message);
+    console.error("❌ GPT 통합 요청 실패:", error.message);
     res.status(500).json({ error: "GPT 정보 요청 실패" });
   }
 });
 
-// ✅ CPU 벤치마크 크롤링
+// ✅ CPU 벤치마크 크롤링 (Geekbench 기준)
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
   if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
@@ -128,36 +125,8 @@ app.get("/api/cpu-benchmark", async (req, res) => {
 
     res.json({ cpu: cpuName, benchmarkScore: { singleCore, multiCore } });
   } catch (error) {
-    console.error("❌ 벤치마크 크롤링 실패:", error.message);
     res.status(500).json({ error: "벤치마크 크롤링 실패" });
   }
-});
-
-// ✅ 가격 추이 크롤링 (Python 실행)
-app.get("/api/price-history", (req, res) => {
-  const { partName } = req.query;
-  if (!partName) return res.status(400).json({ error: "partName 파라미터 필요" });
-
-  const process = spawn("python3", ["crawl_price.py", partName]);
-
-  let data = "";
-  process.stdout.on("data", (chunk) => {
-    data += chunk;
-  });
-
-  process.stderr.on("data", (err) => {
-    console.error("❌ Python stderr:", err.toString());
-  });
-
-  process.on("close", () => {
-    try {
-      const result = JSON.parse(data);
-      res.json(result);
-    } catch (err) {
-      console.error("❌ JSON 파싱 실패:", err.message);
-      res.status(500).json({ error: "크롤링 실패" });
-    }
-  });
 });
 
 // ✅ 서버 실행
