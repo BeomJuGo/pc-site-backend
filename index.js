@@ -6,6 +6,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { connectDB, getDB } from "./db.js";
 import syncCPUsRouter from "./routes/syncCPUs.js";
+import partsRouter from "./routes/parts.js";
 
 dotenv.config();
 const app = express();
@@ -14,6 +15,7 @@ const app = express();
 const allowedOrigins = ["https://goodpricepc.vercel.app"];
 
 app.use("/api/admin", syncCPUsRouter);
+app.use("/api/parts", partsRouter);
 
 app.use(cors({
   origin: (origin, callback) => {
