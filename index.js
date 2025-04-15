@@ -5,12 +5,15 @@ import dotenv from "dotenv";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { connectDB, getDB } from "./db.js";
+import syncCPUsRouter from "./routes/syncCPUs.js";
 
 dotenv.config();
 const app = express();
 
 // ✅ 허용된 Origin
 const allowedOrigins = ["https://goodpricepc.vercel.app"];
+
+app.use("/api/admin", syncCPUsRouter);
 
 app.use(cors({
   origin: (origin, callback) => {
