@@ -1,8 +1,10 @@
-// ✅ routes/parts.js
 import express from "express";
 import { getDB } from "../db.js";
 
 const router = express.Router();
+
+// 🔧 이름 정제 함수: 줄바꿈 제거 + 괄호 앞까지 잘라내기
+const clean = (str) => str.split("\n")[0].split("(")[0].trim();
 
 // ✅ CPU 전체 목록 가져오기
 router.get("/cpu", async (req, res) => {
@@ -16,12 +18,19 @@ router.get("/cpu", async (req, res) => {
   }
 });
 
-// ✅ CPU 단일 항목 가져오기 (벤치마크, 가격추이 포함)
+// ✅ CPU 단일 항목 가져오기 (정규식 기반 비교)
 router.get("/cpu/:name", async (req, res) => {
   try {
-    const name = decodeURIComponent(req.params.name);
+    const rawName = decodeURIComponent(req.params.name);
     const db = getDB();
-    const cpu = await db.collection("parts").findOne({ category: "cpu", name });
+
+    const regex = new RegExp(`^${clean(rawName)}`, "i"); // 정규식 기반 검색
+
+    const cpu = await db.collection("parts").findOne({
+      category: "cpu",
+      name: { $regex: regex },
+    });
+
     if (!cpu) return res.status(404).json({ error: "CPU 없음" });
     res.json(cpu);
   } catch (err) {
