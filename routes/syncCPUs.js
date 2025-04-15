@@ -9,6 +9,7 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
+// 1. Geekbench에서 CPU 목록 + 점수 크롤링
 async function fetchGeekbenchCPUs() {
   const url = "https://browser.geekbench.com/processor-benchmarks";
   const { data: html } = await axios.get(url);
@@ -18,9 +19,17 @@ async function fetchGeekbenchCPUs() {
   $("table tbody tr").each((_, row) => {
     const name = $(row).find("td").eq(0).text().trim();
     const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
-    if (name && score && score >= 200) {
-      cpus.push({ name, score });
-    }
+
+    if (!name || !score) return;
+
+    // ✅ 필터 조건
+    const isTooOld = /Pentium|Celeron|Atom|E1-|E2-|A4-|A6-|A8-|Sempron|Turion|Core 2|i3-[1-4]|i5-[1-4]|i7-[1-4]/i.test(name);
+    const isTooWeak = score < 2000;
+    const isWeirdFormat = /\(.*\)|GHz/i.test(name) === false;
+
+    if (isTooOld || isTooWeak || isWeirdFormat) return;
+
+    cpus.push({ name, score });
   });
 
   return cpus;
