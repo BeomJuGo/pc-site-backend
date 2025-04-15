@@ -1,3 +1,4 @@
+// ✅ index.js
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -11,11 +12,8 @@ import partsRouter from "./routes/parts.js";
 dotenv.config();
 const app = express();
 
-// ✅ 허용된 Origin
+// ✅ CORS 설정 (Vercel에서 접근 허용)
 const allowedOrigins = ["https://goodpricepc.vercel.app"];
-
-app.use("/api/admin", syncCPUsRouter);
-app.use("/api/parts", partsRouter);
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -26,15 +24,19 @@ app.use(cors({
       callback(new Error("CORS 차단: " + origin));
     }
   },
+  credentials: true
 }));
 
 app.use(express.json());
 
-const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// ✅ 라우트 등록
+app.use("/api/admin", syncCPUsRouter);
+app.use("/api/parts", partsRouter);
 
 // ✅ 네이버 가격 + 이미지 API
+const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
+const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
+
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}`;
@@ -53,7 +55,9 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT 통합 API (한줄평 + 주요 사양)
+// ✅ GPT API 통합
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
 app.post("/api/gpt-info", async (req, res) => {
   const { partName } = req.body;
 
@@ -103,7 +107,7 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
-// ✅ CPU 벤치마크 크롤링 (Geekbench 기준)
+// ✅ Geekbench 크롤링 API
 app.get("/api/cpu-benchmark", async (req, res) => {
   const cpuName = req.query.cpu;
   if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
@@ -135,11 +139,10 @@ app.get("/api/cpu-benchmark", async (req, res) => {
   }
 });
 
+// ✅ DB 연결 후 서버 시작
 connectDB().then(() => {
-  // 서버 시작
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
   });
 });
-
