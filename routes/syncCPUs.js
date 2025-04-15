@@ -9,6 +9,9 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
+// ✅ 이름 정제 함수
+const cleanName = (raw) => raw.split("\n")[0].split("(")[0].trim();
+
 // ✅ Geekbench에서 싱글/멀티 점수 추론 크롤링
 async function fetchGeekbenchScores() {
   const url = "https://browser.geekbench.com/processor-benchmarks";
@@ -39,7 +42,7 @@ async function fetchGeekbenchScores() {
 
     if (isTooOld || isTooWeak || isWeirdFormat) continue;
 
-    cpus.push({ name, singleCore: single, multiCore: multi });
+    cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
   }
 
   console.log(`🧩 Geekbench 전체 CPU: ${Object.keys(cpuMap).length}개`);
