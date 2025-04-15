@@ -1,4 +1,3 @@
-// ✅ routes/syncCPUs.js
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -10,53 +9,45 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
-// ✅ 이름 정제 함수
-const cleanName = (raw) => raw.split("\n")[0].split("(")[0].trim();
-
-// ✅ Geekbench 점수 크롤링 (싱글/멀티)
+// ✅ Geekbench에서 싱글/멀티 점수 추론 크롤링
 async function fetchGeekbenchScores() {
-  const urls = {
-    single: "https://browser.geekbench.com/processor-benchmarks",
-    multi: "https://browser.geekbench.com/processor-benchmarks?baseline=multi"
-  };
+  const url = "https://browser.geekbench.com/processor-benchmarks";
+  const { data: html } = await axios.get(url);
+  const $ = cheerio.load(html);
 
-  const results = {};
+  const cpuMap = {};
 
-  for (const [type, url] of Object.entries(urls)) {
-    const { data: html } = await axios.get(url);
-    const $ = cheerio.load(html);
+  $("table tbody tr").each((_, row) => {
+    const name = $(row).find("td").eq(0).text().trim();
+    const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
+    if (!name || isNaN(score)) return;
 
-    $("table tbody tr").each((_, row) => {
-      const name = $(row).find("td").eq(0).text().trim();
-      const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
-      if (!name || isNaN(score)) return;
-
-      if (!results[name]) results[name] = {};
-      results[name][type] = score;
-    });
-  }
+    if (!cpuMap[name]) cpuMap[name] = [];
+    cpuMap[name].push(score);
+  });
 
   const cpus = [];
-  for (const [name, scoreObj] of Object.entries(results)) {
-    const single = scoreObj.single || 0;
-    const multi = scoreObj.multi || 0;
 
+  for (const [name, scores] of Object.entries(cpuMap)) {
+    const single = Math.min(...scores);
+    const multi = Math.max(...scores);
+
+    // 필터링 조건
     const isTooOld = /Pentium|Celeron|Atom|E1-|E2-|A4-|A6-|A8-|Sempron|Turion|Core 2|i3-[1-4]|i5-[1-4]|i7-[1-4]/i.test(name);
     const isTooWeak = single < 2000;
-    const isWeirdFormat = /(GHz|\(.*\))/.test(name) === false;
+    const isWeirdFormat = !(name.includes("GHz") || /\(.*\)/.test(name));
 
     if (isTooOld || isTooWeak || isWeirdFormat) continue;
 
-    cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
+    cpus.push({ name, singleCore: single, multiCore: multi });
   }
 
-  console.log(`🧩 Geekbench 총 CPU 목록: ${Object.keys(results).length}개`);
-  console.log(`✅ 필터 통과한 CPU 수: ${cpus.length}개`);
-
+  console.log(`🧩 Geekbench 전체 CPU: ${Object.keys(cpuMap).length}개`);
+  console.log(`✅ 필터 통과 CPU: ${cpus.length}개`);
   return cpus;
 }
 
-// ✅ 네이버 가격
+// ✅ 네이버 가격 크롤링
 async function fetchNaverPrice(query) {
   const encoded = encodeURIComponent(query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
@@ -88,7 +79,7 @@ async function saveCPUsToMongo(cpus) {
         name: cpu.name,
         benchmarkScore: {
           singleCore: cpu.singleCore,
-          multiCore: cpu.multiCore
+          multiCore: cpu.multiCore,
         },
       };
 
@@ -111,12 +102,12 @@ async function saveCPUsToMongo(cpus) {
         console.log("🆕 삽입:", cpu.name);
       }
     } catch (err) {
-      console.error("❌ 저장 오류:", err);
+      console.error("❌ 저장 중 오류:", err);
     }
   }
 }
 
-// ✅ 엔드포인트
+// ✅ API 엔드포인트
 router.post("/sync-cpus", (req, res) => {
   res.json({ message: "✅ CPU 수집 시작됨 (백그라운드 처리 중)" });
 
@@ -128,7 +119,10 @@ router.post("/sync-cpus", (req, res) => {
       for (const cpu of cpuList) {
         const price = await fetchNaverPrice(cpu.name);
         const isValid = price !== null && price > 10000;
-        if (!isValid) continue;
+        if (!isValid) {
+          console.log("⛔️ 제외:", cpu.name, "(가격 없음)");
+          continue;
+        }
 
         console.log(`💰 ${cpu.name} 가격:`, price);
         enriched.push({ ...cpu, price });
@@ -137,7 +131,7 @@ router.post("/sync-cpus", (req, res) => {
       await saveCPUsToMongo(enriched);
       console.log("✅ CPU 저장 완료");
     } catch (err) {
-      console.error("❌ 동기화 실패:", err);
+      console.error("❌ CPU 동기화 실패:", err);
     }
   });
 });
