@@ -1,4 +1,3 @@
-// ✅ routes/syncCPUs.js (리팩터링 버전)
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -10,7 +9,6 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
-// 1. Geekbench에서 CPU 목록 + 점수 크롤링
 async function fetchGeekbenchCPUs() {
   const url = "https://browser.geekbench.com/processor-benchmarks";
   const { data: html } = await axios.get(url);
@@ -20,16 +18,14 @@ async function fetchGeekbenchCPUs() {
   $("table tbody tr").each((_, row) => {
     const name = $(row).find("td").eq(0).text().trim();
     const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
-
-    // ✅ 정제: 이상하거나 비정상적인 이름 스킵
-    if (!name || name.length < 10 || name.toLowerCase().includes("engineering sample") || name.includes("™")) return;
-
-    cpus.push({ name, score });
+    if (name && score && score >= 200) {
+      cpus.push({ name, score });
+    }
   });
+
   return cpus;
 }
 
-// 2. 네이버 쇼핑에서 가격 가져오기
 async function fetchNaverPrice(query) {
   const encoded = encodeURIComponent(query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
@@ -43,10 +39,17 @@ async function fetchNaverPrice(query) {
 
   const data = await res.json();
   const item = data.items?.[0];
-  return item ? parseInt(item.lprice, 10) : null;
+  const price = item ? parseInt(item.lprice, 10) : null;
+
+  const ignored = [
+    "Pentium", "Celeron", "Core2", "Athlon", "Turion", "Sempron", "Opteron", "Phenom", "Xeon X"
+  ];
+  const isIgnored = ignored.some(keyword => query.includes(keyword));
+
+  if (!price || isNaN(price) || price < 30000 || isIgnored) return null;
+  return price;
 }
 
-// 3. MongoDB에 저장
 async function saveCPUsToMongo(cpus) {
   const db = getDB();
   const collection = db.collection("parts");
@@ -57,7 +60,6 @@ async function saveCPUsToMongo(cpus) {
       const today = new Date().toISOString().slice(0, 10);
 
       if (exists) {
-        console.log("🔁 기존 CPU 업데이트:", cpu.name);
         await collection.updateOne(
           { _id: exists._id },
           {
@@ -74,7 +76,6 @@ async function saveCPUsToMongo(cpus) {
           }
         );
       } else {
-        console.log("🆕 새 CPU 삽입:", cpu.name);
         await collection.insertOne({
           category: "cpu",
           name: cpu.name,
@@ -82,12 +83,7 @@ async function saveCPUsToMongo(cpus) {
             singleCore: cpu.score,
             multiCore: cpu.score,
           },
-          priceHistory: [
-            {
-              date: today,
-              price: cpu.price || 0,
-            },
-          ],
+          priceHistory: [{ date: today, price: cpu.price || 0 }],
         });
       }
     } catch (err) {
@@ -96,7 +92,6 @@ async function saveCPUsToMongo(cpus) {
   }
 }
 
-// 4. API 엔드포인트 구성 (응답 먼저 반환 → 비동기 저장)
 router.post("/sync-cpus", (req, res) => {
   res.json({ message: "✅ CPU 수집 시작됨 (백그라운드에서 처리 중)" });
 
@@ -108,9 +103,8 @@ router.post("/sync-cpus", (req, res) => {
       const enriched = [];
       for (const cpu of rawList) {
         const price = await fetchNaverPrice(cpu.name);
-
-        if (!price || price === 0 || isNaN(price)) {
-          console.log(`⏩ 가격 없음: ${cpu.name}`);
+        if (price === null) {
+          console.log("🚫 필터링된 CPU:", cpu.name);
           continue;
         }
 
