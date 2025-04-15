@@ -90,15 +90,20 @@ async function saveCPUsToMongo(cpus) {
 router.post("/sync-cpus", async (req, res) => {
   try {
     const rawList = await fetchGeekbenchCPUs();
+    console.log("✅ CPU 목록 개수:", rawList.length);
+
     const enriched = [];
-    for (const cpu of cpuList.slice(0, 5)) {
+
+    for (const cpu of rawList.slice(0, 5)) {
       const price = await fetchNaverPrice(cpu.name);
+      console.log(`💰 ${cpu.name} 가격:`, price);
       enriched.push({ ...cpu, price });
     }
+
     await saveCPUsToMongo(enriched);
     res.json({ success: true, count: enriched.length });
   } catch (err) {
-    console.error("❌ CPU 동기화 실패:", err.message);
+    console.error("❌ CPU 동기화 실패:", err); // ← 여기를 수정!
     res.status(500).json({ error: "CPU 목록 저장 실패" });
   }
 });
