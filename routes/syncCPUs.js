@@ -91,7 +91,7 @@ router.post("/sync-cpus", async (req, res) => {
   try {
     const rawList = await fetchGeekbenchCPUs();
     const enriched = [];
-    for (const cpu of rawList) {
+    for (const cpu of cpuList.slice(0, 5)) {
       const price = await fetchNaverPrice(cpu.name);
       enriched.push({ ...cpu, price });
     }
