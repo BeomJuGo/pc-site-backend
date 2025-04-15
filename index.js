@@ -4,6 +4,7 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { connectDB, getDB } from "./db.js";
 
 dotenv.config();
 const app = express();
@@ -129,8 +130,17 @@ app.get("/api/cpu-benchmark", async (req, res) => {
   }
 });
 
+connectDB().then(() => {
+  // 서버 시작
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+  });
+});
+
 // ✅ 서버 실행
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ 백엔드 서버 실행 중: http://localhost:${PORT}`);
 });
+
