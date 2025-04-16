@@ -46,9 +46,9 @@ pass("table tbody tr").each((_, el) => {
 
   if (!name || isNaN(score)) return;
 
-  if (cpus[name]) {
-    cpus[name].passmarkscore = score;
-  }
+if (!cpus[name]) cpus[name] = {};
+cpus[name].passmarkscore = score;
+
 });
 
 
