@@ -39,7 +39,7 @@ async function fetchGeekbenchScores() {
     const isTooWeak = single < 2000;
     const isWeirdFormat = !(name.includes("GHz") || /\(.*\)/.test(name));
     const isLaptopModel = /AMD Ryzen.*\d+(HX|HS|H|U)|Intel Core.*\d+(HX|H|E)/i.test(name);
-    const isZSeries = /Ryzen\s+Z\d/i.test(name);
+    const isZSeries = /Ryzen\s+Z/i.test(name);
     if (isTooOld || isTooWeak || isWeirdFormat || isLaptopModel || isZSeries) continue;
 
     cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
