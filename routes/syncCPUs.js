@@ -13,11 +13,12 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const cleanName = (raw) => raw.split("\n")[0].split("(")[0].trim();
 
-// ✅ Geekbench 점수 크롤링
+// ✅ Geekbench 점수 크롤링 (싱글+멀티 추론)
 async function fetchGeekbenchScores() {
   const url = "https://browser.geekbench.com/processor-benchmarks";
   const { data: html } = await axios.get(url);
   const $ = cheerio.load(html);
+
   const cpuMap = {};
 
   $("table tbody tr").each((_, row) => {
@@ -30,7 +31,6 @@ async function fetchGeekbenchScores() {
   });
 
   const cpus = [];
-
   for (const [name, scores] of Object.entries(cpuMap)) {
     const single = Math.min(...scores);
     const multi = Math.max(...scores);
@@ -44,10 +44,12 @@ async function fetchGeekbenchScores() {
     cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
   }
 
+  console.log(`🧩 Geekbench 전체 CPU: ${Object.keys(cpuMap).length}개`);
+  console.log(`✅ 필터 통과 CPU: ${cpus.length}개`);
   return cpus;
 }
 
-// ✅ 네이버 가격
+// ✅ 네이버 가격 크롤링
 async function fetchNaverPrice(query) {
   const encoded = encodeURIComponent(query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
@@ -61,31 +63,57 @@ async function fetchNaverPrice(query) {
 
   const data = await res.json();
   const item = data.items?.[0];
-  return item ? parseInt(item.lprice, 10) : null;
+  return item
+    ? {
+        price: parseInt(item.lprice, 10),
+        image: item.image || "",
+      }
+    : null;
 }
 
-// ✅ GPT 한줄평 생성
-async function fetchGptReview(partName) {
-  const prompt = `${partName}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`;
+// ✅ GPT 한줄평 + 사양 요약
+async function fetchGptSummary(name) {
+  const reviewPrompt = `${name}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`;
+  const specPrompt = `${name}의 주요 사양을 요약해서 알려줘. 코어 수, 스레드 수, 클럭 위주로.`;
 
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 100,
+    const [reviewRes, specRes] = await Promise.all([
+      fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [{ role: "user", content: reviewPrompt }],
+          max_tokens: 100,
+        }),
       }),
-    });
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || "리뷰 없음";
-  } catch (err) {
-    console.error("❌ GPT 요청 실패:", err.message);
-    return "리뷰 오류";
+      fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [{ role: "user", content: specPrompt }],
+          max_tokens: 100,
+        }),
+      }),
+    ]);
+
+    const reviewData = await reviewRes.json();
+    const specData = await specRes.json();
+
+    return {
+      review: reviewData.choices?.[0]?.message?.content || "",
+      specSummary: specData.choices?.[0]?.message?.content || "",
+    };
+  } catch (e) {
+    console.error("❌ GPT 오류:", e.message);
+    return { review: "", specSummary: "" };
   }
 }
 
@@ -106,7 +134,8 @@ async function saveCPUsToMongo(cpus) {
           singleCore: cpu.singleCore,
           multiCore: cpu.multiCore,
         },
-        review: cpu.review,
+        review: cpu.review || "",
+        specSummary: cpu.specSummary || "",
       };
 
       if (exists) {
@@ -114,7 +143,9 @@ async function saveCPUsToMongo(cpus) {
           { _id: exists._id },
           {
             $set: doc,
-            $push: { priceHistory: { date: today, price: cpu.price || 0 } },
+            $push: {
+              priceHistory: { date: today, price: cpu.price || 0 },
+            },
           }
         );
         console.log("🔁 업데이트:", cpu.name);
@@ -131,33 +162,32 @@ async function saveCPUsToMongo(cpus) {
   }
 }
 
-// ✅ API 엔드포인트
+// ✅ 엔드포인트
 router.post("/sync-cpus", (req, res) => {
   res.json({ message: "✅ CPU 수집 시작됨 (백그라운드 처리 중)" });
 
   setImmediate(async () => {
     try {
-      const cpuList = await fetchGeekbenchScores();
+      const rawList = await fetchGeekbenchScores();
       const enriched = [];
 
-      for (const cpu of cpuList) {
-        const price = await fetchNaverPrice(cpu.name);
-        const isValid = price !== null && price > 10000;
-        if (!isValid) {
-          console.log("⛔️ 제외:", cpu.name, "(가격 없음)");
+      for (const cpu of rawList) {
+        const priceObj = await fetchNaverPrice(cpu.name);
+        if (!priceObj || priceObj.price < 10000) {
+          console.log("⛔ 제외:", cpu.name);
           continue;
         }
 
-        const review = await fetchGptReview(cpu.name);
-        console.log(`💬 ${cpu.name} 리뷰:`, review);
+        const gpt = await fetchGptSummary(cpu.name);
 
-        enriched.push({ ...cpu, price, review });
+        enriched.push({ ...cpu, ...priceObj, ...gpt });
+        console.log(`💰 ${cpu.name}: ${priceObj.price}원`);
       }
 
       await saveCPUsToMongo(enriched);
-      console.log("✅ CPU 저장 완료");
+      console.log("✅ 저장 완료");
     } catch (err) {
-      console.error("❌ CPU 동기화 실패:", err);
+      console.error("❌ 전체 동기화 실패:", err);
     }
   });
 });
