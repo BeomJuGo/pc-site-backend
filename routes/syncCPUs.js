@@ -44,9 +44,9 @@ async function fetchCPUsFromTechMons() {
     const name = tds.eq(0).text().trim();
     const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
     if (!name || isNaN(score)) return;
-    (cpus[name]) {
+    cpus[name] = {
       cpus[name].passmarkscore = score;
-    }
+    };
   });
 
   const cpuList = [];
