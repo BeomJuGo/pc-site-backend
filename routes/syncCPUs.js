@@ -56,7 +56,7 @@ pass("table tbody tr").each((_, el) => {
   for (const [name, scores] of Object.entries(cpus)) {
     const { cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore = 0 } = scores;
     const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && passmarkscore < 10000;
-    const isLaptopModel = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|U|E|H)/i.test(name);
+    const isLaptopModel = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
     if (isTooWeak || isLaptopModel) {
       console.log("⛔️ 필터 제외:", name);
       continue;
