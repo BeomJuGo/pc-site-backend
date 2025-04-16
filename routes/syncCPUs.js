@@ -87,7 +87,7 @@ async function fetchGptSummary(name) {
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: reviewPrompt }],
-          max_tokens: 100,
+          max_tokens: 200,
         }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
@@ -99,7 +99,7 @@ async function fetchGptSummary(name) {
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: specPrompt }],
-          max_tokens: 100,
+          max_tokens: 200,
         }),
       }),
     ]);
