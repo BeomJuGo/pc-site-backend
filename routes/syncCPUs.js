@@ -28,17 +28,19 @@ async function fetchCPUsFromTechMons() {
 
   const cpus = {};
 
-  // ✅ Cinebench 점수 수집
-  cine("table tbody tr").each((_, el) => {
-    const name = cine(el).find("td").eq(0).text().trim();
-    const single = parseInt(cine(el).find("td").eq(1).text().replace(/,/g, ""), 10);
-    const multi = parseInt(cine(el).find("td").eq(2).text().replace(/,/g, ""), 10);
+// ✅ Cinebench 점수 수집
+cine("table tbody tr").each((_, el) => {
+  const tds = cine(el).find("td");
+  const name = tds.eq(0).text().trim();
+  const single = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
+  const multi = parseInt(tds.eq(3).text().replace(/,/g, ""), 10);
 
-    if (!name || isNaN(single) || isNaN(multi)) return;
-    if (!cpus[name]) cpus[name] = {};
-    cpus[name].cinebenchSingle = single;
-    cpus[name].cinebenchMulti = multi;
-  });
+  if (!name || isNaN(single) || isNaN(multi)) return;
+  if (!cpus[name]) cpus[name] = {};
+  cpus[name].cinebenchSingle = single;
+  cpus[name].cinebenchMulti = multi;
+});
+
 
   // ✅ PassMark 점수 수집
   pass("table tbody tr").each((_, el) => {
