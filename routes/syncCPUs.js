@@ -38,8 +38,8 @@ async function fetchGeekbenchScores() {
     const isTooOld = /Pentium|Celeron|Atom|E1-|E2-|A4-|A6-|A8-|Sempron|Turion|Core 2|i3-[1-4]|i5-[1-4]|i7-[1-4]/i.test(name);
     const isTooWeak = single < 2000;
     const isWeirdFormat = !(name.includes("GHz") || /\(.*\)/.test(name));
-
-    if (isTooOld || isTooWeak || isWeirdFormat) continue;
+    const isLaptopModel = /AMD Ryzen.*\d+(HX|HS|H|U)|Intel Core.*\d+(HX|H|E)/i.test(name);
+    if (isTooOld || isTooWeak || isWeirdFormat || isLaptopModel) continue;
 
     cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
   }
