@@ -57,7 +57,7 @@ async function fetchCPUsFromTechMons() {
   for (const cpu of Object.values(cpus)) {
     const { name, cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore } = cpu;
     const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && (passmarkscore || 0) < 10000;
-    const isLaptop = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|U|E|H)/i.test(name);
+    const isLaptop = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
     if (isTooWeak || isLaptop) {
       console.log("⛔️ 필터 제외:", name);
       continue;
