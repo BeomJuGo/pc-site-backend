@@ -40,7 +40,7 @@ async function fetchGeekbenchScores() {
     const isWeirdFormat = !(name.includes("GHz") || /\(.*\)/.test(name));
     const isLaptopModel = /AMD Ryzen.*\d+(HX|HS|H|U)|Intel Core.*\d+(HX|H|E)/i.test(name);
     const isZSeries = /Ryzen\s+Z\d/i.test(name);
-    if (isTooOld || isTooWeak || isWeirdFormat || isLaptopModel) continue;
+    if (isTooOld || isTooWeak || isWeirdFormat || isLaptopModel || isZSeries) continue;
 
     cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
   }
@@ -149,11 +149,13 @@ async function saveCPUsToMongo(cpus) {
             },
           }
         );
+        console.log("🔁 업데이트:", cpu.name);
       } else {
         await collection.insertOne({
           ...doc,
           priceHistory: [{ date: today, price: cpu.price || 0 }],
         });
+        console.log("🆕 삽입:", cpu.name);
       }
     } catch (err) {
       console.error("❌ 저장 오류:", err);
@@ -172,17 +174,28 @@ router.post("/sync-cpus", (req, res) => {
 
       for (const cpu of rawList) {
         const priceObj = await fetchNaverPrice(cpu.name);
-        if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) continue;
+        if (!priceObj) {
+          console.log("⛔ 제외 (가격 없음):", cpu.name);
+          continue;
+        }
+        if (priceObj.price < 10000 || priceObj.price > 2000000) {
+          console.log("⛔ 제외 (가격 범위 초과):", cpu.name, priceObj.price);
+          continue;
+        }
 
-        // ✅ 가성비 필터링
         const valueScore = cpu.multiCore / priceObj.price;
-        if (valueScore < 0.02) continue;
+        if (valueScore < 0.02) {
+          console.log("⛔ 제외 (가성비 낮음):", cpu.name, valueScore.toFixed(5));
+          continue;
+        }
 
         const gpt = await fetchGptSummary(cpu.name);
         enriched.push({ ...cpu, ...priceObj, ...gpt });
+        console.log(`💰 ${cpu.name}: ${priceObj.price.toLocaleString()}원`);
       }
 
       await saveCPUsToMongo(enriched);
+      console.log("✅ 저장 완료");
     } catch (err) {
       console.error("❌ 전체 동기화 실패:", err);
     }
