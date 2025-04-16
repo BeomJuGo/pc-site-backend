@@ -14,10 +14,10 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const cleanName = (raw) => {
   return raw
     .split("\n")[0]
-    .replace(/\(.*?\)/g, "")         // 괄호 제거
-    .replace(/®|™|CPU|Processor/gi, "") // 불필요한 단어 제거
-    .replace(/-/g, " ")                // 하이픈을 공백으로
-    .replace(/\s+/g, " ")             // 연속 공백 제거
+    .replace(/\(.*?\)/g, "")
+    .replace(/®|™|CPU|Processor/gi, "")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 };
 
@@ -34,7 +34,6 @@ async function fetchCPUsFromTechMons() {
   const pass = cheerio.load(passHtml);
   const cpus = {};
 
-  // ✅ Cinebench 수집
   cine("table tbody tr").each((_, el) => {
     const tds = cine(el).find("td");
     const name = cleanName(tds.eq(0).text().trim());
@@ -47,7 +46,6 @@ async function fetchCPUsFromTechMons() {
     };
   });
 
-  // ✅ PassMark 수집
   pass("table tbody tr").each((_, el) => {
     const tds = pass(el).find("td");
     const name = cleanName(tds.eq(0).text().trim());
@@ -62,15 +60,27 @@ async function fetchCPUsFromTechMons() {
     const { cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore = undefined } = scores;
     const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && (!passmarkscore || passmarkscore < 10000);
     const isLaptopModel = /Apple\s*M\d|Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
-    if (isTooWeak || isLaptopModel) {
-      console.log("⛔️ 필터 제외:", name);
+
+    const priceObj = await fetchNaverPrice(name);
+    if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) {
+      console.log("⛔ 제외 (가격 없음/이상치):", name);
       continue;
     }
+
+    const valueScore = (passmarkscore || 0) / priceObj.price;
+    const isLowValue = valueScore < 0.015;
+    if (isTooWeak || isLaptopModel || isLowValue) {
+      console.log("⛔ 필터 제외:", name, `(가성비 ${valueScore.toFixed(4)})`);
+      continue;
+    }
+
     cpuList.push({
       name,
       cinebenchSingle,
       cinebenchMulti,
       passmarkscore: passmarkscore ?? null,
+      price: priceObj.price,
+      image: priceObj.image,
     });
   }
 
@@ -78,7 +88,6 @@ async function fetchCPUsFromTechMons() {
   return cpuList;
 }
 
-// ✅ 네이버 가격 + 이미지
 async function fetchNaverPrice(query) {
   const encoded = encodeURIComponent(query);
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
@@ -93,7 +102,6 @@ async function fetchNaverPrice(query) {
   return item ? { price: parseInt(item.lprice, 10), image: item.image || "" } : null;
 }
 
-// ✅ GPT 한줄평 + 요약
 async function fetchGptSummary(name) {
   const [reviewPrompt, specPrompt] = [
     `${name}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`,
@@ -124,7 +132,6 @@ async function fetchGptSummary(name) {
   }
 }
 
-// ✅ MongoDB 저장
 async function saveCPUsToMongo(cpus) {
   const db = getDB();
   const collection = db.collection("parts");
@@ -151,20 +158,14 @@ async function saveCPUsToMongo(cpus) {
   }
 }
 
-// ✅ API 엔드포인트
 router.post("/sync-cpus", (req, res) => {
   res.json({ message: "✅ CPU 동기화 시작됨 (백그라운드에서 처리 중)" });
   setImmediate(async () => {
     const rawList = await fetchCPUsFromTechMons();
     const enriched = [];
     for (const cpu of rawList) {
-      const priceObj = await fetchNaverPrice(cpu.name);
-      if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) {
-        console.log("⛔ 제외 (가격 없음/이상치):", cpu.name);
-        continue;
-      }
       const gpt = await fetchGptSummary(cpu.name);
-      enriched.push({ ...cpu, ...priceObj, ...gpt });
+      enriched.push({ ...cpu, ...gpt });
     }
     await saveCPUsToMongo(enriched);
     console.log("🎉 모든 CPU 저장 완료");
