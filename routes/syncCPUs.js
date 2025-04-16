@@ -39,7 +39,7 @@ async function fetchGeekbenchScores() {
     const isTooWeak = single < 2000;
     const isWeirdFormat = !(name.includes("GHz") || /\(.*\)/.test(name));
     const isLaptopModel = /AMD Ryzen.*\d+(HX|HS|H|U)|Intel Core.*\d+(HX|H|E)/i.test(name);
-    const isZSeries = /Ryzen\s+Z/i.test(name);
+    const isZSeries = /Ryzen\s+Z\d/i.test(name);
     if (isTooOld || isTooWeak || isWeirdFormat || isLaptopModel || isZSeries) continue;
 
     cpus.push({ name: cleanName(name), singleCore: single, multiCore: multi });
@@ -124,6 +124,18 @@ async function saveCPUsToMongo(cpus) {
   const collection = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
 
+  // ✅ 사전 정리: 의미없는 CPU 삭제
+  await collection.deleteMany({
+    category: "cpu",
+    $or: [
+      { name: /Ryzen\s+Z/i },
+      { name: /HX|HS|H|U/, name: /Ryzen/i },
+      { name: /HX|H|E/, name: /Intel Core/i },
+      { "benchmarkScore.multiCore": { $lt: 2000 } },
+      { priceHistory: { $elemMatch: { price: { $gt: 2000000 } } } },
+    ],
+  });
+
   for (const cpu of cpus) {
     try {
       const exists = await collection.findOne({ name: cpu.name });
@@ -178,20 +190,14 @@ router.post("/sync-cpus", (req, res) => {
           console.log("⛔ 제외 (가격 없음):", cpu.name);
           continue;
         }
-        if (priceObj.price < 10000 || priceObj.price > 2000000) {
-          console.log("⛔ 제외 (가격 범위 초과):", cpu.name, priceObj.price);
-          continue;
-        }
+        if (priceObj.price < 10000 || priceObj.price > 2000000) continue;
 
         const valueScore = cpu.multiCore / priceObj.price;
-        if (valueScore < 0.02) {
-          console.log("⛔ 제외 (가성비 낮음):", cpu.name, valueScore.toFixed(5));
-          continue;
-        }
+        if (valueScore < 0.02) continue;
 
         const gpt = await fetchGptSummary(cpu.name);
         enriched.push({ ...cpu, ...priceObj, ...gpt });
-        console.log(`💰 ${cpu.name}: ${priceObj.price.toLocaleString()}원`);
+        console.log(`💰 ${cpu.name}: ${priceObj.price}원`);
       }
 
       await saveCPUsToMongo(enriched);
