@@ -173,10 +173,15 @@ router.post("/sync-cpus", (req, res) => {
 
       for (const cpu of rawList) {
         const priceObj = await fetchNaverPrice(cpu.name);
-        if (!priceObj || priceObj.price < 10000) {
-          console.log("⛔ 제외:", cpu.name);
+
+        if (!priceObj) {
+          console.log("⛔ 제외 (가격 없음):", cpu.name);
           continue;
         }
+        if (priceObj.price < 10000 || priceObj.price > 2000000) {
+          continue;
+        }
+
 
         const gpt = await fetchGptSummary(cpu.name);
 
