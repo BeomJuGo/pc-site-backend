@@ -61,7 +61,7 @@ async function fetchCPUsFromTechMons() {
   for (const [name, scores] of Object.entries(cpus)) {
     const { cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore = undefined } = scores;
     const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && (!passmarkscore || passmarkscore < 10000);
-    const isLaptopModel = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name); // Ultra 예외 허용
+    const isLaptopModel = /Apple\s*M\d|Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
     if (isTooWeak || isLaptopModel) {
       console.log("⛔️ 필터 제외:", name);
       continue;
