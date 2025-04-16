@@ -10,7 +10,15 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const cleanName = (raw) => raw.split("\n")[0].split("(")[0].trim();
+const cleanName = (raw) => {
+  return raw
+    .replace(/\(.*?\)/g, "")
+    .replace(/®|™/g, "")
+    .replace(/Processor/gi, "")
+    .replace(/CPU/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
 
 // ✅ 크롤링
 async function fetchCPUsFromTechMons() {
@@ -25,44 +33,43 @@ async function fetchCPUsFromTechMons() {
   const pass = cheerio.load(passHtml);
   const cpus = {};
 
-  // ✅ Cinebench 점수 수집 (이름 기준 초기화)
+  // ✅ Cinebench 점수 수집
   cine("table tbody tr").each((_, el) => {
     const tds = cine(el).find("td");
-    const name = tds.eq(0).text().trim();
+    const rawName = tds.eq(0).text().trim();
+    const name = cleanName(rawName);
     const single = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
     const multi = parseInt(tds.eq(3).text().replace(/,/g, ""), 10);
     if (!name || isNaN(single) || isNaN(multi)) return;
     cpus[name] = {
+      name,
       cinebenchSingle: single,
       cinebenchMulti: multi
     };
   });
 
-  // ✅ PassMark 점수 수집 (존재하는 CPU에만 병합)
-pass("table tbody tr").each((_, el) => {
-  const tds = pass(el).find("td");
-  const name = tds.eq(0).text().trim();
-  const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
-
-  if (!name || isNaN(score)) return;
-
-if (!cpus[name]) cpus[name] = {};
-cpus[name].passmarkscore = score;
-
-});
-
+  // ✅ PassMark 점수 수집
+  pass("table tbody tr").each((_, el) => {
+    const tds = pass(el).find("td");
+    const rawName = tds.eq(0).text().trim();
+    const name = cleanName(rawName);
+    const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
+    if (!name || isNaN(score)) return;
+    if (!cpus[name]) cpus[name] = { name };
+    cpus[name].passmarkscore = score;
+  });
 
   const cpuList = [];
   for (const [name, scores] of Object.entries(cpus)) {
     const { cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore = 0 } = scores;
     const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && passmarkscore < 10000;
-    const isLaptopModel = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
+    const isLaptopModel = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|U|E|H)/i.test(name);
     if (isTooWeak || isLaptopModel) {
       console.log("⛔️ 필터 제외:", name);
       continue;
     }
     cpuList.push({
-      name: cleanName(name),
+      name,
       cinebenchSingle,
       cinebenchMulti,
       passmarkscore: passmarkscore || 0
