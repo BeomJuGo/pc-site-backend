@@ -39,15 +39,18 @@ async function fetchCPUsFromTechMons() {
   });
 
   // ✅ PassMark 점수 수집 (존재하는 CPU에만 병합)
-  pass("table tbody tr").each((_, el) => {
-    const tds = pass(el).find("td");
-    const name = tds.eq(0).text().trim();
-    const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
-    if (!name || isNaN(score)) return;
-    cpus[name] = {
-      passmarkscore: score
-    };
-  });
+pass("table tbody tr").each((_, el) => {
+  const tds = pass(el).find("td");
+  const name = tds.eq(0).text().trim();
+  const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
+
+  if (!name || isNaN(score)) return;
+
+  if (cpus[name]) {
+    cpus[name].passmarkscore = score;
+  }
+});
+
 
   const cpuList = [];
   for (const [name, scores] of Object.entries(cpus)) {
