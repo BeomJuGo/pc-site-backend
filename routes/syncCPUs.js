@@ -1,3 +1,4 @@
+// ✅ routes/syncCPUs.js
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -10,7 +11,6 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 이름 정제
 const cleanName = (raw) => raw.split("\n")[0].split("(")[0].trim();
 
 // ✅ Cinebench 및 PassMark 크롤링
@@ -56,7 +56,10 @@ async function fetchCPUsFromTechMons() {
 
     const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && passmarkscore < 10000;
     const isLaptopModel = /Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|U|E|H)/i.test(name);
-    if (isTooWeak || isLaptopModel) continue;
+    if (isTooWeak || isLaptopModel) {
+      console.log("⛔️ 필터 제외:", name);
+      continue;
+    }
 
     cpuList.push({
       name: cleanName(name),
@@ -144,8 +147,8 @@ async function saveCPUsToMongo(cpus) {
   const collection = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
 
-  // 기존 CPU 모두 제거
-  await collection.deleteMany({ category: "cpu" });
+  const deleteResult = await collection.deleteMany({ category: "cpu" });
+  console.log(`🗑 기존 CPU ${deleteResult.deletedCount}개 삭제됨`);
 
   for (const cpu of cpus) {
     try {
@@ -163,9 +166,9 @@ async function saveCPUsToMongo(cpus) {
         image: cpu.image || "",
       });
 
-      console.log("✅ 저장 완료:", cpu.name);
+      console.log("✅ 저장됨:", cpu.name, `/ 가격: ${cpu.price}원`);
     } catch (err) {
-      console.error("❌ 저장 오류:", err);
+      console.error("❌ 저장 실패:", cpu.name, err.message);
     }
   }
 }
@@ -181,15 +184,19 @@ router.post("/sync-cpus", (req, res) => {
 
       for (const cpu of rawList) {
         const priceObj = await fetchNaverPrice(cpu.name);
-        if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) continue;
+        if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) {
+          console.log("⛔️ 제외 (가격 없음/비정상):", cpu.name);
+          continue;
+        }
 
         const gpt = await fetchGptSummary(cpu.name);
         enriched.push({ ...cpu, ...priceObj, ...gpt });
       }
 
       await saveCPUsToMongo(enriched);
+      console.log("🎉 모든 CPU 저장 완료");
     } catch (err) {
-      console.error("❌ 전체 동기화 실패:", err);
+      console.error("❌ 전체 동기화 실패:", err.message);
     }
   });
 });
