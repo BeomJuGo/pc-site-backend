@@ -156,20 +156,17 @@ async function saveCPUsToMongo(cpus) {
     const priceEntry = { date: today, price: cpu.price || 0 };
 
     if (existing) {
-      // 동일 날짜 priceHistory 항목이 이미 있는지 확인
-      const alreadyLogged = existing.priceHistory?.some((h) => h.date === today);
+      const hasToday = existing.priceHistory?.some((h) => h.date === today);
 
       await collection.updateOne(
         { _id: existing._id },
         {
           $set: updateFields,
-          ...(alreadyLogged
-            ? {}
-            : { $push: { priceHistory: priceEntry } }),
+          ...(hasToday ? {} : { $push: { priceHistory: priceEntry } }),
         }
       );
 
-      console.log("🔁 업데이트됨:", cpu.name);
+      console.log(`🔁 업데이트됨: ${cpu.name} (오늘 가격 기록 ${hasToday ? "이미 존재" : "추가됨"})`);
     } else {
       await collection.insertOne({
         name: cpu.name,
@@ -181,6 +178,7 @@ async function saveCPUsToMongo(cpus) {
     }
   }
 }
+
 
 
 router.post("/sync-cpus", (req, res) => {
