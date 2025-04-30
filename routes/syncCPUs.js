@@ -136,27 +136,52 @@ async function saveCPUsToMongo(cpus) {
   const db = getDB();
   const collection = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
-  const deleted = await collection.deleteMany({ category: "cpu" });
-  console.log(`🗑 기존 CPU ${deleted.deletedCount}개 삭제됨`);
 
   for (const cpu of cpus) {
-    await collection.insertOne({
+    const existing = await collection.findOne({ name: cpu.name });
+
+    const updateFields = {
       category: "cpu",
-      name: cpu.name,
       price: cpu.price,
       benchmarkScore: {
         passmarkscore: cpu.passmarkscore,
         cinebenchSingle: cpu.cinebenchSingle,
         cinebenchMulti: cpu.cinebenchMulti,
       },
-      priceHistory: [{ date: today, price: cpu.price || 0 }],
       review: cpu.review || "",
       specSummary: cpu.specSummary || "",
       image: cpu.image || "",
-    });
-    console.log("✅ 저장됨:", cpu.name, `/ 가격: ${cpu.price}원 / PassMark: ${cpu.passmarkscore}`);
+    };
+
+    const priceEntry = { date: today, price: cpu.price || 0 };
+
+    if (existing) {
+      // 동일 날짜 priceHistory 항목이 이미 있는지 확인
+      const alreadyLogged = existing.priceHistory?.some((h) => h.date === today);
+
+      await collection.updateOne(
+        { _id: existing._id },
+        {
+          $set: updateFields,
+          ...(alreadyLogged
+            ? {}
+            : { $push: { priceHistory: priceEntry } }),
+        }
+      );
+
+      console.log("🔁 업데이트됨:", cpu.name);
+    } else {
+      await collection.insertOne({
+        name: cpu.name,
+        ...updateFields,
+        priceHistory: [priceEntry],
+      });
+
+      console.log("🆕 새로 삽입됨:", cpu.name);
+    }
   }
 }
+
 
 router.post("/sync-cpus", (req, res) => {
   res.json({ message: "✅ CPU 동기화 시작됨 (백그라운드에서 처리 중)" });
