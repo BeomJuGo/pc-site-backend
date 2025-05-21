@@ -39,7 +39,7 @@ ${formatted}
         { role: "user", content: prompt },
       ],
       temperature: 0.7,
-      max_tokens: 1000,
+      max_tokens: 8000,
     }),
   });
 
