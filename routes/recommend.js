@@ -49,24 +49,25 @@ ${formatted}
 
     const data = await res.json();
     const raw = data.choices?.[0]?.message?.content;
-    console.log("🧠 GPT 응답 원문:\n", raw);
+    console.log("\uD83E\uDDE0 GPT 응답 원문:\n", raw);
 
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}") + 1;
     const jsonText = raw.slice(start, end);
     return JSON.parse(jsonText);
   } catch (err) {
-    console.error("❌ GPT 요청 또는 응답 파싱 실패:", err);
+    console.error("\u274C GPT 요청 또는 응답 파싱 실패:", err);
     return null;
   }
 };
 
 // ✅ 추천 라우트
 router.post("/", async (req, res) => {
-  console.log("🔔 [추천 API 호출됨] POST /api/recommend");
+  console.log("\uD83D\uDD14 [추천 API 호출됨] POST /api/recommend");
 
   const { budget } = req.body;
   if (!budget) {
+    console.warn("\u26A0\uFE0F 예산이 입력되지 않음");
     return res.status(400).json({ error: "예산이 필요합니다." });
   }
 
@@ -74,11 +75,14 @@ router.post("/", async (req, res) => {
     const db = await getDB();
     const cpuCol = db.collection("parts");
     const all = await cpuCol.find({ category: "cpu" }).toArray();
-    console.log(`📺 DB에서 불러온 CPU 수: ${all.length}`);
+    console.log(`\uD83D\uDCFA DB에서 불러온 CPU 수: ${all.length}`);
+
+    // 디버깅용 가격 목록 일부 출력
+    console.log("🧪 샘플 가격 목록:", all.slice(0, 10).map(c => [c.name, c.price, typeof c.price]));
 
     const min = budget * 0.95;
     const max = budget * 1.05;
-    const filtered = all.filter(c => c.price >= min && c.price <= max);
+    const filtered = all.filter(c => typeof c.price === 'number' && c.price >= min && c.price <= max);
     console.log(`🔎 예산 필터링 결과 (${min} ~ ${max}): ${filtered.length}개`);
 
     if (filtered.length === 0) {
