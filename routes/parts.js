@@ -1,5 +1,6 @@
 import express from "express";
 import { getDB } from "../db.js";
+import { ObjectId } from "mongodb";
 
 const router = express.Router();
 
@@ -23,7 +24,6 @@ router.get("/cpu/:name", async (req, res) => {
   try {
     const rawName = decodeURIComponent(req.params.name);
     const db = getDB();
-
     const regex = new RegExp(`^${clean(rawName)}`, "i"); // 정규식 기반 검색
 
     const cpu = await db.collection("parts").findOne({
@@ -36,6 +36,20 @@ router.get("/cpu/:name", async (req, res) => {
   } catch (err) {
     console.error("❌ CPU 상세 조회 실패:", err);
     res.status(500).json({ error: "CPU 상세 조회 실패" });
+  }
+});
+
+// ✅ _id 기반 단일 부품 상세 조회 (카드 클릭 시 연결)
+router.get("/detail/:id", async (req, res) => {
+  try {
+    const db = getDB();
+    const part = await db.collection("parts").findOne({ _id: new ObjectId(req.params.id) });
+
+    if (!part) return res.status(404).json({ error: "부품을 찾을 수 없습니다." });
+    res.json(part);
+  } catch (err) {
+    console.error("❌ _id 기반 부품 조회 실패:", err);
+    res.status(500).json({ error: "부품 조회 실패" });
   }
 });
 
