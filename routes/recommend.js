@@ -80,7 +80,10 @@ router.post("/", async (req, res) => {
         .sort({ "benchmarkScore.passmarkscore": -1 })
         .limit(15)
         .toArray();
-      partMap[category] = parts.map(p => ({ name: p.name, price: p.price }));
+      partMap[category] = parts.length
+  ? parts.map(p => ({ name: p.name, price: p.price }))
+  : [{ name: "정보 없음", price: 0 }];
+
     }
 
     const gptResult = await askGPTForFullBuild(
