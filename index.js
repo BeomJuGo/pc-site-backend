@@ -1,13 +1,13 @@
-const express = require("express");
-const cors = require("cors");
-const fetch = require("node-fetch");
-const dotenv = require("dotenv");
-const axios = require("axios");
-const cheerio = require("cheerio");
-const { connectDB, getDB } = require("./db.js");
-const syncCPUsRouter = require("./routes/syncCPUs.js");
-const partsRouter = require("./routes/parts.js");
-const recommendRouter = require("./routes/recommend.js");
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
+import axios from "axios";
+import * as cheerio from "cheerio";
+import { connectDB, getDB } from "./db.js";
+import syncCPUsRouter from "./routes/syncCPUs.js";
+import partsRouter from "./routes/parts.js";
+import recommendRouter from "./routes/recommend.js";
 
 dotenv.config();
 const app = express();
@@ -29,7 +29,7 @@ const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
 app.get("/api/naver-price", async (req, res) => {
   const query = encodeURIComponent(req.query.query);
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${query}`;
+  const url = https://openapi.naver.com/v1/search/shop.json?query=${query};
 
   try {
     const response = await fetch(url, {
@@ -51,15 +51,15 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 app.post("/api/gpt-info", async (req, res) => {
   const { partName } = req.body;
 
-  const reviewPrompt = `${partName}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`;
-  const specPrompt = `${partName}의 주요 사양을 요약해서 알려줘. 코어 수, 스레드 수, L2/L3 캐시, 베이스 클럭, 부스트 클럭 위주로 간단하게 정리해줘. 예시: 코어: 6, 스레드: 12, ...`;
+  const reviewPrompt = ${partName}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.;
+  const specPrompt = ${partName}의 주요 사양을 요약해서 알려줘. 코어 수, 스레드 수, L2/L3 캐시, 베이스 클럭, 부스트 클럭 위주로 간단하게 정리해줘. 예시: 코어: 6, 스레드: 12, ...;
 
   try {
     const [reviewRes, specRes] = await Promise.all([
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          Authorization: Bearer ${OPENAI_API_KEY},
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -72,7 +72,7 @@ app.post("/api/gpt-info", async (req, res) => {
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          Authorization: Bearer ${OPENAI_API_KEY},
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -97,15 +97,10 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
-// ✅ Render 헬스체크 대응 (선택사항)
-app.get("/", (req, res) => {
-  res.send("✅ 서버 정상 작동 중");
-});
-
 // ✅ DB 연결 후 서버 시작
 connectDB().then(() => {
   const PORT = process.env.PORT || 10000;
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
-  });
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(✅ 서버 실행 중: http://localhost:${PORT});
+});
 });
