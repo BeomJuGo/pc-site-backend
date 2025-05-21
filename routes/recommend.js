@@ -7,22 +7,23 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // ✅ GPT에게 CPU 모델명만 전달해 추천 받기
 const askGPTWithModelNamesOnly = async (cpuNames) => {
+  const formatted = cpuNames.map((name, i) => `${i + 1}. ${name}`).join("\n");
+
   const prompt = `
-다음은 판매 중인 CPU 모델명 리스트입니다:
+아래는 판매 중인 CPU 모델명 리스트입니다. 이 리스트 중에서만 추천해 주세요:
 
-${cpuNames.map((name, i) => `${i + 1}. ${name}`).join("\n")}
+${formatted}
 
-이 중에서 각각 3개씩 추천해주세요:
+각 카테고리에 대해 3개씩 추천해주세요:
+- 가성비
+- 게이밍
+- 전문가용 (편집/3D 작업)
 
-1. 가성비 좋은 CPU
-2. 게이밍에 적합한 CPU
-3. 전문가용 작업(편집, CAD, 3D 렌더링)에 적합한 CPU
-
-아래 JSON 형식으로 답해주세요:
+형식은 아래처럼 JSON으로 작성해주세요:
 {
-  "가성비": [{ "name": "...", "reason": "..." }, ...],
-  "게이밍": [{ "name": "...", "reason": "..." }, ...],
-  "전문가용": [{ "name": "...", "reason": "..." }, ...]
+  "가성비": [{ "name": "모델명", "reason": "이유" }],
+  "게이밍": [...],
+  "전문가용": [...]
 }`;
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -59,13 +60,23 @@ router.post("/", async (req, res) => {
 
   try {
     const db = await getDB();
-    const cpus = await db
-      .collection("cpus")
-      .find({}, { projection: { _id: 0, name: 1 } })
-      .limit(40)
-      .toArray();
+    const all = await db.collection("cpus").find({}).toArray();
 
-    const cpuNames = cpus.map((c) => c.name);
+    const byPassmark = [...all]
+      .filter(c => c.benchmarkScore?.passmarkscore)
+      .sort((a, b) => b.benchmarkScore.passmarkscore - a.benchmarkScore.passmarkscore)
+      .slice(0, 15);
+
+    const byValue = [...all]
+      .filter(c => c.benchmarkScore?.passmarkscore && c.price)
+      .map(c => ({
+        ...c,
+        valueScore: c.benchmarkScore.passmarkscore / c.price
+      }))
+      .sort((a, b) => b.valueScore - a.valueScore)
+      .slice(0, 15);
+
+    const cpuNames = [...new Set([...byPassmark, ...byValue].map(c => c.name))];
     const gptResult = await askGPTWithModelNamesOnly(cpuNames);
 
     if (!gptResult) {
