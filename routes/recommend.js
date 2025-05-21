@@ -34,12 +34,8 @@ const getGPTRecommendedCPUs = async (purpose) => {
   return gptText
     .split("\n")
     .map((line) => line.replace(/^\d+\.\s*/, "").trim())
-    .filter(
-      (name) =>
-        name.length > 0 && name.match(/(Intel|AMD).*?\d{4}/i)
-    ); // ✅ ← 닫는 괄호 추가
+    .filter((name) => name.length > 0);
 };
-
 
 // ✅ /api/recommend POST 라우트
 router.get("/test", (req, res) => {
@@ -99,4 +95,4 @@ router.post("/", async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
