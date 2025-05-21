@@ -8,12 +8,9 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // ✅ GPT로부터 목적에 따라 CPU 모델명만 추출
 const getGPTRecommendedCPUs = async (purpose) => {
   const promptMap = {
-    가성비:
-      "2025년 기준으로 가성비 좋은 CPU 모델명 5개를 쉼표로 구분해서 알려줘 부가적인 설명은 제외하고 CPU 모델명만 말해 줘. AMD와 Intel 포함. 예: AMD Ryzen 5 5600X, Intel Core i5-12400, ...",
-    게이밍:
-      "2025년 기준으로 게이머들에게 인기 있는 게임용 CPU 모델명 5개를 쉼표로 구분해서 알려줘부가적인 설명은 제외하고 CPU 모델명만 말해 줘. AMD와 Intel 포함. 예: AMD Ryzen 7 5800X, Intel Core i9-12900K, ...",
-    전문가용:
-      "2025년 기준으로 영상편집, 3D 모델링, CAD 등 전문가 작업에 적합한 고성능 CPU 모델명 5개를 쉼표로 구분해서 알려 주는데 부가적인 설명은 제외하고 CPU 모델명만 말해 줘. AMD와 Intel 포함. 예: AMD Ryzen 9 7950X, Intel Core i9-13900K, ...",
+    가성비: "2025년 기준으로 가성비 좋은 CPU 모델명 5개만 알려줘. AMD와 Intel 포함. 문장 없이 모델명만 나열하고, 줄바꿈 또는 쉼표로 구분해줘.",
+    게이밍: "2025년 기준 게이밍에 적합한 CPU 모델명 5개만 알려줘. 문장 없이 AMD/Intel 모델명만 쉼표 또는 줄바꿈으로 구분해서 줘.",
+    전문가용: "2025년 기준 전문가용(영상편집/3D 작업) CPU 모델명 5개만 문장 없이 나열해줘. 쉼표 또는 줄바꿈으로 구분.",
   };
 
   try {
@@ -35,16 +32,20 @@ const getGPTRecommendedCPUs = async (purpose) => {
     const data = await res.json();
     const gptText = data.choices?.[0]?.message?.content || "";
 
-    // ✅ 쉼표 구분된 모델명 필터링
+    // 모델명만 추출 (AMD 또는 Intel 포함된 문장에서만)
     return gptText
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => /(Intel|AMD)/i.test(s) && /\d{4}/.test(s)); // CPU 이름으로 보이는 것만
+      .split(/[\n,]/)
+      .map((line) => {
+        const match = line.match(/(AMD|Intel)[^,\n]*/i);
+        return match ? match[0].trim() : "";
+      })
+      .filter((s) => s.length > 0 && /\d{4}/.test(s));
   } catch (e) {
     console.error("❌ GPT 요청 실패:", e);
     return [];
   }
 };
+
 
 // ✅ 헬스 체크용 테스트 엔드포인트
 router.get("/test", (req, res) => {
