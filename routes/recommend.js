@@ -65,8 +65,14 @@ router.post("/", async (req, res) => {
 
   try {
     const db = await getDB();
-    const all = await db.collection("cpus").find({}).toArray();
+    const cpuCol = db.collection("parts");
+    const all = await cpuCol.find({ category: "cpu" }).toArray();
     console.log(`📦 DB에서 불러온 CPU 수: ${all.length}`);
+
+    if (all.length === 0) {
+      console.warn("⚠️ CPU 목록이 비어 있습니다. 먼저 /api/admin/sync-cpus로 데이터를 채워주세요.");
+      return res.status(500).json({ error: "DB에 CPU 데이터가 없습니다." });
+    }
 
     const byPassmark = [...all]
       .filter(c => c.benchmarkScore?.passmarkscore)
