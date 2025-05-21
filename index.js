@@ -101,38 +101,6 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
-// ✅ Geekbench 크롤링 API
-app.get("/api/cpu-benchmark", async (req, res) => {
-  const cpuName = req.query.cpu;
-  if (!cpuName) return res.status(400).json({ error: "CPU 이름이 필요합니다." });
-
-  try {
-    const url = "https://browser.geekbench.com/processor-benchmarks";
-    const { data: html } = await axios.get(url);
-    const $ = cheerio.load(html);
-
-    const scores = [];
-    $("table tbody tr").each((_, row) => {
-      const name = $(row).find("td").eq(0).text().trim();
-      const score = parseInt($(row).find("td").eq(1).text().trim().replace(/,/g, ""), 10);
-      if (name.toLowerCase().includes(cpuName.toLowerCase()) && !isNaN(score)) {
-        scores.push(score);
-      }
-    });
-
-    if (scores.length === 0) {
-      return res.status(404).json({ error: "해당 CPU 점수를 찾을 수 없습니다." });
-    }
-
-    const singleCore = Math.min(...scores).toString();
-    const multiCore = Math.max(...scores).toString();
-
-    res.json({ cpu: cpuName, benchmarkScore: { singleCore, multiCore } });
-  } catch (error) {
-    res.status(500).json({ error: "벤치마크 크롤링 실패" });
-  }
-});
-
 // ✅ DB 연결 후 서버 시작
 connectDB().then(() => {
   const PORT = process.env.PORT || 5000;
