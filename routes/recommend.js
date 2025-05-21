@@ -5,6 +5,7 @@ import fetch from "node-fetch";
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// ✅ GPT에게 CPU 모델명만 넘겨서 용도별 추천 받기
 const askGPTWithModelNamesOnly = async (cpuNames) => {
   const formatted = cpuNames.map((name, i) => `${i + 1}. ${name}`).join("\n");
 
@@ -48,29 +49,30 @@ ${formatted}
 
     const data = await res.json();
     const raw = data.choices?.[0]?.message?.content;
-    console.log("🧠 GPT 응답 원문:\n", raw);
+    console.log("\uD83E\uDDE0 GPT 응답 원문:\n", raw);
 
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}") + 1;
     const jsonText = raw.slice(start, end);
     return JSON.parse(jsonText);
   } catch (err) {
-    console.error("❌ GPT 요청 또는 응답 파싱 실패:", err);
+    console.error("\u274C GPT 요청 또는 응답 파싱 실패:", err);
     return null;
   }
 };
 
+// ✅ 추천 라우트
 router.post("/", async (req, res) => {
-  console.log("🔔 [추천 API 호출됨] POST /api/recommend");
+  console.log("\uD83D\uDD14 [추천 API 호출됨] POST /api/recommend");
 
   try {
     const db = await getDB();
     const cpuCol = db.collection("parts");
     const all = await cpuCol.find({ category: "cpu" }).toArray();
-    console.log(`📦 DB에서 불러온 CPU 수: ${all.length}`);
+    console.log(`\uD83D\uDCFA DB에서 불러온 CPU 수: ${all.length}`);
 
     if (all.length === 0) {
-      console.warn("⚠️ CPU 목록이 비어 있습니다. 먼저 /api/admin/sync-cpus로 데이터를 채워주세요.");
+      console.warn("\u26A0\uFE0F CPU 목록이 비어 있습니다. 먼저 /api/admin/sync-cpus로 데이터를 채워주세요.");
       return res.status(500).json({ error: "DB에 CPU 데이터가 없습니다." });
     }
 
@@ -78,32 +80,32 @@ router.post("/", async (req, res) => {
       .filter(c => c.benchmarkScore?.passmarkscore)
       .sort((a, b) => b.benchmarkScore.passmarkscore - a.benchmarkScore.passmarkscore)
       .slice(0, 15);
-    console.log("🏆 PassMark 상위 15개:", byPassmark.map(c => c.name));
+    console.log("\uD83C\uDFC6 PassMark 상위 15개:", byPassmark.map(c => c.name));
 
     const byValue = [...all]
       .filter(c => c.benchmarkScore?.passmarkscore && c.price)
       .map(c => ({
         ...c,
-        valueScore: c.benchmarkScore.passmarkscore / c.price
+        valueScore: c.benchmarkScore.passmarkscore / c.price,
       }))
       .sort((a, b) => b.valueScore - a.valueScore)
       .slice(0, 15);
-    console.log("💰 가성비 상위 15개:", byValue.map(c => c.name));
+    console.log("\uD83D\uDCB0 가성비 상위 15개:", byValue.map(c => c.name));
 
     const cpuNames = [...new Set([...byPassmark, ...byValue].map(c => c.name))];
-    console.log("📨 GPT에 전달할 CPU 모델명:", cpuNames);
+    console.log("\uD83D\uDCEC GPT에 전달할 CPU 모델명:", cpuNames);
 
     const gptResult = await askGPTWithModelNamesOnly(cpuNames);
 
     if (!gptResult) {
-      console.warn("⚠️ GPT 결과 없음 또는 파싱 실패");
+      console.warn("\u26A0\uFE0F GPT 결과 없음 또는 파싱 실패");
       return res.status(500).json({ error: "GPT 응답 파싱 실패" });
     }
 
-    console.log("✅ GPT 추천 결과:", gptResult);
+    console.log("\u2705 GPT 추천 결과:", gptResult);
     return res.json({ recommended: gptResult });
   } catch (err) {
-    console.error("❌ 전체 추천 처리 실패:", err);
+    console.error("\u274C 전체 추천 처리 실패:", err);
     return res.status(500).json({ error: "서버 오류" });
   }
 });
