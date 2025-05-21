@@ -37,8 +37,9 @@ const getGPTRecommendedCPUs = async (purpose) => {
     .filter((name) => name.length > 0);
 };
 
-// /recommend POST 라우트
+// ✅ /api/recommend POST 라우트
 router.post("/", async (req, res) => {
+  console.log("🔔 [추천 API 호출됨] POST /api/recommend");
   const { budget, purpose } = req.body;
 
   if (!budget || !purpose) {
@@ -51,7 +52,7 @@ router.post("/", async (req, res) => {
   try {
     // GPT로 목적에 맞는 CPU 모델명 받기
     const gptNames = await getGPTRecommendedCPUs(purpose);
-    console.log("[GPT 추천 CPU 목록]", gptNames);
+    console.log("💬 [GPT 추천 CPU 목록]", gptNames);
 
     // MongoDB에서 해당 이름이 포함된 CPU만 필터링
     const matchedCPUs = await cpuCol
@@ -63,6 +64,7 @@ router.post("/", async (req, res) => {
       .toArray();
 
     if (matchedCPUs.length === 0) {
+      console.warn("⚠️ DB에서 일치하는 CPU 없음");
       return res.status(404).json({ message: "DB에서 일치하는 CPU를 찾을 수 없습니다." });
     }
 
@@ -75,6 +77,8 @@ router.post("/", async (req, res) => {
       .filter((cpu) => cpu.price >= min && cpu.price <= max)
       .slice(0, 3);
 
+    console.log("✅ 추천 완료:", recommended.map((c) => c.name));
+
     return res.json({
       purpose,
       budget,
@@ -82,7 +86,7 @@ router.post("/", async (req, res) => {
       recommendedCPUs: recommended,
     });
   } catch (err) {
-    console.error("추천 실패:", err);
+    console.error("❌ 추천 실패:", err);
     res.status(500).json({ error: "GPT 추천 또는 DB 처리 중 오류 발생" });
   }
 });
