@@ -38,6 +38,10 @@ const getGPTRecommendedCPUs = async (purpose) => {
 };
 
 // ✅ /api/recommend POST 라우트
+router.get("/test", (req, res) => {
+  res.send("✅ 추천 API 정상 연결됨");
+});
+
 router.post("/", async (req, res) => {
   console.log("🔔 [추천 API 호출됨] POST /api/recommend");
   const { budget, purpose } = req.body;
