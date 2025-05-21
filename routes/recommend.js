@@ -9,11 +9,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const getGPTRecommendedCPUs = async (purpose) => {
   const promptMap = {
     가성비:
-      "2025년 기준으로 가성비 좋은 CPU 모델명 5개를 쉼표로 구분해서 알려줘. AMD와 Intel 포함. 예: AMD Ryzen 5 5600X, Intel Core i5-12400, ...",
+      "2025년 기준으로 가성비 좋은 CPU 모델명 5개를 쉼표로 구분해서 알려줘 부가적인 설명은 제외하고 CPU 모델명만 말해 줘. AMD와 Intel 포함. 예: AMD Ryzen 5 5600X, Intel Core i5-12400, ...",
     게이밍:
-      "2025년 기준으로 게이머들에게 인기 있는 게임용 CPU 모델명 5개를 쉼표로 구분해서 알려줘. AMD와 Intel 포함. 예: AMD Ryzen 7 5800X, Intel Core i9-12900K, ...",
+      "2025년 기준으로 게이머들에게 인기 있는 게임용 CPU 모델명 5개를 쉼표로 구분해서 알려줘부가적인 설명은 제외하고 CPU 모델명만 말해 줘. AMD와 Intel 포함. 예: AMD Ryzen 7 5800X, Intel Core i9-12900K, ...",
     전문가용:
-      "2025년 기준으로 영상편집, 3D 모델링, CAD 등 전문가 작업에 적합한 고성능 CPU 모델명 5개를 쉼표로 구분해서 알려줘. AMD와 Intel 포함. 예: AMD Ryzen 9 7950X, Intel Core i9-13900K, ...",
+      "2025년 기준으로 영상편집, 3D 모델링, CAD 등 전문가 작업에 적합한 고성능 CPU 모델명 5개를 쉼표로 구분해서 알려 주는데 부가적인 설명은 제외하고 CPU 모델명만 말해 줘. AMD와 Intel 포함. 예: AMD Ryzen 9 7950X, Intel Core i9-13900K, ...",
   };
 
   try {
