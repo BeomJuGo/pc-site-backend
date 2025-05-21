@@ -1,3 +1,4 @@
+// ✅ routes/recommend.js
 import express from "express";
 import { getDB } from "../db.js";
 import fetch from "node-fetch";
@@ -12,7 +13,7 @@ const askGPTForFullBuild = async (cpuList, gpuList, memoryList, boardList, budge
       .map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`)
       .join("\n");
 
-  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 아래 부품 후보 중에서 예산 내에서 최고의 PC를 구성해주세요. 예산은 절대 초과하지 말고, 각 부품군(CPU, GPU, 메모리, 메인보드)마다 1개씩 선택해주세요.\n\n${formatPartList("CPU", cpuList)}\n\n${formatPartList("GPU", gpuList)}\n\n${formatPartList("메모리", memoryList)}\n\n${formatPartList("메인보드", boardList)}\n\n아래 형식으로만 JSON으로 답변해주세요. 설명문은 절대 포함하지 마세요.\n{\n  "cpu": { "name": "", "reason": "" },\n  "gpu": { "name": "", "reason": "" },\n  "memory": { "name": "", "reason": "" },\n  "mainboard": { "name": "", "reason": "" },\n  "totalPrice": 숫자\n}`;
+  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 아래 부품 후보 중에서 예산 내에서 최고의 PC를 구성해주세요. 예산은 절대 초과하지 말고, 각 부품군(CPU, GPU, 메모리, 메인보드)마다 1개씩 선택해주세요.\n\n${formatPartList("CPU", cpuList)}\n\n${formatPartList("GPU", gpuList)}\n\n${formatPartList("메모리", memoryList)}\n\n${formatPartList("메인보드", boardList)}\n\n아래 형식으로만 JSON으로 답변해주세요. 설명문은 절대 포함하지 마세요.\n{\n  \"cpu\": { \"name\": \"\", \"reason\": \"\" },\n  \"gpu\": { \"name\": \"\", \"reason\": \"\" },\n  \"memory\": { \"name\": \"\", \"reason\": \"\" },\n  \"mainboard\": { \"name\": \"\", \"reason\": \"\" },\n  \"totalPrice\": 숫자\n}`;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -53,7 +54,6 @@ router.post("/", async (req, res) => {
   try {
     const db = await getDB();
     const partsCol = db.collection("parts");
-
     const categories = ["cpu", "gpu", "memory", "mainboard"];
     const partMap = {};
 
@@ -63,20 +63,20 @@ router.post("/", async (req, res) => {
         .sort({ "benchmarkScore.passmarkscore": -1 })
         .limit(15)
         .toArray();
-      partMap[category] = parts.map(p => ({ name: p.name, price: p.price || 0 }));
+      partMap[category] = parts.length
+        ? parts.map((p) => ({ name: p.name, price: p.price }))
+        : [{ name: "정보 없음", price: 0 }];
     }
 
     const gptResult = await askGPTForFullBuild(
-      partMap.cpu || [],
-      partMap.gpu || [],
-      partMap.memory || [],
-      partMap.mainboard || [],
+      partMap.cpu,
+      partMap.gpu,
+      partMap.memory,
+      partMap.mainboard,
       budget
     );
 
-    if (!gptResult) {
-      return res.status(500).json({ error: "GPT 응답 파싱 실패" });
-    }
+    if (!gptResult) return res.status(500).json({ error: "GPT 응답 파싱 실패" });
 
     console.log("✅ GPT 추천 결과:", gptResult);
     return res.json({ recommended: gptResult });
