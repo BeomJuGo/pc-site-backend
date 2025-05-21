@@ -13,7 +13,24 @@ const askGPTForFullBuild = async (cpuList, gpuList, memoryList, boardList, budge
       .map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`)
       .join("\n");
 
-  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 아래 부품 후보 중에서 예산 내에서 최고의 PC를 구성해주세요. 예산은 절대 초과하지 말고, 각 부품군(CPU, GPU, 메모리, 메인보드)마다 1개씩 선택해주세요.\n\n${formatPartList("CPU", cpuList)}\n\n${formatPartList("GPU", gpuList)}\n\n${formatPartList("메모리", memoryList)}\n\n${formatPartList("메인보드", boardList)}\n\n아래 형식으로만 JSON으로 답변해주세요. 설명문은 절대 포함하지 마세요.\n{\n  \"cpu\": { \"name\": \"\", \"reason\": \"\" },\n  \"gpu\": { \"name\": \"\", \"reason\": \"\" },\n  \"memory\": { \"name\": \"\", \"reason\": \"\" },\n  \"mainboard\": { \"name\": \"\", \"reason\": \"\" },\n  \"totalPrice\": 숫자\n}`;
+  const prompt = `
+사용자의 총 예산은 ${budget.toLocaleString()}원입니다.
+아래 부품 후보 중에서 예산 내에서 최고의 PC를 구성해주세요.
+예산은 절대 초과하지 말고, CPU, GPU, 메모리, 메인보드 각각 1개씩 선택해 주세요.
+
+각 부품을 선택할 때는 성능, 가격, 가성비, 최신 세대 여부, 호환성 등을 고려하세요.
+선택 이유(reason)는 다음과 같이 구체적으로 작성해주세요:
+예시: "12코어 24스레드의 고성능을 제공하면서도 경쟁 제품 대비 저렴한 편이며, 영상 편집과 게임 모두에서 우수한 성능을 발휘합니다."
+
+아래 JSON 형식으로만 답변해주세요. 설명문은 절대 포함하지 마세요.
+{
+  "cpu": { "name": "", "reason": "" },
+  "gpu": { "name": "", "reason": "" },
+  "memory": { "name": "", "reason": "" },
+  "mainboard": { "name": "", "reason": "" },
+  "totalPrice": 숫자
+}`;
+
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
