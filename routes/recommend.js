@@ -5,12 +5,12 @@ import fetch from "node-fetch";
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ GPT에게 모델명만 전달해 추천 요청
-const askGPTWithModelNames = async (cpuNames) => {
+// ✅ GPT에게 CPU 모델명만 전달해 추천 받기
+const askGPTWithModelNamesOnly = async (cpuNames) => {
   const prompt = `
 다음은 판매 중인 CPU 모델명 리스트입니다:
 
-${cpuNames.join("\n")}
+${cpuNames.map((name, i) => `${i + 1}. ${name}`).join("\n")}
 
 이 중에서 각각 3개씩 추천해주세요:
 
@@ -66,7 +66,7 @@ router.post("/", async (req, res) => {
       .toArray();
 
     const cpuNames = cpus.map((c) => c.name);
-    const gptResult = await askGPTWithModelNames(cpuNames);
+    const gptResult = await askGPTWithModelNamesOnly(cpuNames);
 
     if (!gptResult) {
       return res.status(500).json({ error: "GPT 응답 파싱 실패" });
