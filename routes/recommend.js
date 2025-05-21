@@ -38,7 +38,7 @@ const getGPTRecommendedCPUs = async (purpose) => {
 };
 
 // /recommend POST 라우트
-router.post("/recommend", async (req, res) => {
+router.post("/", async (req, res) => {
   const { budget, purpose } = req.body;
 
   if (!budget || !purpose) {
