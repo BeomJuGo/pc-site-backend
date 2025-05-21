@@ -49,40 +49,49 @@ ${formatted}
 
     const data = await res.json();
     const raw = data.choices?.[0]?.message?.content;
-    console.log("\uD83E\uDDE0 GPT 응답 원문:\n", raw);
+    console.log("🧠 GPT 응답 원문:\n", raw);
 
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}") + 1;
     const jsonText = raw.slice(start, end);
     return JSON.parse(jsonText);
   } catch (err) {
-    console.error("\u274C GPT 요청 또는 응답 파싱 실패:", err);
+    console.error("❌ GPT 요청 또는 응답 파싱 실패:", err);
     return null;
   }
 };
 
 // ✅ 추천 라우트
 router.post("/", async (req, res) => {
-  console.log("\uD83D\uDD14 [추천 API 호출됨] POST /api/recommend");
+  console.log("🔔 [추천 API 호출됨] POST /api/recommend");
+
+  const { budget } = req.body;
+  if (!budget) {
+    return res.status(400).json({ error: "예산이 필요합니다." });
+  }
 
   try {
     const db = await getDB();
     const cpuCol = db.collection("parts");
     const all = await cpuCol.find({ category: "cpu" }).toArray();
-    console.log(`\uD83D\uDCFA DB에서 불러온 CPU 수: ${all.length}`);
+    console.log(`📺 DB에서 불러온 CPU 수: ${all.length}`);
 
-    if (all.length === 0) {
-      console.warn("\u26A0\uFE0F CPU 목록이 비어 있습니다. 먼저 /api/admin/sync-cpus로 데이터를 채워주세요.");
-      return res.status(500).json({ error: "DB에 CPU 데이터가 없습니다." });
+    const min = budget * 0.95;
+    const max = budget * 1.05;
+    const filtered = all.filter(c => c.price >= min && c.price <= max);
+    console.log(`🔎 예산 필터링 결과 (${min} ~ ${max}): ${filtered.length}개`);
+
+    if (filtered.length === 0) {
+      return res.status(404).json({ error: "예산 범위에 맞는 CPU가 없습니다." });
     }
 
-    const byPassmark = [...all]
+    const byPassmark = [...filtered]
       .filter(c => c.benchmarkScore?.passmarkscore)
       .sort((a, b) => b.benchmarkScore.passmarkscore - a.benchmarkScore.passmarkscore)
       .slice(0, 15);
-    console.log("\uD83C\uDFC6 PassMark 상위 15개:", byPassmark.map(c => c.name));
+    console.log("🏆 PassMark 상위 15개:", byPassmark.map(c => c.name));
 
-    const byValue = [...all]
+    const byValue = [...filtered]
       .filter(c => c.benchmarkScore?.passmarkscore && c.price)
       .map(c => ({
         ...c,
@@ -90,22 +99,22 @@ router.post("/", async (req, res) => {
       }))
       .sort((a, b) => b.valueScore - a.valueScore)
       .slice(0, 15);
-    console.log("\uD83D\uDCB0 가성비 상위 15개:", byValue.map(c => c.name));
+    console.log("💰 가성비 상위 15개:", byValue.map(c => c.name));
 
     const cpuNames = [...new Set([...byPassmark, ...byValue].map(c => c.name))];
-    console.log("\uD83D\uDCEC GPT에 전달할 CPU 모델명:", cpuNames);
+    console.log("📨 GPT에 전달할 CPU 모델명:", cpuNames);
 
     const gptResult = await askGPTWithModelNamesOnly(cpuNames);
 
     if (!gptResult) {
-      console.warn("\u26A0\uFE0F GPT 결과 없음 또는 파싱 실패");
+      console.warn("⚠️ GPT 결과 없음 또는 파싱 실패");
       return res.status(500).json({ error: "GPT 응답 파싱 실패" });
     }
 
-    console.log("\u2705 GPT 추천 결과:", gptResult);
+    console.log("✅ GPT 추천 결과:", gptResult);
     return res.json({ recommended: gptResult });
   } catch (err) {
-    console.error("\u274C 전체 추천 처리 실패:", err);
+    console.error("❌ 전체 추천 처리 실패:", err);
     return res.status(500).json({ error: "서버 오류" });
   }
 });
