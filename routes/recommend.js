@@ -31,11 +31,13 @@ const getGPTRecommendedCPUs = async (purpose) => {
   const data = await res.json();
   const gptText = data.choices[0].message.content;
 
-  return gptText
-    .split("\n")
-    .map((line) => line.replace(/^\d+\.\s*/, "").trim())
-    .filter((name) => name.length > 0);
-};
+return gptText
+  .split("\n")
+  .map((line) => line.replace(/^\d+\.\s*/, "").trim())
+  .filter((name) =>
+    name.length > 0 &&
+    name.match(/(Intel|AMD).*?\d{4}/i) // ✅ CPU 이름으로 보이는 줄만 통과
+  );
 
 // ✅ /api/recommend POST 라우트
 router.get("/test", (req, res) => {
