@@ -8,15 +8,15 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // GPT에 견적 요청
 const askGPTForFullBuild = async (cpuList, gpuList, memoryList, boardList, budget) => {
   const formatPartList = (title, list) =>
-    `${title} 후보 목록:\n` +
+    `${title} 호보 목록:\n` +
     list.map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`).join("\n");
 
-const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다.
-예산의 최대 5% 초과까지만 허용됩니다.
-각 부품군(CPU, GPU, 메모리, 메인보드)에서 후보 1개씩 추천해주세요.
+  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 
+예산의 최대 5%추가까지만 허용됩니다.
+각 부품군(CPU, GPU, 메모리, 메인보드)에서 호보 1개씩 추천해주세요.
 성능, 가성비, 세대, 호환성을 종합적으로 고려하고,
 선택 이유(reason)는 다음과 같이 구체적으로 작성해주세요
-예시: "12코어 24스레드의 고성능을 제공하면서도 경쟁 제품 대비 저렴한 편이며, 영상 편집과 게임 모두에서 우수한 성능을 발휘합니다."
+예시: "12코어 24스레드의 고성능을 제공하며서도 경쟁 제품 대비 저렴한 평이며, 영상 폭지와 게임 모두에서 우수한 성능을 발휘합니다."
 아래 형식으로만 JSON으로 답변해주세요. 설명문은 절대 포함하지 마세요.
 
 ${formatPartList("CPU", cpuList)}
@@ -42,7 +42,7 @@ ${formatPartList("메인보드", boardList)}
       body: JSON.stringify({
         model: "gpt-4",
         messages: [
-          { role: "system", content: "너는 PC 견적 추천 전문가야." },
+          { role: "system", content: "너는 PC 가이드 추천 전문가야." },
           { role: "user", content: prompt },
         ],
         temperature: 0.7,
