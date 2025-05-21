@@ -1,4 +1,3 @@
-// ✅ routes/recommend.js
 import express from "express";
 import { getDB } from "../db.js";
 import fetch from "node-fetch";
@@ -6,26 +5,30 @@ import fetch from "node-fetch";
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// GPT에 견적 요청
 const askGPTForFullBuild = async (cpuList, gpuList, memoryList, boardList, budget) => {
   const formatPartList = (title, list) =>
     `${title} 후보 목록:\n` +
-    list
-      .map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`)
-      .join("\n");
+    list.map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`).join("\n");
 
-  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 
-  아래 부품 후보 중에서 예산 내에서 최고의 PC를 구성해주세요. 예산의 최대5%까진 추천가능합니다.
-  각 부품군(CPU, GPU, 메모리, 메인보드)마다 1개씩 선택해주세요.
-  각 부품을 선택할 때는 성능, 가격, 가성비, 최신 세대 여부, 호환성 등을 고려하세요.
-  선택 이유(reason)는 다음과 같이 구체적으로 작성해주세요:
-  예시: "12코어 24스레드의 고성능을 제공하면서도 경쟁 제품 대비 저렴한 편이며, 영상 편집과 게임 모두에서 우수한 성능을 발휘합니다."
-  \n\n${formatPartList("CPU", cpuList)}\n\n${formatPartList("GPU", gpuList)}\n\n${formatPartList("메모리", memoryList)}\n\n${formatPartList("메인보드", boardList)}\n\n아래 형식으로만 JSON으로 답변해주세요. 
-  설명문은 절대 포함하지 마세요.
-  \n{\n  \"cpu\": { \"name\": \"\", \"reason\": \"\" },
-  \n  \"gpu\": { \"name\": \"\", \"reason\": \"\" },
-  \n  \"memory\": { \"name\": \"\", \"reason\": \"\" },
-  \n  \"mainboard\": { \"name\": \"\", \"reason\": \"\" },
-  \n  \"totalPrice\": 숫자\n}`;
+  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다.
+예산의 최대 5% 초과까지만 허용됩니다.
+각 부품군(CPU, GPU, 메모리, 메인보드)에서 후보 1개씩 추천해주세요.
+성능, 가성비, 세대, 호환성을 종합적으로 고려하고,
+아래 형식으로만 JSON으로 답변해주세요. 설명문은 절대 포함하지 마세요.
+
+${formatPartList("CPU", cpuList)}
+${formatPartList("GPU", gpuList)}
+${formatPartList("메모리", memoryList)}
+${formatPartList("메인보드", boardList)}
+
+{
+  "cpu": { "name": "", "reason": "" },
+  "gpu": { "name": "", "reason": "" },
+  "memory": { "name": "", "reason": "" },
+  "mainboard": { "name": "", "reason": "" },
+  "totalPrice": 숫자
+}`;
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -41,7 +44,7 @@ const askGPTForFullBuild = async (cpuList, gpuList, memoryList, boardList, budge
           { role: "user", content: prompt },
         ],
         temperature: 0.7,
-        max_tokens: 1000,
+        max_tokens: 1200,
       }),
     });
 
@@ -75,9 +78,7 @@ router.post("/", async (req, res) => {
         .sort({ "benchmarkScore.passmarkscore": -1 })
         .limit(15)
         .toArray();
-      partMap[category] = parts.length
-        ? parts.map((p) => ({ name: p.name, price: p.price }))
-        : [{ name: "정보 없음", price: 0 }];
+      partMap[category] = parts.map(p => ({ name: p.name, price: p.price }));
     }
 
     const gptResult = await askGPTForFullBuild(
@@ -90,8 +91,32 @@ router.post("/", async (req, res) => {
 
     if (!gptResult) return res.status(500).json({ error: "GPT 응답 파싱 실패" });
 
-    console.log("✅ GPT 추천 결과:", gptResult);
-    return res.json({ recommended: gptResult });
+    // ✅ GPT가 추천한 부품명을 기준으로 DB에서 다시 상세정보 가져오기
+    const getDetailedPart = async (name) => {
+      if (!name || name === "정보 없음") return { name: "정보 없음" };
+      const part = await partsCol.findOne({ name });
+      if (!part) return { name, reason: "정보 없음" };
+      return {
+        _id: part._id,
+        category: part.category,
+        name: part.name,
+        image: part.image,
+        price: part.price,
+        benchmarkScore: part.benchmarkScore,
+        reason: gptResult[part.category]?.reason || "",
+      };
+    };
+
+    const recommended = {
+      cpu: await getDetailedPart(gptResult.cpu?.name),
+      gpu: await getDetailedPart(gptResult.gpu?.name),
+      memory: await getDetailedPart(gptResult.memory?.name),
+      mainboard: await getDetailedPart(gptResult.mainboard?.name),
+      totalPrice: gptResult.totalPrice,
+    };
+
+    console.log("✅ 최종 추천 결과:", recommended);
+    return res.json({ recommended });
   } catch (err) {
     console.error("❌ 전체 추천 처리 실패:", err);
     return res.status(500).json({ error: "서버 오류" });
