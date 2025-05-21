@@ -8,6 +8,7 @@ import * as cheerio from "cheerio";
 import { connectDB, getDB } from "./db.js";
 import syncCPUsRouter from "./routes/syncCPUs.js";
 import partsRouter from "./routes/parts.js";
+import recommendRouter from "./routes/recommend.js";
 
 dotenv.config();
 const app = express();
@@ -32,6 +33,7 @@ app.use(express.json());
 // ✅ 라우트 등록
 app.use("/api/admin", syncCPUsRouter);
 app.use("/api/parts", partsRouter);
+app.use("/recommend", recommendRouter);
 
 // ✅ 네이버 가격 + 이미지 API
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
