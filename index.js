@@ -13,7 +13,10 @@ dotenv.config();
 const app = express();
 
 // ✅ CORS 설정 (Vercel 프론트 허용)
-app.use(cors()); // 개발 환경에서만 사용! (모든 출처 허용)
+app.use(cors({
+  origin: "https://goodpricepc.vercel.app",
+  methods: ["GET", "POST", "OPTIONS"],
+}));
 
 // ✅ JSON 파싱
 app.use(express.json());
