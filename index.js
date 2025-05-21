@@ -103,8 +103,8 @@ app.post("/api/gpt-info", async (req, res) => {
 
 // ✅ DB 연결 후 서버 시작
 connectDB().then(() => {
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
-  });
+  const PORT = process.env.PORT || 10000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+});
 });
