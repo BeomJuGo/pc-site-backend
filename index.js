@@ -1,13 +1,13 @@
-import express from "express";
-import cors from "cors";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
-import axios from "axios";
-import * as cheerio from "cheerio";
-import { connectDB, getDB } from "./db.js";
-import syncCPUsRouter from "./routes/syncCPUs.js";
-import partsRouter from "./routes/parts.js";
-import recommendRouter from "./routes/recommend.js";
+const express = require("express");
+const cors = require("cors");
+const fetch = require("node-fetch");
+const dotenv = require("dotenv");
+const axios = require("axios");
+const cheerio = require("cheerio");
+const { connectDB, getDB } = require("./db.js");
+const syncCPUsRouter = require("./routes/syncCPUs.js");
+const partsRouter = require("./routes/parts.js");
+const recommendRouter = require("./routes/recommend.js");
 
 dotenv.config();
 const app = express();
@@ -97,10 +97,15 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
+// ✅ Render 헬스체크 대응 (선택사항)
+app.get("/", (req, res) => {
+  res.send("✅ 서버 정상 작동 중");
+});
+
 // ✅ DB 연결 후 서버 시작
 connectDB().then(() => {
   const PORT = process.env.PORT || 10000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
-});
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+  });
 });
