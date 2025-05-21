@@ -5,27 +5,25 @@ import fetch from "node-fetch";
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ GPT에게 직접 추천 요청
-const askGPTForRecommendation = async (cpuList) => {
+// ✅ GPT에게 모델명만 전달해 추천 요청
+const askGPTWithModelNames = async (cpuNames) => {
   const prompt = `
-아래는 판매 중인 CPU 목록이야. 각 CPU는 이름, 가격(원), 성능 점수(passmark 또는 cinebench)가 포함되어 있어.
+다음은 판매 중인 CPU 모델명 리스트입니다:
 
-${JSON.stringify(cpuList, null, 2)}
+${cpuNames.join("\n")}
 
-이 중에서:
+이 중에서 각각 3개씩 추천해주세요:
 
-1. 💸 가성비 좋은 CPU 3개
-2. 🎮 게임용으로 적합한 CPU 3개
-3. 🎬 전문가용(영상편집, 3D 작업 등)에 적합한 CPU 3개
+1. 가성비 좋은 CPU
+2. 게이밍에 적합한 CPU
+3. 전문가용 작업(편집, CAD, 3D 렌더링)에 적합한 CPU
 
-를 각각 골라줘. 이유는 한 줄씩 간단하게 설명해줘. JSON 형식으로 아래처럼 답해줘:
-
+아래 JSON 형식으로 답해주세요:
 {
   "가성비": [{ "name": "...", "reason": "..." }, ...],
   "게이밍": [{ "name": "...", "reason": "..." }, ...],
   "전문가용": [{ "name": "...", "reason": "..." }, ...]
-}
-`;
+}`;
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -48,10 +46,9 @@ ${JSON.stringify(cpuList, null, 2)}
   const raw = data.choices?.[0]?.message?.content;
 
   try {
-    const parsed = JSON.parse(raw);
-    return parsed;
-  } catch (e) {
-    console.error("❌ GPT 응답 파싱 실패:", raw);
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error("❌ JSON 파싱 실패:", raw);
     return null;
   }
 };
@@ -62,18 +59,14 @@ router.post("/", async (req, res) => {
 
   try {
     const db = await getDB();
-    const cpus = await db.collection("cpus")
-      .find({}, { projection: { _id: 0, name: 1, price: 1, benchmarkScore: 1 } })
+    const cpus = await db
+      .collection("cpus")
+      .find({}, { projection: { _id: 0, name: 1 } })
+      .limit(40)
       .toArray();
 
-    const formatted = cpus.map((cpu) => ({
-      name: cpu.name,
-      price: cpu.price,
-      passmark: cpu.benchmarkScore?.passmarkscore || null,
-      cinebench: cpu.benchmarkScore?.cinebenchMulti || null,
-    }));
-
-    const gptResult = await askGPTForRecommendation(formatted);
+    const cpuNames = cpus.map((c) => c.name);
+    const gptResult = await askGPTWithModelNames(cpuNames);
 
     if (!gptResult) {
       return res.status(500).json({ error: "GPT 응답 파싱 실패" });
@@ -82,7 +75,7 @@ router.post("/", async (req, res) => {
     return res.json({ recommended: gptResult });
   } catch (err) {
     console.error("❌ 추천 실패:", err);
-    return res.status(500).json({ error: "추천 처리 중 서버 오류" });
+    return res.status(500).json({ error: "서버 오류" });
   }
 });
 
