@@ -33,7 +33,7 @@ app.use(express.json());
 // ✅ 라우트 등록
 app.use("/api/admin", syncCPUsRouter);
 app.use("/api/parts", partsRouter);
-app.use("/recommend", recommendRouter);
+app.use("/api/recommend", recommendRouter);
 
 // ✅ 네이버 가격 + 이미지 API
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
