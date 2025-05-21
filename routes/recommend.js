@@ -1,3 +1,4 @@
+// ✅ routes/recommend.js
 import express from "express";
 import { getDB } from "../db.js";
 import fetch from "node-fetch";
@@ -8,9 +9,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const askGPTForFullBuild = async (cpuList, gpuList, memoryList, boardList, budget) => {
   const formatPartList = (title, list) =>
     `${title} 후보 목록:\n` +
-    list.map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`).join("\n");
+    list
+      .map((p, i) => `${i + 1}. ${p.name} (가격: ${p.price.toLocaleString()}원)`)
+      .join("\n");
 
-   const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 
+  const prompt = `사용자의 총 예산은 ${budget.toLocaleString()}원입니다. 
   아래 부품 후보 중에서 예산 내에서 최고의 PC를 구성해주세요. 예산의 최대5%까진 추천가능합니다.
   각 부품군(CPU, GPU, 메모리, 메인보드)마다 1개씩 선택해주세요.
   각 부품을 선택할 때는 성능, 가격, 가성비, 최신 세대 여부, 호환성 등을 고려하세요.
@@ -63,7 +66,6 @@ router.post("/", async (req, res) => {
   try {
     const db = await getDB();
     const partsCol = db.collection("parts");
-
     const categories = ["cpu", "gpu", "memory", "mainboard"];
     const partMap = {};
 
@@ -73,46 +75,23 @@ router.post("/", async (req, res) => {
         .sort({ "benchmarkScore.passmarkscore": -1 })
         .limit(15)
         .toArray();
-
-      partMap[category] = parts;
+      partMap[category] = parts.length
+        ? parts.map((p) => ({ name: p.name, price: p.price }))
+        : [{ name: "정보 없음", price: 0 }];
     }
 
     const gptResult = await askGPTForFullBuild(
-      partMap.cpu || [],
-      partMap.gpu || [],
-      partMap.memory || [],
-      partMap.mainboard || [],
+      partMap.cpu,
+      partMap.gpu,
+      partMap.memory,
+      partMap.mainboard,
       budget
     );
 
-    if (!gptResult) {
-      return res.status(500).json({ error: "GPT 응답 파싱 실패" });
-    }
+    if (!gptResult) return res.status(500).json({ error: "GPT 응답 파싱 실패" });
 
-    const findWithDetail = (name, list) => {
-      const found = list.find(p => p.name === name);
-      if (!found) return { name, reason: "정보 없음" };
-      return {
-        _id: found._id,
-        category: found.category,
-        name: found.name,
-        price: found.price,
-        image: found.image,
-        benchmarkScore: found.benchmarkScore,
-        reason: gptResult[found.category]?.reason || "",
-      };
-    };
-
-    const recommended = {
-      cpu: findWithDetail(gptResult.cpu?.name, partMap.cpu || []),
-      gpu: findWithDetail(gptResult.gpu?.name, partMap.gpu || []),
-      memory: findWithDetail(gptResult.memory?.name, partMap.memory || []),
-      mainboard: findWithDetail(gptResult.mainboard?.name, partMap.mainboard || []),
-      totalPrice: gptResult.totalPrice,
-    };
-
-    console.log("✅ GPT 추천 결과:", recommended);
-    return res.json({ recommended });
+    console.log("✅ GPT 추천 결과:", gptResult);
+    return res.json({ recommended: gptResult });
   } catch (err) {
     console.error("❌ 전체 추천 처리 실패:", err);
     return res.status(500).json({ error: "서버 오류" });
