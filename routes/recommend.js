@@ -28,32 +28,34 @@ ${formatted}
   "전문가용": [...]
 }`;
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "너는 PC 부품 추천 전문가야." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-    }),
-  });
-
-  const data = await res.json();
-  const raw = data.choices?.[0]?.message?.content;
-
   try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "너는 PC 부품 추천 전문가야." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+    });
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content;
+    console.log("🧠 GPT 응답 원문:\n", raw);
+
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}") + 1;
-    return JSON.parse(raw.slice(start, end));
+    const jsonText = raw.slice(start, end);
+    return JSON.parse(jsonText);
   } catch (err) {
-    console.error("❌ JSON 파싱 실패:", raw);
+    console.error("❌ GPT 요청 또는 응답 파싱 실패:", err);
     return null;
   }
 };
@@ -64,11 +66,13 @@ router.post("/", async (req, res) => {
   try {
     const db = await getDB();
     const all = await db.collection("cpus").find({}).toArray();
+    console.log(`📦 DB에서 불러온 CPU 수: ${all.length}`);
 
     const byPassmark = [...all]
       .filter(c => c.benchmarkScore?.passmarkscore)
       .sort((a, b) => b.benchmarkScore.passmarkscore - a.benchmarkScore.passmarkscore)
       .slice(0, 15);
+    console.log("🏆 PassMark 상위 15개:", byPassmark.map(c => c.name));
 
     const byValue = [...all]
       .filter(c => c.benchmarkScore?.passmarkscore && c.price)
@@ -78,17 +82,22 @@ router.post("/", async (req, res) => {
       }))
       .sort((a, b) => b.valueScore - a.valueScore)
       .slice(0, 15);
+    console.log("💰 가성비 상위 15개:", byValue.map(c => c.name));
 
     const cpuNames = [...new Set([...byPassmark, ...byValue].map(c => c.name))];
+    console.log("📨 GPT에 전달할 CPU 모델명:", cpuNames);
+
     const gptResult = await askGPTWithModelNamesOnly(cpuNames);
 
     if (!gptResult) {
+      console.warn("⚠️ GPT 결과 없음 또는 파싱 실패");
       return res.status(500).json({ error: "GPT 응답 파싱 실패" });
     }
 
+    console.log("✅ GPT 추천 결과:", gptResult);
     return res.json({ recommended: gptResult });
   } catch (err) {
-    console.error("❌ 추천 실패:", err);
+    console.error("❌ 전체 추천 처리 실패:", err);
     return res.status(500).json({ error: "서버 오류" });
   }
 });
