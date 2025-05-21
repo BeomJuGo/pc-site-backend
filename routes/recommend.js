@@ -13,31 +13,36 @@ const getGPTRecommendedCPUs = async (purpose) => {
     전문가용: "영상 편집, 3D 모델링, CAD 등 전문가용 작업에 적합한 CPU 5개를 추천해줘. AMD와 Intel 포함. 모델명만 알려줘.",
   };
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "너는 PC 부품 추천 전문가야." },
-        { role: "user", content: promptMap[purpose] },
-      ],
-    }),
-  });
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4",
+        messages: [
+          { role: "system", content: "너는 PC 부품 추천 전문가야." },
+          { role: "user", content: promptMap[purpose] },
+        ],
+      }),
+    });
 
-  const data = await res.json();
-  const gptText = data.choices?.[0]?.message?.content || "";
+    const data = await res.json();
+    const gptText = data.choices?.[0]?.message?.content || "";
 
-  // ✅ 모델명 추출: "AMD" 또는 "Intel" 포함 + 숫자 있는 줄만
-  return gptText
-    .split("\n")
-    .map((line) => line.replace(/^\d+\.\s*/, "").trim())
-    .filter((line) =>
-      /(?:AMD|Intel).*?\d{3,5}/i.test(line) // CPU 이름 추정 정규식
-    );
+    // ✅ 모델명 추출: "AMD" 또는 "Intel" 포함 + 숫자 있는 줄만
+    return gptText
+      .split("\n")
+      .map((line) => line.replace(/^\d+\.\s*/, "").trim())
+      .filter((line) =>
+        /(?:AMD|Intel).*?\d{3,5}/i.test(line) // CPU 이름 추정 정규식
+      );
+  } catch (e) {
+    console.error("❌ GPT 요청 실패:", e);
+    return [];
+  }
 };
 
 // ✅ 헬스 체크용 테스트 엔드포인트
@@ -61,7 +66,14 @@ router.post("/", async (req, res) => {
     const gptNames = await getGPTRecommendedCPUs(purpose);
     console.log("💬 [GPT 추천 CPU 목록]", gptNames);
 
-    // MongoDB에서 GPT 추천 CPU 이름 포함된 데이터 찾기
+    // ✅ GPT 결과가 비었으면 즉시 종료
+    if (!gptNames || gptNames.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "GPT에서 유효한 CPU 모델명을 받지 못했습니다." });
+    }
+
+    // ✅ MongoDB 쿼리
     const matchedCPUs = await cpuCol
       .find({
         $or: gptNames.map((name) => ({
@@ -94,9 +106,7 @@ router.post("/", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ 추천 실패:", err);
-    res
-      .status(500)
-      .json({ error: "GPT 추천 또는 DB 처리 중 오류 발생" });
+    res.status(500).json({ error: "GPT 추천 또는 DB 처리 중 오류 발생" });
   }
 });
 
