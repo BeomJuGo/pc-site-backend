@@ -1,4 +1,3 @@
-// ✅ index.js
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -13,21 +12,14 @@ import recommendRouter from "./routes/recommend.js";
 dotenv.config();
 const app = express();
 
-// ✅ CORS 설정 (Vercel에서 접근 허용)
-const allowedOrigins = ["https://goodpricepc.vercel.app"];
-
+// ✅ CORS 설정 (Vercel 프론트 허용)
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`❌ CORS 차단됨: ${origin}`);
-      callback(new Error("CORS 차단: " + origin));
-    }
-  },
-  credentials: true
+  origin: "https://goodpricepc.vercel.app",
+  methods: ["GET", "POST", "OPTIONS"],
+  credentials: true,
 }));
 
+// ✅ JSON 파싱
 app.use(express.json());
 
 // ✅ 라우트 등록
