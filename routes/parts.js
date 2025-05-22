@@ -1,11 +1,9 @@
-// ✅ routes/parts.js
 import express from "express";
 import { getDB } from "../db.js";
-import { ObjectId } from "mongodb";
 
 const router = express.Router();
 
-// 🔧 이름 정제 함수
+// 🔧 이름 정제 함수: 줄바꿈 제거 + 괄호 앞까지 잘라내기
 const clean = (str) => str.split("\n")[0].split("(")[0].trim();
 
 // ✅ CPU 전체 목록 가져오기
@@ -20,13 +18,14 @@ router.get("/cpu", async (req, res) => {
   }
 });
 
-// ✅ CPU 상세 정보 (이름 기반, 정규식 매칭)
+// ✅ CPU 단일 항목 가져오기 (정규식 기반 비교)
 router.get("/cpu/:name", async (req, res) => {
   try {
     const rawName = decodeURIComponent(req.params.name);
     const db = getDB();
 
-    const regex = new RegExp(`^${clean(rawName)}`, "i");
+    const regex = new RegExp(`^${clean(rawName)}`, "i"); // 정규식 기반 검색
+
     const cpu = await db.collection("parts").findOne({
       category: "cpu",
       name: { $regex: regex },
@@ -39,21 +38,5 @@ router.get("/cpu/:name", async (req, res) => {
     res.status(500).json({ error: "CPU 상세 조회 실패" });
   }
 });
-
-// ✅ CPU 상세 조회 (ID 기반)
-router.get("/cpu/id/:id", async (req, res) => {
-  try {
-    const db = getDB();
-    const { id } = req.params;
-    const cpu = await db.collection("parts").findOne({ _id: new ObjectId(id) });
-    if (!cpu) return res.status(404).json({ error: "CPU 없음" });
-    res.json(cpu);
-  } catch (err) {
-    console.error("❌ CPU ID 조회 실패:", err);
-    res.status(500).json({ error: "서버 오류" });
-  }
-});
-
-
 
 export default router;
