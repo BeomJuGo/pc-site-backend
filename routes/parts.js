@@ -40,21 +40,20 @@ router.get("/cpu/:name", async (req, res) => {
   }
 });
 
-// ✅ 부품 상세 정보 (_id 기반)
-router.get("/:category/id/:id", async (req, res) => {
+// ✅ CPU 상세 조회 (ID 기반)
+router.get("/cpu/id/:id", async (req, res) => {
   try {
     const db = getDB();
-    const part = await db.collection("parts").findOne({
-      _id: new ObjectId(req.params.id),
-      category: req.params.category,
-    });
-
-    if (!part) return res.status(404).json({ error: "부품을 찾을 수 없습니다." });
-    res.json(part);
+    const { id } = req.params;
+    const cpu = await db.collection("parts").findOne({ _id: new ObjectId(id) });
+    if (!cpu) return res.status(404).json({ error: "CPU 없음" });
+    res.json(cpu);
   } catch (err) {
-    console.error("❌ 부품 ID 기반 상세 조회 실패:", err);
+    console.error("❌ CPU ID 조회 실패:", err);
     res.status(500).json({ error: "서버 오류" });
   }
 });
+
+
 
 export default router;
