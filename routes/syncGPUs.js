@@ -13,7 +13,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const cleanName = (raw) =>
   raw.split("\n")[0]
     .replace(/\(.*?\)/g, "")
-    .replace(/®|™|GPU|Graphics|GEFORCE|RADEON/gi, "")
+    .replace(/®|™/gi, "")
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -26,11 +26,11 @@ const isDuplicate = (name, set) => {
   return false;
 };
 
-// 비주류 모델 필터
+// 비주류 필터링
 const isUnwanted = (name) =>
   /rtx\s*4500|radeon\s*pro\s*w7700/i.test(name);
 
-// ✅ GPU 벤치마크 크롤링
+// GPU 벤치마크 크롤링
 async function fetchGPUsFromTopCPU() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
   const html = await axios.get(url).then(res => res.data);
@@ -40,22 +40,26 @@ async function fetchGPUsFromTopCPU() {
 
   $("table tbody tr").each((_, el) => {
     const tds = $(el).find("td");
-    const name = cleanName(tds.eq(1).text().trim());
-    const score = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
+    const rawName = tds.eq(1).text().trim();
+    const rawScore = tds.eq(2).text().trim();
+    console.log("원본:", rawName, "| 점수:", rawScore);
+
+    const name = cleanName(rawName);
+    const score = parseInt(rawScore.replace(/,/g, ""), 10);
 
     if (!name || isNaN(score)) return;
     if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
     if (isUnwanted(name)) return console.log("⛔ 제외 (비주류):", name);
     if (isDuplicate(name, nameSet)) return console.log("⛔ 제외 (중복):", name);
 
-    gpuList.push({ name: name, score: score });
+    gpuList.push({ name, score });
   });
 
   console.log("✅ 크롤링 완료, 유효 GPU 수:", gpuList.length);
   return gpuList;
 }
 
-// ✅ 네이버 가격 + 이미지
+// 네이버 가격 + 이미지
 async function fetchNaverPrice(query) {
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
@@ -69,7 +73,7 @@ async function fetchNaverPrice(query) {
   return item ? { price: parseInt(item.lprice, 10), image: item.image || "" } : null;
 }
 
-// ✅ GPT 요약
+// GPT 요약
 async function fetchGptSummary(name) {
   const [reviewPrompt, specPrompt] = [
     `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식: '장점: ..., 단점: ...'`,
@@ -97,7 +101,7 @@ async function fetchGptSummary(name) {
   }
 }
 
-// ✅ MongoDB 저장
+// MongoDB 저장
 async function saveGPUsToMongo(gpus) {
   const db = getDB();
   const collection = db.collection("parts");
@@ -112,7 +116,7 @@ async function saveGPUsToMongo(gpus) {
     const updateFields = {
       category: "gpu",
       price: gpu.price,
-      benchmarkScore: { "3dmarkscore": gpu.score },
+      benchmarkScore: { score: gpu.score },
       image: gpu.image,
       review: gpu.review,
       specSummary: gpu.specSummary,
@@ -148,7 +152,7 @@ async function saveGPUsToMongo(gpus) {
   }
 }
 
-// ✅ 라우터 등록
+// 라우터 등록
 router.post("/sync-gpus", (req, res) => {
   res.json({ message: "✅ GPU 동기화 시작됨" });
   setImmediate(async () => {
