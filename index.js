@@ -6,6 +6,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { connectDB, getDB } from "./db.js";
 import syncCPUsRouter from "./routes/syncCPUs.js";
+import syncGPUsRouter from "./routes/syncGPUs.js";
 import partsRouter from "./routes/parts.js";
 import recommendRouter from "./routes/recommend.js";
 
@@ -20,6 +21,7 @@ app.use(express.json());
 
 // ✅ 라우트 등록
 app.use("/api/admin", syncCPUsRouter);
+app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
 app.use("/api/recommend", recommendRouter);
 
