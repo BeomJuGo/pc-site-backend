@@ -20,7 +20,7 @@ const cleanName = (raw) =>
 
 // 중복 여부 판단 (ex. RTX 4080 vs RTX 4080 SUPER)
 const isDuplicate = (name, set) => {
-  const base = name.replace(/\s+super|\s+ti|\s+xt|\s+pro/gi, "").toLowerCase();
+  const base = cleanName(name).replace(/\s+(super|ti|xt|pro)$/i, '').toLowerCase();
   if (set.has(base)) return true;
   set.add(base);
   return false;
@@ -40,7 +40,8 @@ async function fetchGPUsFromTopCPU() {
 
   $("table tbody tr").each((_, el) => {
     const tds = $(el).find("td");
-    const name = cleanName(tds.eq(1).text().trim());
+    const rawName = tds.eq(1).text().trim();
+    const name = cleanName(rawName);
     const score = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
 
     if (!name || isNaN(score)) return;
@@ -48,7 +49,7 @@ async function fetchGPUsFromTopCPU() {
     if (isUnwanted(name)) return console.log("⛔ 제외 (비주류):", name);
     if (isDuplicate(name, nameSet)) return console.log("⛔ 제외 (중복):", name);
 
-    gpuList.push({ name, "3dmarkscore": score });
+    gpuList.push({ name, rawName, score });
   });
 
   console.log("✅ 크롤링 완료, 유효 GPU 수:", gpuList.length);
@@ -106,13 +107,13 @@ async function saveGPUsToMongo(gpus) {
   const existing = await collection.find({ category: "gpu" }).toArray();
 
   for (const gpu of gpus) {
-    const existingItem = existing.find(e => e.name === gpu.name);
+    const existingItem = existing.find(e => cleanName(e.name) === gpu.name);
     const priceEntry = { date: today, price: gpu.price };
 
     const updateFields = {
       category: "gpu",
       price: gpu.price,
-      benchmarkScore: { "3dmarkscore": gpu["3dmarkscore"] },
+      benchmarkScore: { 3dmarkscore: gpu.score },
       image: gpu.image,
       review: gpu.review,
       specSummary: gpu.specSummary,
@@ -140,7 +141,7 @@ async function saveGPUsToMongo(gpus) {
 
   // 🔻 필터에서 제외된 GPU는 삭제
   const toDelete = existing
-    .filter(e => !currentNames.has(e.name))
+    .filter(e => !currentNames.has(cleanName(e.name)))
     .map(e => e.name);
   if (toDelete.length) {
     await collection.deleteMany({ name: { $in: toDelete }, category: "gpu" });
@@ -156,12 +157,12 @@ router.post("/sync-gpus", (req, res) => {
     const enriched = [];
 
     for (const gpu of raw) {
-      const price = await fetchNaverPrice(gpu.name);
+      const price = await fetchNaverPrice(gpu.rawName);
       if (!price || price.price < 10000 || price.price > 3000000) {
         console.log("⛔ 제외 (가격 문제):", gpu.name);
         continue;
       }
-      const gpt = await fetchGptSummary(gpu.name);
+      const gpt = await fetchGptSummary(gpu.rawName);
       enriched.push({ ...gpu, ...price, ...gpt });
     }
 
