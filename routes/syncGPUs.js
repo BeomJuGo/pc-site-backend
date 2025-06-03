@@ -10,28 +10,27 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 이름 정제
-const cleanName = (name) =>
-  name
-    .replace(/\(.*?\)/g, "")
-    .replace(/\b(GPU|Graphics|GEFORCE|RADEON|NVIDIA|AMD)\b/gi, "")
-    .replace(/-/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
+// ✅ GPU 이름 정제
 const simplifyForNaver = (name) => {
   const simplified = name
     .replace(/NVIDIA GeForce |AMD Radeon /gi, "")
-    .replace(/\b(Ti|XT|SUPER|PRO|Ultra|GA\d+)\b/gi, " $1")
+    .replace(/\b(TI|XT|SUPER|PRO|Ultra|GA\d+)\b/gi, " $1")
     .replace(/\s+/g, " ")
     .toUpperCase()
     .trim();
   return simplified;
 };
 
+// ✅ 이름 형식 필터
+const isValidGPUName = (name) => {
+  const rtxPattern = /^RTX \d{4}( (TI|SUPER)( SUPER)?( \d+ GB)?)?$/i;
+  const rxPattern = /^RX \d{4}( (XT|XTX|GRE))?$/i;
+  return rtxPattern.test(name.toUpperCase()) || rxPattern.test(name.toUpperCase());
+};
+
 // ✅ 비주류 GPU 필터
 const isUnwantedGPU = (name) =>
-  /rtx\s*4500|radeon\s*pro|ada generation|titan\b| \d{4}\s*d$/i.test(name);
+  /rtx\s*4500|radeon\s*pro|ada generation|titan|\bD$/i.test(name);
 
 // ✅ GPU 벤치마크 크롤링
 async function fetchGPUs() {
@@ -45,14 +44,16 @@ async function fetchGPUs() {
     const name = $(el).find("a").first().text().trim();
     const scoreText = $(el).find("span.font-bold").first().text().replace(/,/g, "").trim();
     const score = parseInt(scoreText, 10);
+    const simplified = simplifyForNaver(name);
 
     if (!name || isNaN(score)) return;
     if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
+    if (!isValidGPUName(simplified)) return console.log("⛔ 제외 (형식 불일치):", name);
     if (isUnwantedGPU(name)) return console.log("⛔ 제외 (비주류):", name);
 
-    const baseName = name.replace(/\s+(super|ti|xt|pro|d|ga\d+)\b/gi, "").toLowerCase();
-    if (nameSet.has(baseName)) return console.log("⛔ 제외 (중복):", name);
-    nameSet.add(baseName);
+    const base = simplified.toLowerCase();
+    if (nameSet.has(base)) return console.log("⛔ 제외 (중복):", name);
+    nameSet.add(base);
 
     gpuList.push({ name, score });
   });
@@ -71,13 +72,13 @@ async function fetchNaverPriceImage(query) {
     },
   });
   const data = await res.json();
-  const excludeWords = ["중고", "리퍼", "쿨러", "노트북", "고쿠", "파워", "램", "i9", "A12"];
+
   for (const item of data.items || []) {
-    const title = item.title.replace(/<[^>]+>/g, "");
-    const hasExcluded = excludeWords.some(w => title.toLowerCase().includes(w));
-    if (!hasExcluded) {
-      return { price: parseInt(item.lprice, 10), image: item.image };
-    }
+    const title = item.title.replace(/<[^>]*>/g, "");
+    if (/리퍼|중고|쿨러|램|파워/i.test(title)) continue;
+    const price = parseInt(item.lprice, 10);
+    if (price < 150000 || price > 5000000) continue;
+    return { price, image: item.image };
   }
   return null;
 }
@@ -94,7 +95,12 @@ async function fetchGptSummary(name) {
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'` }],
+          messages: [
+            {
+              role: "user",
+              content: `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'`,
+            },
+          ],
         }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
@@ -105,9 +111,14 @@ async function fetchGptSummary(name) {
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: `${name} 그래픽카드의 주요 사양을 요약해줘. VRAM, 클럭, 쿠다코어, 전력 위주로.` }],
+          messages: [
+            {
+              role: "user",
+              content: `${name} 그래픽카드의 주요 사양을 요약해줘. VRAM, 클럭, 쿠다코어, 전력 위주로.`,
+            },
+          ],
         }),
-      })
+      }),
     ]);
 
     const review = (await reviewRes.json()).choices?.[0]?.message?.content || "";
@@ -174,9 +185,9 @@ router.post("/sync-gpus", (req, res) => {
     const enriched = [];
 
     for (const gpu of raw) {
-      const naverName = simplifyForNaver(gpu.name);
-      const priceData = await fetchNaverPriceImage(naverName);
-      if (!priceData || priceData.price < 150000 || priceData.price > 5000000) {
+      const simplified = simplifyForNaver(gpu.name);
+      const priceData = await fetchNaverPriceImage(simplified);
+      if (!priceData) {
         console.log("⛔ 제외 (가격 문제):", gpu.name);
         continue;
       }
