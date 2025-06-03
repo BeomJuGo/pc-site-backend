@@ -48,7 +48,8 @@ async function fetchGPUsFromTopCPU() {
     if (isUnwanted(name)) return console.log("⛔ 제외 (비주류):", name);
     if (isDuplicate(name, nameSet)) return console.log("⛔ 제외 (중복):", name);
 
-    gpuList.push({ name, 3dmarkscore: score });
+    gpuList.push({ name, '3dmarkscore': score });
+
   });
 
   console.log("✅ 크롤링 완료, 유효 GPU 수:", gpuList.length);
