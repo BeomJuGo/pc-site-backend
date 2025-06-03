@@ -28,7 +28,7 @@ const isUnwantedGPU = (name) =>
   /rtx\s*4500|radeon\s*pro\s*w7700/i.test(name);
 
 // ✅ GPU 벤치마크 크롤링
-async function fetchGPUsFromTopCPU() {
+async function fetchGPUs() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
   const html = await axios.get(url).then(res => res.data);
   const $ = cheerio.load(html);
