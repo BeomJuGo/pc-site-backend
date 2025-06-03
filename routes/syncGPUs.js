@@ -31,7 +31,7 @@ const simplifyForNaver = (name) => {
 
 // ✅ 비주류 GPU 필터
 const isUnwantedGPU = (name) =>
-  /rtx\s*4500|radeon\s*pro|ada generation|titan/i.test(name);
+  /rtx\s*4500|radeon\s*pro|ada generation|titan\b| \d{4}\s*d$/i.test(name);
 
 // ✅ GPU 벤치마크 크롤링
 async function fetchGPUs() {
@@ -71,7 +71,7 @@ async function fetchNaverPriceImage(query) {
     },
   });
   const data = await res.json();
-  const excludeWords = ["중고", "리퍼", "쿨러", "노트북", "파워", "램"];
+  const excludeWords = ["중고", "리퍼", "쿨러", "노트북", "고쿠", "파워", "램", "i9", "A12"];
   for (const item of data.items || []) {
     const title = item.title.replace(/<[^>]+>/g, "");
     const hasExcluded = excludeWords.some(w => title.toLowerCase().includes(w));
