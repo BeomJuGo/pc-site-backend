@@ -14,37 +14,46 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const cleanName = (name) =>
   name
     .replace(/\(.*?\)/g, "")
-    .replace(/®|™|GPU|Graphics|GEFORCE|RADEON/gi, "")
+    .replace(/®|™|GPU|Graphics|GEFORCE|RADEON|NVIDIA|AMD/gi, "")
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
 // ✅ 중복 제거용 베이스 이름
 const toBaseName = (name) =>
-  name.toLowerCase().replace(/\s+(super|ti|xt|pro|d)\b/g, "").trim();
+  name
+    .toLowerCase()
+    .replace(/\s+(super|ti|xt|pro|d|ga\d+|\d+\s?gb)\b/g, "")
+    .replace(/\s+ada generation|titan.*/gi, "")
+    .trim();
 
 // ✅ 비주류 GPU 필터
 const isUnwantedGPU = (name) =>
-  /rtx\s*4500|radeon\s*pro\s*w7700/i.test(name);
+  /rtx\s*4500|radeon\s*pro\s*w7700|ada generation|titan/i.test(name);
 
 // ✅ GPU 벤치마크 크롤링
 async function fetchGPUs() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
-  const html = await axios.get(url).then(res => res.data);
+  const html = await axios.get(url).then((res) => res.data);
   const $ = cheerio.load(html);
   const gpuList = [];
   const nameSet = new Set();
 
   $("div.flex.flex-col").each((_, el) => {
     const name = $(el).find("a").first().text().trim();
-    const scoreText = $(el).find("span.font-bold").first().text().replace(/,/g, "").trim();
+    const scoreText = $(el)
+      .find("span.font-bold")
+      .first()
+      .text()
+      .replace(/,/g, "")
+      .trim();
     const score = parseInt(scoreText, 10);
 
     if (!name || isNaN(score)) return;
     if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
-    if (/rtx\s*4500|radeon\s*pro\s*w7700/i.test(name)) return console.log("⛔ 제외 (비주류):", name);
+    if (isUnwantedGPU(name)) return console.log("⛔ 제외 (비주류):", name);
 
-    const baseName = name.replace(/\s+super|\s+ti|\s+xt|\s+pro/gi, "").toLowerCase();
+    const baseName = toBaseName(name);
     if (nameSet.has(baseName)) return console.log("⛔ 제외 (중복):", name);
     nameSet.add(baseName);
 
@@ -54,8 +63,6 @@ async function fetchGPUs() {
   console.log("✅ 크롤링 완료, 유효 GPU 수:", gpuList.length);
   return gpuList;
 }
-
-
 
 // ✅ 네이버 가격 + 이미지
 async function fetchNaverPriceImage(query) {
@@ -174,7 +181,7 @@ router.post("/sync-gpus", (req, res) => {
 
     for (const gpu of raw) {
       const priceData = await fetchNaverPriceImage(gpu.name);
-      if (!priceData || priceData.price < 10000 || priceData.price > 3000000) {
+      if (!priceData || priceData.price < 150000 || priceData.price > 5000000) {
         console.log("⛔ 제외 (가격 문제):", gpu.name);
         continue;
       }
