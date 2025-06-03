@@ -1,4 +1,3 @@
-// ✅ routes/syncGPUs.js
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -10,38 +9,55 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// 이름 정제
 const cleanName = (raw) =>
-  raw
-    .split("\n")[0]
+  raw.split("\n")[0]
     .replace(/\(.*?\)/g, "")
-    .replace(/\b(GPU|Graphics|GEFORCE|RADEON|RTX|RX|PRO|\d{4,})\b/gi, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toLowerCase();
+    .replace(/®|™|GPU|Graphics|GEFORCE|RADEON/gi, "")
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
+// 중복 여부 판단 (ex. RTX 4080 vs RTX 4080 SUPER)
+const isDuplicate = (name, set) => {
+  const base = name.replace(/\s+super|\s+ti|\s+xt|\s+pro/gi, "").toLowerCase();
+  if (set.has(base)) return true;
+  set.add(base);
+  return false;
+};
+
+// 비주류 필터링
+const isUnwanted = (name) =>
+  /rtx\s*4500|radeon\s*pro\s*w7700/i.test(name);
+
+// GPU 벤치마크 크롤링
 async function fetchGPUsFromTopCPU() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
-  const html = await axios.get(url).then((res) => res.data);
+  const html = await axios.get(url).then(res => res.data);
   const $ = cheerio.load(html);
   const gpuList = [];
+  const nameSet = new Set();
 
   $("table tbody tr").each((_, el) => {
-    const cols = $(el).find("td");
-    const name = $(cols[1]).text().trim();
-    const score = parseInt($(cols[2]).text().replace(/,/g, ""), 10);
+    const tds = $(el).find("td");
+    const name = cleanName(tds.eq(1).text().trim());
+    const score = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
+
     if (!name || isNaN(score)) return;
+    if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
+    if (isUnwanted(name)) return console.log("⛔ 제외 (비주류):", name);
+    if (isDuplicate(name, nameSet)) return console.log("⛔ 제외 (중복):", name);
 
-    if (score < 10000) return;
-    if (/rtx 4500|radeon pro w7700/i.test(name)) return;
-
-    gpuList.push({ name, score });
+    gpuList.push({ name, 3dmarkscore: score });
   });
 
+  console.log("✅ 크롤링 완료, 유효 GPU 수:", gpuList.length);
   return gpuList;
 }
 
+// 네이버 가격 + 이미지
 async function fetchNaverPrice(query) {
-  const encoded = encodeURIComponent(query);
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
     headers: {
       "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -53,108 +69,105 @@ async function fetchNaverPrice(query) {
   return item ? { price: parseInt(item.lprice, 10), image: item.image || "" } : null;
 }
 
+// GPT 요약
 async function fetchGptSummary(name) {
   const [reviewPrompt, specPrompt] = [
-    `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`,
-    `${name} 그래픽카드의 주요 사양을 요약해줘. VRAM, 클럭, 쿠다코어, 전력 위주로.`,
+    `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식: '장점: ..., 단점: ...'`,
+    `${name} 그래픽카드의 VRAM, 클럭, 쿠다코어, 전력 등 주요 사양을 요약해줘.`,
   ];
+
   try {
     const [reviewRes, specRes] = await Promise.all([
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: reviewPrompt }],
-          max_tokens: 200,
-        }),
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-3.5-turbo", messages: [{ role: "user", content: reviewPrompt }], max_tokens: 200 }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: specPrompt }],
-          max_tokens: 200,
-        }),
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-3.5-turbo", messages: [{ role: "user", content: specPrompt }], max_tokens: 200 }),
       }),
     ]);
-    const reviewData = await reviewRes.json();
-    const specData = await specRes.json();
-    return {
-      review: reviewData.choices?.[0]?.message?.content || "",
-      specSummary: specData.choices?.[0]?.message?.content || "",
-    };
+    const review = (await reviewRes.json()).choices?.[0]?.message?.content || "";
+    const spec = (await specRes.json()).choices?.[0]?.message?.content || "";
+    return { review, specSummary: spec };
   } catch (e) {
     return { review: "", specSummary: "" };
   }
 }
 
+// MongoDB 저장
 async function saveGPUsToMongo(gpus) {
   const db = getDB();
   const collection = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
-
-  const inserted = new Set();
+  const currentNames = new Set(gpus.map(g => g.name));
+  const existing = await collection.find({ category: "gpu" }).toArray();
 
   for (const gpu of gpus) {
-    const norm = cleanName(gpu.name);
-    if (inserted.has(norm)) {
-      console.log("⚠️ 중복 제외:", gpu.name);
-      continue;
-    }
-    inserted.add(norm);
-
-    const priceData = await fetchNaverPrice(gpu.name);
-    if (!priceData || priceData.price < 10000 || priceData.price > 3000000) {
-      console.log("⛔ 가격 제외:", gpu.name);
-      continue;
-    }
-
-    const gpt = await fetchGptSummary(gpu.name);
-    const existing = await collection.findOne({ name: gpu.name });
+    const existingItem = existing.find(e => e.name === gpu.name);
+    const priceEntry = { date: today, price: gpu.price };
 
     const updateFields = {
       category: "gpu",
-      price: priceData.price,
-      image: priceData.image,
-      review: gpt.review,
-      specSummary: gpt.specSummary,
-      benchmarkScore: { timeSpy: gpu.score },
+      price: gpu.price,
+      benchmarkScore: { 3dmarkscore: gpu.3dmarkscore },
+      image: gpu.image,
+      review: gpu.review,
+      specSummary: gpu.specSummary,
     };
 
-    const priceEntry = { date: today, price: priceData.price };
-
-    if (existing) {
-      const alreadyLogged = (existing.priceHistory || []).some((h) => h.date === today);
+    if (existingItem) {
+      const alreadyLogged = (existingItem.priceHistory || []).some(p => p.date === today);
       await collection.updateOne(
-        { _id: existing._id },
+        { _id: existingItem._id },
         {
           $set: updateFields,
           ...(alreadyLogged ? {} : { $push: { priceHistory: priceEntry } }),
         }
       );
+      console.log("🔁 업데이트:", gpu.name);
     } else {
       await collection.insertOne({
         name: gpu.name,
         ...updateFields,
         priceHistory: [priceEntry],
       });
+      console.log("🆕 삽입됨:", gpu.name);
     }
+  }
+
+  // 🔻 필터에서 제외된 GPU는 삭제
+  const toDelete = existing
+    .filter(e => !currentNames.has(e.name))
+    .map(e => e.name);
+  if (toDelete.length) {
+    await collection.deleteMany({ name: { $in: toDelete }, category: "gpu" });
+    console.log("🗑️ 삭제됨:", toDelete.length, "개");
   }
 }
 
-router.post("/sync-gpus", async (req, res) => {
+// 라우터 등록
+router.post("/sync-gpus", (req, res) => {
   res.json({ message: "✅ GPU 동기화 시작됨" });
-  const list = await fetchGPUsFromTopCPU();
-  await saveGPUsToMongo(list);
-  console.log("✅ GPU 저장 완료");
+  setImmediate(async () => {
+    const raw = await fetchGPUsFromTopCPU();
+    const enriched = [];
+
+    for (const gpu of raw) {
+      const price = await fetchNaverPrice(gpu.name);
+      if (!price || price.price < 10000 || price.price > 3000000) {
+        console.log("⛔ 제외 (가격 문제):", gpu.name);
+        continue;
+      }
+      const gpt = await fetchGptSummary(gpu.name);
+      enriched.push({ ...gpu, ...price, ...gpt });
+    }
+
+    await saveGPUsToMongo(enriched);
+    console.log("🎉 모든 GPU 저장 완료");
+  });
 });
 
 export default router;
