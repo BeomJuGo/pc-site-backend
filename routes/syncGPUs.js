@@ -10,50 +10,49 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 이름 정제 함수들
+// ✅ 이름 정제
 const cleanName = (name) =>
   name
     .replace(/\(.*?\)/g, "")
-    .replace(/®|™|GPU|Graphics|GEFORCE|RADEON/gi, "")
+    .replace(/\b(GPU|Graphics|GEFORCE|RADEON|NVIDIA|AMD)\b/gi, "")
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-const toBaseName = (name) =>
-  name.toLowerCase()
-    .replace(/(geforce|radeon|nvidia|amd)/gi, "")
-    .replace(/\s*(super|ti|xt|pro|d)\b/gi, "")
-    .replace(/\s+/g, "")
-    .trim();
-
-const isUnwantedGPU = (name) =>
-  /rtx\s*4500|radeon\s*pro|ada\s+generation|titan/i.test(name);
-
 const simplifyForNaver = (name) => {
-  const match = name.match(/(RTX\s*\d+\s*(?:SUPER|TI)?|RX\s*\d+\s*(?:XT|XTX)?)/i);
-  return match ? match[0].replace(/\s+/g, " ").toUpperCase() : name;
+  const simplified = name
+    .replace(/NVIDIA GeForce |AMD Radeon /gi, "")
+    .replace(/\b(Ti|XT|SUPER|PRO|Ultra|GA\d+)\b/gi, " $1")
+    .replace(/\s+/g, " ")
+    .toUpperCase()
+    .trim();
+  return simplified;
 };
 
-// ✅ GPU 크롤링
+// ✅ 비주류 GPU 필터
+const isUnwantedGPU = (name) =>
+  /rtx\s*4500|radeon\s*pro|ada generation|titan/i.test(name);
+
+// ✅ GPU 벤치마크 크롤링
 async function fetchGPUs() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
-  const html = await axios.get(url).then((res) => res.data);
+  const html = await axios.get(url).then(res => res.data);
   const $ = cheerio.load(html);
   const gpuList = [];
-  const baseNameSet = new Set();
+  const nameSet = new Set();
 
   $("div.flex.flex-col").each((_, el) => {
     const name = $(el).find("a").first().text().trim();
-    const scoreText = $(el).find("span.font-bold").first().text().replace(/,/g, "");
+    const scoreText = $(el).find("span.font-bold").first().text().replace(/,/g, "").trim();
     const score = parseInt(scoreText, 10);
 
     if (!name || isNaN(score)) return;
-    if (score < 10000) return;
-    if (isUnwantedGPU(name)) return;
+    if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
+    if (isUnwantedGPU(name)) return console.log("⛔ 제외 (비주류):", name);
 
-    const baseName = toBaseName(name);
-    if (baseNameSet.has(baseName)) return;
-    baseNameSet.add(baseName);
+    const baseName = name.replace(/\s+(super|ti|xt|pro|d|ga\d+)\b/gi, "").toLowerCase();
+    if (nameSet.has(baseName)) return console.log("⛔ 제외 (중복):", name);
+    nameSet.add(baseName);
 
     gpuList.push({ name, score });
   });
@@ -62,7 +61,7 @@ async function fetchGPUs() {
   return gpuList;
 }
 
-// ✅ 네이버 쇼핑 검색
+// ✅ 네이버 가격 + 이미지
 async function fetchNaverPriceImage(query) {
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
@@ -72,8 +71,15 @@ async function fetchNaverPriceImage(query) {
     },
   });
   const data = await res.json();
-  const item = data.items?.[0];
-  return item ? { price: parseInt(item.lprice, 10), image: item.image } : null;
+  const excludeWords = ["중고", "리퍼", "쿨러", "노트북", "파워", "램"];
+  for (const item of data.items || []) {
+    const title = item.title.replace(/<[^>]+>/g, "");
+    const hasExcluded = excludeWords.some(w => title.toLowerCase().includes(w));
+    if (!hasExcluded) {
+      return { price: parseInt(item.lprice, 10), image: item.image };
+    }
+  }
+  return null;
 }
 
 // ✅ GPT 요약
@@ -88,12 +94,7 @@ async function fetchGptSummary(name) {
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "user",
-              content: `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'`,
-            },
-          ],
+          messages: [{ role: "user", content: `${name} 그래픽카드의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'` }],
         }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
@@ -104,14 +105,9 @@ async function fetchGptSummary(name) {
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "user",
-              content: `${name} 그래픽카드의 주요 사양을 요약해줘. VRAM, 클럭, 쿠다코어, 전력 위주로.`,
-            },
-          ],
+          messages: [{ role: "user", content: `${name} 그래픽카드의 주요 사양을 요약해줘. VRAM, 클럭, 쿠다코어, 전력 위주로.` }],
         }),
-      }),
+      })
     ]);
 
     const review = (await reviewRes.json()).choices?.[0]?.message?.content || "";
@@ -178,14 +174,12 @@ router.post("/sync-gpus", (req, res) => {
     const enriched = [];
 
     for (const gpu of raw) {
-      const simpleName = simplifyForNaver(gpu.name);
-      const priceData = await fetchNaverPriceImage(simpleName);
-
+      const naverName = simplifyForNaver(gpu.name);
+      const priceData = await fetchNaverPriceImage(naverName);
       if (!priceData || priceData.price < 150000 || priceData.price > 5000000) {
         console.log("⛔ 제외 (가격 문제):", gpu.name);
         continue;
       }
-
       const gpt = await fetchGptSummary(gpu.name);
       enriched.push({ ...gpu, ...priceData, ...gpt });
     }
