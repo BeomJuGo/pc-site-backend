@@ -35,7 +35,7 @@ async function fetchGPUsFromTechMons() {
       console.log("⛔ 제외 (점수 낮음):", name);
       return;
     }
-    gpuList.push({ name, passmarkscore: score });
+    gpuList.push({ name, 3dmarkscore: score });
   });
 
   console.log("✅ 필터링된 GPU 수:", gpuList.length);
@@ -101,7 +101,7 @@ async function saveGPUsToMongo(gpus) {
       category: "gpu",
       price: gpu.price,
       benchmarkScore: {
-        passmarkscore: gpu.passmarkscore,
+        3dmarkscore: gpu.3dmarkscore,
       },
       review: gpu.review || "",
       specSummary: gpu.specSummary || "",
