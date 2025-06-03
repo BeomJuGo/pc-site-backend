@@ -28,33 +28,33 @@ const isUnwantedGPU = (name) =>
   /rtx\s*4500|radeon\s*pro\s*w7700/i.test(name);
 
 // ✅ GPU 벤치마크 크롤링
-async function fetchGPUs() {
+async function fetchGPUsFromTopCPU() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
-  const html = await axios.get(url).then((res) => res.data);
+  const html = await axios.get(url).then(res => res.data);
   const $ = cheerio.load(html);
-  const seen = new Set();
-  const list = [];
+  const gpuList = [];
+  const nameSet = new Set();
 
-  $("table tbody tr").each((_, el) => {
-    const tds = $(el).find("td");
-    const raw = tds.eq(1).text().trim();
-    const scoreText = tds.eq(2).text().trim();
-    const score = parseInt(scoreText.replace(/,/g, ""), 10);
-    const name = cleanName(raw);
-    const base = toBaseName(name);
+  $("div.flex.flex-col").each((_, el) => {
+    const name = $(el).find("a").first().text().trim();
+    const scoreText = $(el).find("span.font-bold").first().text().replace(/,/g, "").trim();
+    const score = parseInt(scoreText, 10);
 
     if (!name || isNaN(score)) return;
     if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
-    if (isUnwantedGPU(name)) return console.log("⛔ 제외 (비주류):", name);
-    if (seen.has(base)) return console.log("⛔ 제외 (중복 이름):", name);
-    seen.add(base);
+    if (/rtx\s*4500|radeon\s*pro\s*w7700/i.test(name)) return console.log("⛔ 제외 (비주류):", name);
 
-    list.push({ name, score });
+    const baseName = name.replace(/\s+super|\s+ti|\s+xt|\s+pro/gi, "").toLowerCase();
+    if (nameSet.has(baseName)) return console.log("⛔ 제외 (중복):", name);
+    nameSet.add(baseName);
+
+    gpuList.push({ name, score });
   });
 
-  console.log("✅ 크롤링 완료, 유효 GPU 수:", list.length);
-  return list;
+  console.log("✅ 크롤링 완료, 유효 GPU 수:", gpuList.length);
+  return gpuList;
 }
+
 
 
 // ✅ 네이버 가격 + 이미지
