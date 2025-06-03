@@ -38,7 +38,8 @@ async function fetchGPUs() {
   $("table tbody tr").each((_, el) => {
     const tds = $(el).find("td");
     const raw = tds.eq(1).text().trim();
-    const score = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
+    const scoreText = tds.eq(2).text().trim();
+    const score = parseInt(scoreText.replace(/,/g, ""), 10);
     const name = cleanName(raw);
     const base = toBaseName(name);
 
@@ -54,6 +55,7 @@ async function fetchGPUs() {
   console.log("✅ 크롤링 완료, 유효 GPU 수:", list.length);
   return list;
 }
+
 
 // ✅ 네이버 가격 + 이미지
 async function fetchNaverPriceImage(query) {
