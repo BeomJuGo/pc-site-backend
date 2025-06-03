@@ -75,7 +75,7 @@ async function fetchNaverPriceImage(query) {
 
   for (const item of data.items || []) {
     const title = item.title.replace(/<[^>]*>/g, "");
-    if (/리퍼|중고|쿨러|램|파워/i.test(title)) continue;
+    if (/리퍼|팬|방열|중고|쿨러|램|파워/i.test(title)) continue;
     const price = parseInt(item.lprice, 10);
     if (price < 150000 || price > 5000000) continue;
     return { price, image: item.image };
