@@ -36,7 +36,7 @@ ${formatPartList("메인보드", boardList)}
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -53,14 +53,12 @@ ${formatPartList("메인보드", boardList)}
     const data = await res.json();
     console.log("🧠 GPT 응답 전체:", JSON.stringify(data, null, 2));
 
-    // ✅ 예외처리: 응답 구조 확인
     const raw = data.choices?.[0]?.message?.content;
     if (!raw || typeof raw !== "string") {
       console.error("❌ GPT 응답 content 없음 또는 형식 이상:", data);
       return null;
     }
 
-    // ✅ JSON 파싱
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}") + 1;
     const jsonString = raw.slice(start, end);
@@ -71,7 +69,6 @@ ${formatPartList("메인보드", boardList)}
     return null;
   }
 };
-
 
 router.post("/", async (req, res) => {
   console.log("🔔 [추천 API 호출됨] POST /api/recommend");
@@ -85,15 +82,23 @@ router.post("/", async (req, res) => {
     const partMap = {};
 
     for (const category of categories) {
+      const benchmarkKey = category === "gpu"
+        ? "benchmarkScore.3dmarkscore"
+        : "benchmarkScore.passmarkscore";
+
       const parts = await partsCol
-        .find({ category, price: { $lte: budget * 0.7 }, "benchmarkScore.passmarkscore": { $exists: true } })
-        .sort({ "benchmarkScore.passmarkscore": -1 })
+        .find({
+          category,
+          price: { $lte: budget * 0.7 },
+          [benchmarkKey]: { $exists: true }
+        })
+        .sort({ [benchmarkKey]: -1 })
         .limit(15)
         .toArray();
-      partMap[category] = parts.length
-  ? parts.map(p => ({ name: p.name, price: p.price }))
-  : [{ name: "정보 없음", price: 0 }];
 
+      partMap[category] = parts.length
+        ? parts.map(p => ({ name: p.name, price: p.price }))
+        : [{ name: "정보 없음", price: 0 }];
     }
 
     const gptResult = await askGPTForFullBuild(
@@ -106,14 +111,17 @@ router.post("/", async (req, res) => {
 
     if (!gptResult) return res.status(500).json({ error: "GPT 응답 파싱 실패" });
 
-    // ✅ GPT가 추천한 부품명을 기준으로 DB에서 다시 상세정보 가져오기
-    const getDetailedPart = async (name) => {
+    // ✅ GPT 추천 결과 DB에서 다시 상세 조회
+    const getDetailedPart = async (name, category) => {
       if (!name || name === "정보 없음") return { name: "정보 없음" };
+
       const part = await partsCol.findOne({
-  category: cat, // "gpu"
-  name: { $regex: name.replace(/\s+/g, ".*"), $options: "i" }
-});
+        category,
+        name: { $regex: name.replace(/\s+/g, ".*"), $options: "i" }
+      });
+
       if (!part) return { name, reason: "정보 없음" };
+
       return {
         _id: part._id,
         category: part.category,
@@ -121,15 +129,15 @@ router.post("/", async (req, res) => {
         image: part.image,
         price: part.price,
         benchmarkScore: part.benchmarkScore,
-        reason: gptResult[part.category]?.reason || "",
+        reason: gptResult[category]?.reason || "",
       };
     };
 
     const recommended = {
-      cpu: await getDetailedPart(gptResult.cpu?.name),
-      gpu: await getDetailedPart(gptResult.gpu?.name),
-      memory: await getDetailedPart(gptResult.memory?.name),
-      mainboard: await getDetailedPart(gptResult.mainboard?.name),
+      cpu: await getDetailedPart(gptResult.cpu?.name, "cpu"),
+      gpu: await getDetailedPart(gptResult.gpu?.name, "gpu"),
+      memory: await getDetailedPart(gptResult.memory?.name, "memory"),
+      mainboard: await getDetailedPart(gptResult.mainboard?.name, "mainboard"),
       totalPrice: gptResult.totalPrice,
     };
 
