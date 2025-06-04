@@ -109,7 +109,7 @@ router.post("/", async (req, res) => {
     // ✅ GPT가 추천한 부품명을 기준으로 DB에서 다시 상세정보 가져오기
     const getDetailedPart = async (name) => {
       if (!name || name === "정보 없음") return { name: "정보 없음" };
-      const part = await partsCol.findOne({ name });
+      const part = await partsCol.findOne({ name: { $regex: name, $options: "i" } });
       if (!part) return { name, reason: "정보 없음" };
       return {
         _id: part._id,
