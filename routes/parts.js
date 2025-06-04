@@ -1,49 +1,46 @@
 import express from "express";
 import { getDB } from "../db.js";
+import { ObjectId } from "mongodb";
 
 const router = express.Router();
 
-// 🔧 이름 정제 함수
+// 이름 정제 함수 (기존 유지)
 const clean = (str) => str.split("\n")[0].split("(")[0].trim();
 
-/**
- * ✅ 통합 부품 목록 API
- * GET /api/parts?category=cpu | gpu | memory | mainboard
- */
-router.get("/", async (req, res) => {
-  const category = req.query.category;
-  if (!category) return res.status(400).json({ error: "카테고리 쿼리가 필요합니다." });
+// 기존 이름 기반 상세 조회 (유지)
+router.get("/:category/:name", async (req, res) => {
+  const { category, name } = req.params;
+  const db = getDB();
+  const nameDecoded = clean(decodeURIComponent(name));
 
   try {
-    const db = getDB();
-    const parts = await db.collection("parts").find({ category }).toArray();
-    res.json(parts);
+    const exactItem = await db.collection("parts").findOne({ category, name: nameDecoded });
+    if (exactItem) return res.json(exactItem);
+
+    const regex = new RegExp(`^${nameDecoded}`, "i");
+    const regexItem = await db.collection("parts").findOne({ category, name: { $regex: regex } });
+    if (!regexItem) return res.status(404).json({ error: "부품을 찾을 수 없습니다." });
+
+    res.json(regexItem);
   } catch (err) {
-    console.error("❌ 부품 목록 조회 실패:", err);
-    res.status(500).json({ error: "목록 조회 실패" });
+    console.error("❌ 부품 상세 조회 실패:", err);
+    res.status(500).json({ error: "상세 조회 실패" });
   }
 });
 
-/**
- * ✅ 단일 부품 검색 (정규식 기반)
- * GET /api/parts/:category/:name
- */
-router.get("/:category/:name", async (req, res) => {
-  const { category, name } = req.params;
+// 새 ID 기반 상세 조회 API (추가)
+router.get("/:category/id/:id", async (req, res) => {
+  const { category, id } = req.params;
+  const db = getDB();
 
   try {
-    const db = getDB();
-    const regex = new RegExp(`^${clean(decodeURIComponent(name))}`, "i");
+    const objectId = new ObjectId(id);
+    const part = await db.collection("parts").findOne({ _id: objectId, category });
 
-    const item = await db.collection("parts").findOne({
-      category,
-      name: { $regex: regex },
-    });
-
-    if (!item) return res.status(404).json({ error: "부품을 찾을 수 없습니다." });
-    res.json(item);
+    if (!part) return res.status(404).json({ error: "부품을 찾을 수 없습니다." });
+    res.json(part);
   } catch (err) {
-    console.error("❌ 부품 상세 조회 실패:", err);
+    console.error("❌ ID 기반 부품 상세 조회 실패:", err);
     res.status(500).json({ error: "상세 조회 실패" });
   }
 });
