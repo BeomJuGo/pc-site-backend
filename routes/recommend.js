@@ -5,7 +5,7 @@ import { getDB } from "../db.js";
 const router = express.Router();
 
 // /api/recommend (POST) : 예산·용도 기반 추천
-router.post("/recommend", async (req, res) => {
+router.post("/", async (req, res) => {
   const { budget = 0, purpose = "작업용" } = req.body;
   const totalBudget = Number(budget);
   try {
