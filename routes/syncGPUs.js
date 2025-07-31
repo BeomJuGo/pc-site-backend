@@ -35,24 +35,32 @@ const isUnwantedGPU = (name) =>
 // ✅ GPU 벤치마크 크롤링
 async function fetchGPUs() {
   const url = "https://www.topcpu.net/ko/gpu-r/3dmark-time-spy-desktop";
-  const html = await axios.get(url).then(res => res.data);
+  const html = await axios.get(url).then((res) => res.data);
   const $ = cheerio.load(html);
   const gpuList = [];
   const nameSet = new Set();
 
   $("div.flex.flex-col").each((_, el) => {
     const name = $(el).find("a").first().text().trim();
-    const scoreText = $(el).find("span.font-bold").first().text().replace(/,/g, "").trim();
+    const scoreText = $(el)
+      .find("span.font-bold")
+      .first()
+      .text()
+      .replace(/,/g, "")
+      .trim();
     const score = parseInt(scoreText, 10);
     const simplified = simplifyForNaver(name);
 
     if (!name || isNaN(score)) return;
     if (score < 10000) return console.log("⛔ 제외 (점수 낮음):", name);
-    if (!isValidGPUName(simplified)) return console.log("⛔ 제외 (형식 불일치):", name);
-    if (isUnwantedGPU(name)) return console.log("⛔ 제외 (비주류):", name);
+    if (!isValidGPUName(simplified))
+      return console.log("⛔ 제외 (형식 불일치):", name);
+    if (isUnwantedGPU(name))
+      return console.log("⛔ 제외 (비주류):", name);
 
     const base = simplified.toLowerCase();
-    if (nameSet.has(base)) return console.log("⛔ 제외 (중복):", name);
+    if (nameSet.has(base))
+      return console.log("⛔ 제외 (중복):", name);
     nameSet.add(base);
 
     gpuList.push({ name, score });
@@ -62,7 +70,9 @@ async function fetchGPUs() {
   return gpuList;
 }
 
-// ✅ 네이버 가격 + 이미지 (강화 버전: 필터 확장 및 중앙값 사용)
+// ✅ 네이버 가격 + 이미지
+// - 필터 키워드 확장: 라디에이터·워터블럭 등 제거
+// - 가격 중앙값 사용
 async function fetchNaverPriceImage(query) {
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
@@ -75,21 +85,26 @@ async function fetchNaverPriceImage(query) {
 
   const prices = [];
   let image = null;
-
   for (const item of data.items || []) {
     const title = item.title.replace(/<[^>]*>/g, "");
-    // 주변 부품을 제외하기 위한 키워드 확장
-    if (/리퍼|팬|방열|중고|쿨러|램|파워|라디에이터|워터블럭|워터블록|수랭|블록/i.test(title)) continue;
+    // ✅ 주변 부품 및 제외 키워드 확장
+    if (
+      /리퍼|팬|방열|중고|쿨러|램|파워|라디에이터|워터블럭|워터블록|수랭|블록/i.test(
+        title
+      )
+    )
+      continue;
     const price = parseInt(item.lprice, 10);
+    // 너무 낮거나 높은 값 제외
     if (isNaN(price) || price < 150000 || price > 5000000) continue;
     prices.push(price);
-    // 첫 유효 상품의 이미지를 저장
+    // 가장 먼저 찾은 유효 이미지 사용
     if (!image) image = item.image;
   }
 
   if (prices.length === 0) return null;
 
-  // 중앙값 계산
+  // ✅ 중앙값(중간값) 계산
   prices.sort((a, b) => a - b);
   const mid = Math.floor(prices.length / 2);
   const medianPrice =
@@ -138,8 +153,10 @@ async function fetchGptSummary(name) {
       }),
     ]);
 
-    const review = (await reviewRes.json()).choices?.[0]?.message?.content || "";
-    const spec = (await specRes.json()).choices?.[0]?.message?.content || "";
+    const review =
+      (await reviewRes.json()).choices?.[0]?.message?.content || "";
+    const spec =
+      (await specRes.json()).choices?.[0]?.message?.content || "";
     return { review, specSummary: spec };
   } catch (e) {
     console.log("❌ GPT 요약 실패:", name);
@@ -168,7 +185,9 @@ async function saveToDB(gpus) {
     };
 
     if (old) {
-      const already = (old.priceHistory || []).some((p) => p.date === today);
+      const already = (old.priceHistory || []).some(
+        (p) => p.date === today
+      );
       await col.updateOne(
         { _id: old._id },
         {
@@ -187,6 +206,7 @@ async function saveToDB(gpus) {
     }
   }
 
+  // 이미 데이터베이스에 있지만 새 목록에 없는 GPU는 삭제
   const toDelete = existing
     .filter((e) => !currentNames.has(e.name))
     .map((e) => e.name);
@@ -206,10 +226,24 @@ router.post("/sync-gpus", (req, res) => {
     for (const gpu of raw) {
       const simplified = simplifyForNaver(gpu.name);
       const priceData = await fetchNaverPriceImage(simplified);
+
       if (!priceData) {
         console.log("⛔ 제외 (가격 문제):", gpu.name);
         continue;
       }
+
+      // ✅ 가격 범위 검증: 점수 대비 가격 비율이 너무 높거나 낮은 경우 제외
+      const ratio = gpu.score / priceData.price; // 예: 20000 / 1,500,000 ≈ 0.0133
+      // 임계값은 데이터 특성에 맞게 조정 가능 (예: 0.005 ~ 0.05 사이 정상)
+      if (ratio < 0.005 || ratio > 0.05) {
+        console.log(
+          "⛔ 제외 (가격 비현실적):",
+          gpu.name,
+          `score=${gpu.score}, price=${priceData.price}`
+        );
+        continue;
+      }
+
       const gpt = await fetchGptSummary(gpu.name);
       enriched.push({ ...gpu, ...priceData, ...gpt });
     }
