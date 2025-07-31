@@ -62,7 +62,7 @@ async function fetchGPUs() {
   return gpuList;
 }
 
-// ✅ 네이버 가격 + 이미지
+// ✅ 네이버 가격 + 이미지 (강화 버전: 필터 확장 및 중앙값 사용)
 async function fetchNaverPriceImage(query) {
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
@@ -73,14 +73,31 @@ async function fetchNaverPriceImage(query) {
   });
   const data = await res.json();
 
+  const prices = [];
+  let image = null;
+
   for (const item of data.items || []) {
     const title = item.title.replace(/<[^>]*>/g, "");
-    if (/리퍼|팬|방열|중고|쿨러|램|파워/i.test(title)) continue;
+    // 주변 부품을 제외하기 위한 키워드 확장
+    if (/리퍼|팬|방열|중고|쿨러|램|파워|라디에이터|워터블럭|워터블록|수랭|블록/i.test(title)) continue;
     const price = parseInt(item.lprice, 10);
-    if (price < 150000 || price > 5000000) continue;
-    return { price, image: item.image };
+    if (isNaN(price) || price < 150000 || price > 5000000) continue;
+    prices.push(price);
+    // 첫 유효 상품의 이미지를 저장
+    if (!image) image = item.image;
   }
-  return null;
+
+  if (prices.length === 0) return null;
+
+  // 중앙값 계산
+  prices.sort((a, b) => a - b);
+  const mid = Math.floor(prices.length / 2);
+  const medianPrice =
+    prices.length % 2 === 0
+      ? Math.round((prices[mid - 1] + prices[mid]) / 2)
+      : prices[mid];
+
+  return { price: medianPrice, image };
 }
 
 // ✅ GPT 요약
@@ -170,7 +187,9 @@ async function saveToDB(gpus) {
     }
   }
 
-  const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
+  const toDelete = existing
+    .filter((e) => !currentNames.has(e.name))
+    .map((e) => e.name);
   if (toDelete.length > 0) {
     await col.deleteMany({ category: "gpu", name: { $in: toDelete } });
     console.log("🗑️ 삭제됨:", toDelete.length, "개");
