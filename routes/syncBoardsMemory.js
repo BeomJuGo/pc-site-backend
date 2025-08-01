@@ -8,7 +8,7 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ GPT로 현재 인기 있는 메인보드·메모리 목록 가져오기
+// ✅ GPT로 인기 메인보드·메모리 목록 가져오기
 async function fetchPartsFromGPT() {
   const prompt = `당신은 PC부품에 관한 전문가입니다.
 현재 국내에 유통되고 있으며 가장 인기가 좋은 메인보드와 메모리들의 목록을 JSON으로 반환해주세요.
@@ -29,7 +29,6 @@ async function fetchPartsFromGPT() {
     });
     const data = await res.json();
     const content = data.choices?.[0]?.message?.content || "[]";
-    // GPT가 반환한 JSON 문자열을 파싱
     return JSON.parse(content);
   } catch (e) {
     console.error("❌ GPT 호출 실패:", e);
@@ -37,7 +36,7 @@ async function fetchPartsFromGPT() {
   }
 }
 
-// ✅ 네이버 쇼핑에서 가격과 이미지 가져오기 (중앙값 사용 및 필터링)
+// ✅ 네이버 쇼핑에서 가격과 이미지 가져오기 (필터링/중앙값 사용)
 async function fetchNaverPriceImage(query) {
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(
     query
@@ -54,11 +53,9 @@ async function fetchNaverPriceImage(query) {
   let image = null;
   for (const item of data.items || []) {
     const title = item.title.replace(/<[^>]*>/g, "");
-    // 리퍼/중고/쿨러/케이스 등 주변부품 제외
+    // 주변 부품 제외
     if (
-      /리퍼|중고|쿨러|팬|방열|라디에이터|워터블럭|케이스|케이블|어댑터/i.test(
-        title
-      )
+      /리퍼|중고|쿨러|팬|방열|라디에이터|워터블럭|케이스|케이블|어댑터/i.test(title)
     )
       continue;
     const price = parseInt(item.lprice, 10);
@@ -76,7 +73,7 @@ async function fetchNaverPriceImage(query) {
   return { price: median, image };
 }
 
-// ✅ MongoDB에 저장 (메인보드·메모리)
+// ✅ MongoDB에 저장
 async function saveToDB(parts) {
   const db = getDB();
   const col = db.collection("parts");
@@ -117,7 +114,7 @@ async function saveToDB(parts) {
     }
   }
 
-  // 더 이상 목록에 없는 제품 삭제
+  // 기존에 있었지만 이번 목록에 없는 항목 삭제
   const toDelete = existing
     .filter((e) => !currentNames.has(e.name))
     .map((e) => e.name);
@@ -130,8 +127,8 @@ async function saveToDB(parts) {
   }
 }
 
-// ✅ 실행 라우터: GPT→네이버→DB 저장
-router.post("/sync-boards-memory", (req, res) => {
+// ✅ 실행 라우터: '/api/sync-boards-memory' 접두사가 붙습니다.
+router.post("/", (req, res) => {
   res.json({ message: "✅ 메인보드·메모리 동기화 시작됨" });
   setImmediate(async () => {
     const gptParts = await fetchPartsFromGPT();
