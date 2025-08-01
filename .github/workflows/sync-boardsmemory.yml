@@ -1,9 +1,9 @@
-name: Daily boardsmemory Sync
+name: Weekly boardsmemory Sync
 
 on:
   schedule:
-    - cron: "0 18 * * *"  # 매일 오전 3시 (UTC 기준, 한국은 +9h로 12시 정오)
-  workflow_dispatch:  # 수동 실행 버튼도 활성화
+    - cron: "0 18 * * 1"  # 매주 월요일 오전 3시 (UTC 기준 → 한국 시간으로 월요일 정오)
+  workflow_dispatch:  # 수동 실행도 가능하게 유지
 
 jobs:
   sync-boardsmemory:
