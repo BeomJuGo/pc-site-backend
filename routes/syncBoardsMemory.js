@@ -1,164 +1,131 @@
 import express from "express";
-import fetch from "node-fetch";
-import { getDB } from "../db.js";
+import { fetchNaverPriceImage } from "../utils/naverShopping.js";
+import Part from "../models/Part.js";
+import axios from "axios";
+import dotenv from "dotenv";
+dotenv.config();
 
 const router = express.Router();
-const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 강화된 GPT 프롬프트
-async function fetchPartsFromGPT() {
-  const prompt = `당신은 PC 부품 전문가입니다.
-대한민국에서 2025년 현재 유통 중인 인기 메모리(RAM) 및 메인보드(Motherboard) 제품들을
-카테고리당 **20개 이상** JSON 배열로 반환해주세요.
-각 항목은 다음 형식:
-{
-  "category": "memory" 또는 "motherboard",
-  "name": "정확한 제품 전체명 (예: G.SKILL DDR5 6400 CL32 32GB)",
-  "info": "주요 사양 요약 (예: DDR5 / 6400MHz / 32GB / CL32)"
+const GPT_API_KEY = process.env.OPENAI_API_KEY;
+
+async function gptChat(prompt) {
+  const res = await axios.post(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.4,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${GPT_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+  return res.data.choices[0].message.content;
 }
-– 가격은 포함하지 마세요.
-– 아래 브랜드의 인기 모델을 포함해주세요:
-  메모리: 삼성전자, G.SKILL, Corsair, TeamGroup, Crucial
-  메인보드: ASUS, MSI, Gigabyte, ASRock`;
+
+function deduplicateParts(parts) {
+  const seen = new Set();
+  return parts.filter((p) => {
+    const key = `${p.category}:${p.name.trim().toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchPartsFromGPT(category) {
+  const prompt = `
+당신은 PC부품에 관한 전문가입니다. 현재 국내에 유통되고 있으며 가장 인기가 좋은 ${category === "memory" ? "메모리" : "메인보드"} 목록을 JSON으로 반환해주세요.
+
+형식:
+[
+  {
+    "category": "${category}",
+    "name": "제품명",
+    "info": "주요 사양 (칩셋/폼팩터 또는 용량/클럭 등)"
+  }
+]
+
+⚠️ 출력 시 마크다운 코드 블록(\`\`\`) 없이 순수 JSON만 반환해주세요.
+중복되는 항목은 제거하고, 인기 있는 브랜드 위주로 구성해주세요.
+`;
+
+  const raw = await gptChat(prompt);
+
+  const cleaned = raw
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/, "")
+    .trim();
 
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7
-      })
-    });
-
-    const json = await res.json();
-    const text = json.choices?.[0]?.message?.content ?? "[]";
-    const rawList = JSON.parse(text);
-
-    // ✅ 중복 제거 및 정제
-    const seen = new Set();
-    const cleaned = rawList.filter(part => {
-      const key = `${part.category}|${part.name.trim().toLowerCase()}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    return cleaned;
-  } catch (err) {
-    console.error("❌ GPT 호출 오류", err);
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("❌ GPT JSON 파싱 실패:", e.message);
+    console.error("GPT 응답:", cleaned);
     return [];
   }
 }
 
-// ✅ 네이버 가격/이미지 fetch with 중앙값 & 필터
-async function fetchNaverPriceImage(query) {
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, {
-    headers: {
-      "X-Naver-Client-Id": NAVER_CLIENT_ID,
-      "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
-    }
-  });
-  const data = await res.json();
-  const prices = [];
-  let image = null;
+async function enrichPartsWithPrice(parts) {
+  const MIN_PRICE = 150000;
+  const MAX_PRICE = 800000;
 
-  for (const item of data.items || []) {
-    const title = item.title.replace(/<[^>]*>/g, "");
-    if (/리퍼|중고|쿨러|팬|케이스|케이블|어댑터/i.test(title)) continue;
-    const price = parseInt(item.lprice, 10);
-    if (isNaN(price) || price < 10000 || price > 5000000) continue;
-    prices.push(price);
-    if (!image) image = item.image;
-  }
+  const enriched = [];
 
-  if (!prices.length) return null;
-  prices.sort((a, b) => a - b);
-  const mid = Math.floor(prices.length / 2);
-  const median =
-    prices.length % 2 === 0
-      ? Math.round((prices[mid - 1] + prices[mid]) / 2)
-      : prices[mid];
+  for (const part of parts) {
+    try {
+      const { price, image } = await fetchNaverPriceImage(part.name);
 
-  return { price: median, image };
-}
-
-async function saveToDB(parts) {
-  const db = getDB();
-  const col = db.collection("parts");
-  const today = new Date().toISOString().slice(0, 10);
-  const existing = await col
-    .find({ category: { $in: ["motherboard", "memory"] } })
-    .toArray();
-
-  const currentNames = new Set(parts.map(p => p.name.trim()));
-
-  for (const p of parts) {
-    const old = existing.find(
-      e => e.name === p.name && e.category === p.category
-    );
-    const priceEntry = { date: today, price: p.price };
-    const update = {
-      category: p.category,
-      info: p.info,
-      price: p.price,
-      image: p.image
-    };
-
-    if (old) {
-      const already = (old.priceHistory || []).some(a => a.date === today);
-      await col.updateOne(
-        { _id: old._id },
-        { $set: update, ...(already ? {} : { $push: { priceHistory: priceEntry } }) }
-      );
-      console.log("🔁 업데이트됨:", p.name);
-    } else {
-      await col.insertOne({
-        name: p.name,
-        ...update,
-        priceHistory: [priceEntry]
-      });
-      console.log("🆕 삽입됨:", p.name);
-    }
-  }
-
-  const toDel = existing
-    .filter(e => !currentNames.has(e.name))
-    .map(e => e.name);
-  if (toDel.length) {
-    await col.deleteMany({
-      category: { $in: ["motherboard", "memory"] },
-      name: { $in: toDel }
-    });
-    console.log("🗑️ 삭제됨:", toDel.length);
-  }
-}
-
-router.post("/", (req, res) => {
-  res.json({ message: "✅ 동기화 시작됨 (메인보드 & 메모리)" });
-  setImmediate(async () => {
-    const rawList = await fetchPartsFromGPT();
-    const enriched = [];
-
-    for (const part of rawList) {
-      const priceImg = await fetchNaverPriceImage(part.name);
-      if (!priceImg) {
-        console.log("⛔ 가격 못 찾음:", part.name);
+      if (price < MIN_PRICE || price > MAX_PRICE) {
+        console.log(`⚠️ [${part.name}] 가격 필터링됨: ${price}`);
         continue;
       }
-      enriched.push({ ...part, ...priceImg });
+
+      enriched.push({
+        ...part,
+        price,
+        image,
+      });
+    } catch (e) {
+      console.error(`❌ [${part.name}] 가격 정보 실패:`, e.message);
+    }
+  }
+
+  return enriched;
+}
+
+router.post("/api/sync-boards-memory", async (req, res) => {
+  try {
+    console.log("🔄 GPT 메인보드·메모리 목록 생성 중...");
+
+    const boards = await fetchPartsFromGPT("motherboard");
+    const memory = await fetchPartsFromGPT("memory");
+
+    const all = deduplicateParts([...boards, ...memory]);
+
+    console.log(`✅ GPT 결과 총 ${all.length}개`);
+
+    const enriched = await enrichPartsWithPrice(all);
+    console.log(`✅ 가격 필터링 후 ${enriched.length}개 저장`);
+
+    for (const part of enriched) {
+      await Part.updateOne(
+        { category: part.category, name: part.name },
+        { $set: part },
+        { upsert: true }
+      );
     }
 
-    await saveToDB(enriched);
-    console.log("🎉 메인보드·메모리 DB 업데이트 완료");
-  });
+    res.json({ inserted: enriched.length });
+  } catch (e) {
+    console.error("❌ 전체 동기화 실패:", e.message);
+    res.status(500).json({ error: "동기화 중 오류 발생" });
+  }
 });
 
 export default router;
