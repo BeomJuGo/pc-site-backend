@@ -1,3 +1,9 @@
+// index.js
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import { connectDB } from "./db.js";
+import syncCPUsRouter from "./routes/syncCPUs.js";
 import syncGPUsRouter from "./routes/syncGPUs.js";
 import partsRouter from "./routes/parts.js";
 import recommendRouter from "./routes/recommend.js";
@@ -5,13 +11,26 @@ import syncBoardsMemoryRouter from "./routes/syncBoardsMemory.js";
 
 dotenv.config();
 const app = express();
-@@ -27,85 +28,86 @@
+
+// CORS 설정 (배포 도메인에 맞게 수정)
+app.use(
+  cors({
+    origin: "https://goodpricepc.vercel.app",
+    credentials: true,
+  })
+);
+
+// JSON 파싱 미들웨어
+app.use(express.json());
+
+// 라우트 등록
+app.use("/api/admin", syncCPUsRouter);
 app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
 app.use("/api/recommend", recommendRouter);
 app.use("/api/sync-boards-memory", syncBoardsMemoryRouter);
 
-// ✅ 네이버 가격 + 이미지 API
+// 네이버 가격 + 이미지 API
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
@@ -33,7 +52,7 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-// ✅ GPT API 통합
+// GPT 정보 API (CPU/GPU 스펙, 리뷰 요약용)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.post("/api/gpt-info", async (req, res) => {
@@ -48,26 +67,26 @@ app.post("/api/gpt-info", async (req, res) => {
         method: "POST",
         headers: {
           Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: reviewPrompt }],
           max_tokens: 150,
-          temperature: 0.7
+          temperature: 0.7,
         }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: specPrompt }],
           max_tokens: 150,
-          temperature: 0.7
+          temperature: 0.7,
         }),
       }),
     ]);
@@ -76,7 +95,8 @@ app.post("/api/gpt-info", async (req, res) => {
     const specData = await specRes.json();
 
     const review = reviewData.choices?.[0]?.message?.content || "한줄평 생성 실패";
-    const specSummary = specData.choices?.[0]?.message?.content || "사양 요약 실패";
+    const specSummary =
+      specData.choices?.[0]?.message?.content || "사양 요약 실패";
 
     res.json({ review, specSummary });
   } catch (error) {
@@ -85,10 +105,10 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
-// ✅ DB 연결 후 서버 시작
+// DB 연결 후 서버 시작
 connectDB().then(() => {
   const PORT = process.env.PORT || 10000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
-});
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+  });
 });
