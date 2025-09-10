@@ -32,7 +32,7 @@ async function fetchNaverPrice(query) {
       "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
     },
   });
-@@ -50,51 +51,51 @@ async function fetchCPUsFromTechMons() {
+async function fetchCPUsFromTechMons() {
   const cinebenchUrl = "https://tech-mons.com/desktop-cpu-cinebench/";
   const passmarkUrl = "https://tech-mons.com/desktop-cpu-benchmark-ranking/";
   const [cineHtml, passHtml] = await Promise.all([
