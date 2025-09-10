@@ -6,6 +6,7 @@ import fetch from "node-fetch";
 import { getDB } from "../db.js";
 
 const router = express.Router();
+
 // Naver API credentials
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
@@ -22,19 +23,51 @@ const cleanName = (raw) => {
     .trim();
 };
 
-// ✅ 네이버 가격 (중간값 기준)
-async function fetchNaverPrice(query) {
-  const encoded = encodeURIComponent(query);
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
+// ✅ 네이버 가격 (중앙값 + 대표 이미지)
+async function fetchNaverPrice(name) {
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(
+    name
+  )}`;
   const res = await fetch(url, {
     headers: {
       "X-Naver-Client-Id": NAVER_CLIENT_ID,
       "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
     },
   });
- async function fetchCPUsFromTechMons() {
+  const data = await res.json();
+
+  const prices = [];
+  let image = null;
+
+  for (const item of data.items || []) {
+    const title = item.title.replace(/<[^>]*>/g, "");
+    // 주변 부품 / 무관 키워드 제외 (필요시 확장)
+    if (/리퍼|중고|쿨러|팬|방열|워터|수랭|라디에이터|블록|파워|램/i.test(title)) continue;
+
+    const price = parseInt(item.lprice, 10);
+    if (isNaN(price) || price < 10000 || price > 2000000) continue; // 1만~200만
+
+    prices.push(price);
+    if (!image) image = item.image;
+  }
+
+  if (prices.length === 0) return null;
+
+  prices.sort((a, b) => a - b);
+  const mid = Math.floor(prices.length / 2);
+  const median =
+    prices.length % 2 === 0
+      ? Math.round((prices[mid - 1] + prices[mid]) / 2)
+      : prices[mid];
+
+  return { price: median, image };
+}
+
+// ✅ CPU 벤치마크 크롤링 (tech-mons)
+async function fetchCPUsFromTechMons() {
   const cinebenchUrl = "https://tech-mons.com/desktop-cpu-cinebench/";
   const passmarkUrl = "https://tech-mons.com/desktop-cpu-benchmark-ranking/";
+
   const [cineHtml, passHtml] = await Promise.all([
     axios.get(cinebenchUrl).then((res) => res.data),
     axios.get(passmarkUrl).then((res) => res.data),
@@ -44,66 +77,192 @@ async function fetchNaverPrice(query) {
   const pass = cheerio.load(passHtml);
   const cpus = {};
 
+  // Cinebench 테이블: [0]=이름, [2]=single, [3]=multi (페이지 구조 기준)
   cine("table tbody tr").each((_, el) => {
     const tds = cine(el).find("td");
     const name = cleanName(tds.eq(0).text().trim());
     const single = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
     const multi = parseInt(tds.eq(3).text().replace(/,/g, ""), 10);
     if (!name || isNaN(single) || isNaN(multi)) return;
-    cpus[name] = {
-      cinebenchSingle: single,
-      cinebenchMulti: multi,
-    };
+    cpus[name] = { cinebenchSingle: single, cinebenchMulti: multi };
   });
 
+  // PassMark 테이블: [0]=이름, [1]=passmarkscore
   pass("table tbody tr").each((_, el) => {
     const tds = pass(el).find("td");
-    const name = cleanName(tds.eq(0).text().trim()); // CPU model name
+    const name = cleanName(tds.eq(0).text().trim());
     const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
     if (!name || isNaN(score)) return;
     if (!cpus[name]) cpus[name] = {};
     cpus[name].passmarkscore = score;
   });
 
+  // 1차 필터 후 가격/가성비 검사
   const cpuList = [];
   for (const [name, scores] of Object.entries(cpus)) {
-    const { cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore = undefined } = scores;
-    const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && (!passmarkscore || passmarkscore < 10000);
-    const isLaptopModel = /Apple\s*M\d|Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
+    const {
+      cinebenchSingle = 0,
+      cinebenchMulti = 0,
+      passmarkscore = undefined,
+    } = scores;
 
+    // 너무 낮은 성능 (예시 임계값)
+    const isTooWeak =
+      cinebenchSingle < 1000 &&
+      cinebenchMulti < 15000 &&
+      (!passmarkscore || passmarkscore < 10000);
+
+    // 랩탑/모바일 칩 제외
+    const isLaptopModel = /Apple\s*M\d|Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(
+      name
+    );
+
+    if (isTooWeak || isLaptopModel) continue;
+
+    // 가격 조회
     const priceObj = await fetchNaverPrice(name);
-    if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) {
-      console.log("⛔ 제외 (가격 없음/이상치):", name);
+    if (!priceObj) {
+      console.log("⛔ 제외 (가격 없음):", name);
       continue;
     }
+    const { price, image } = priceObj;
 
-    const valueScore = (passmarkscore || 0) / priceObj.price;
+    // 가성비 필터 (필요시 조정)
+    const valueScore = (passmarkscore || 0) / price; // 단순 PassMark/가격
     const isLowValue = valueScore < 0.015;
-    if (isTooWeak || isLaptopModel || isLowValue) {
-      console.log("⛔ 필터 제외:", name, `(가성비 ${valueScore.toFixed(4)})`);
+    if (isLowValue) {
+      console.log("⛔ 제외 (가성비 낮음):", name, `(가성비 ${valueScore.toFixed(4)})`);
       continue;
     }
 
-async function saveCPUsToMongo(cpus) {
-        name: cpu.name,
-        ...updateFields,
-        priceHistory: [priceEntry],
-      });
+    cpuList.push({
+      name,
+      price,
+      image,
+      passmarkscore,
+      cinebenchSingle,
+      cinebenchMulti,
+    });
+  }
 
-      console.log("🆕 새로 삽입됨:", cpu.name);
-    }
+  console.log("✅ 크롤링/필터 완료, 유효 CPU 수:", cpuList.length);
+  return cpuList;
+}
+
+// ✅ GPT 요약 (장점/단점, 사양 요약)
+async function fetchGptSummary(name) {
+  try {
+    const [reviewRes, specRes] = await Promise.all([
+      fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "user",
+              content: `${name} CPU의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'`,
+            },
+          ],
+        }),
+      }),
+      fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "user",
+              content: `${name} CPU의 주요 사양을 요약해줘. 코어/스레드, 캐시, 베이스/부스트 클럭 위주로.`,
+            },
+          ],
+        }),
+      }),
+    ]);
+
+    const review = (await reviewRes.json()).choices?.[0]?.message?.content || "";
+    const spec = (await specRes.json()).choices?.[0]?.message?.content || "";
+    return { review, specSummary: spec };
+  } catch (e) {
+    console.log("❌ GPT 요약 실패:", name);
+    return { review: "", specSummary: "" };
   }
 }
 
+// ✅ MongoDB 저장
+async function saveCPUsToMongo(cpus) {
+  const db = getDB();
+  const col = db.collection("parts");
+  const today = new Date().toISOString().slice(0, 10);
+  const currentNames = new Set(cpus.map((c) => c.name));
+
+  const existing = await col.find({ category: "cpu" }).toArray();
+
+  for (const cpu of cpus) {
+    const old = existing.find((e) => e.name === cpu.name);
+    const priceEntry = { date: today, price: cpu.price };
+    const update = {
+      category: "cpu",
+      price: cpu.price,
+      image: cpu.image,
+      review: cpu.review,
+      specSummary: cpu.specSummary,
+      benchmarkScore: {
+        passmarkscore: cpu.passmarkscore,
+        cinebenchSingle: cpu.cinebenchSingle,
+        cinebenchMulti: cpu.cinebenchMulti,
+      },
+    };
+
+    if (old) {
+      const already = (old.priceHistory || []).some((p) => p.date === today);
+      await col.updateOne(
+        { _id: old._id },
+        {
+          $set: update,
+          ...(already ? {} : { $push: { priceHistory: priceEntry } }),
+        }
+      );
+      console.log("🔁 업데이트됨:", cpu.name);
+    } else {
+      await col.insertOne({
+        name: cpu.name,
+        ...update, // ✅ 스프레드(객체 내부)는 마지막에 와도 되고, 지금처럼 마지막 직전에 둬도 안전합니다.
+        priceHistory: [priceEntry],
+      });
+      console.log("🆕 삽입됨:", cpu.name);
+    }
+  }
+
+  // 새 목록에 없는 기존 CPU는 삭제
+  const toDelete = existing
+    .filter((e) => !currentNames.has(e.name))
+    .map((e) => e.name);
+  if (toDelete.length > 0) {
+    await col.deleteMany({ category: "cpu", name: { $in: toDelete } });
+    console.log("🗑️ 삭제됨:", toDelete.length, "개");
+  }
+}
+
+// ✅ 실행 라우터
 router.post("/sync-cpus", (req, res) => {
   res.json({ message: "✅ CPU 동기화 시작됨 (백그라운드에서 처리 중)" });
   setImmediate(async () => {
     const rawList = await fetchCPUsFromTechMons();
     const enriched = [];
+
     for (const cpu of rawList) {
       const gpt = await fetchGptSummary(cpu.name);
       enriched.push({ ...cpu, ...gpt });
     }
+
     await saveCPUsToMongo(enriched);
     console.log("🎉 모든 CPU 저장 완료");
   });
