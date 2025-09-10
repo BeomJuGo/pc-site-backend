@@ -24,7 +24,7 @@ router.post("/", async (req, res) => {
         const gpuScore = gpu.benchmarkScore?.["3dmarkscore"] || 0;
         for (const memory of memories) {
           for (const board of boards) {
-            // 소켓/칩셋 호환성 체크
+            // 간단한 소켓/칩셋 호환성 체크
             if (
               (cpu.socket && board.socket && cpu.socket !== board.socket) ||
               (cpu.supportedChipsets &&
@@ -50,14 +50,19 @@ router.post("/", async (req, res) => {
 
             if (weightedScore > bestScore) {
               bestScore = weightedScore;
-              best = { cpu, gpu, memory, motherboard: board, totalPrice };
+              best = {
+                cpu,
+                gpu,
+                memory,
+                motherboard: board,
+                totalPrice,
+              };
             }
           }
         }
       }
     }
 
-    // 예산 내 조합이 없을 때 최소 가격 조합 반환
     if (!best && cpus.length && gpus.length && memories.length && boards.length) {
       const memory = memories.sort((a, b) => a.price - b.price)[0];
       const board = boards.sort((a, b) => a.price - b.price)[0];
