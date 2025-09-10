@@ -207,3 +207,5 @@ router.post("/sync-cpus", (req, res) => {
 });
 
 export default router;
+
+// End of syncCPUs route
