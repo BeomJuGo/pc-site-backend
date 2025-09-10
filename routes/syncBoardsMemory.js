@@ -5,7 +5,7 @@ import { getDB } from "../db.js";
 const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+the const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // GPT를 통해 인기 메모리와 메인보드 목록 가져오기
 async function fetchPartsFromGPT() {
@@ -16,8 +16,7 @@ async function fetchPartsFromGPT() {
   "category": "memory" 또는 "motherboard",
   "name": "정확한 제품 전체명",
   "info": "주요 사양 요약"
-}
-형식으로 작성해 주세요.
+} 형식으로 작성해 주세요.
 가격 정보는 포함하지 마세요.`;
 
   try {
@@ -57,7 +56,7 @@ async function fetchNaverPriceImage(query) {
 
   const prices = [];
   let image = null;
-  for (const item of data.items || []) {
+  for (const item of (data.items || [])) {
     const title = item.title.replace(/<[^>]*>/g, "");
     if (
       /리퍼|중고|쿨러|팬|케이스|케이블|어댑터|방열|라디에이터|워터블럭/i.test(
@@ -141,7 +140,7 @@ router.post("/", (req, res) => {
     for (const part of rawList) {
       const priceImg = await fetchNaverPriceImage(part.name);
       if (!priceImg) {
-        console.log("⛔ 가격 못 찾음:", part.name);
+        console.log("⛔ 가격 못 찾:", part.name);
         continue;
       }
       enriched.push({ ...part, ...priceImg });
