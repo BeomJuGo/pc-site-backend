@@ -1,4 +1,4 @@
-// ✅ routes/0sync-cpus.js
+// routes/syncCPUs.js
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -7,24 +7,22 @@ import { getDB } from "../db.js";
 
 const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
+the const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ 이름 정제 (강화 버전)
-const cleanName = (raw) => {
-  return raw
+// CPU 이름 정제
+const cleanName = (raw) =>
+  raw
     .split("\n")[0]
     .replace(/\(.*?\)/g, "")
     .replace(/®|™|CPU|Processor/gi, "")
     .replace(/-/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-};
 
-// ✅ 네이버 가격 (중간값 기준)
+// 네이버 가격(중앙값)
 async function fetchNaverPrice(query) {
-  const encoded = encodeURIComponent(query);
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, {
     headers: {
       "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -41,11 +39,12 @@ async function fetchNaverPrice(query) {
     .filter((p) => !isNaN(p) && p >= 10000 && p <= 2000000)
     .sort((a, b) => a - b);
   const mid = Math.floor(prices.length / 2);
-  const medianPrice = prices.length % 2 === 0 ? Math.round((prices[mid - 1] + prices[mid]) / 2) : prices[mid];
-  return { price: medianPrice, image: items[0].image || "" };
+  const median =
+    prices.length % 2 === 0 ? Math.round((prices[mid - 1] + prices[mid]) / 2) : prices[mid];
+  return { price: median, image: items[0].image || "" };
 }
 
-// ✅ 크롤링
+// Tech-Mons 크롤링
 async function fetchCPUsFromTechMons() {
   const cinebenchUrl = "https://tech-mons.com/desktop-cpu-cinebench/";
   const passmarkUrl = "https://tech-mons.com/desktop-cpu-benchmark-ranking/";
@@ -53,7 +52,6 @@ async function fetchCPUsFromTechMons() {
     axios.get(cinebenchUrl).then((res) => res.data),
     axios.get(passmarkUrl).then((res) => res.data),
   ]);
-
   const cine = cheerio.load(cineHtml);
   const pass = cheerio.load(passHtml);
   const cpus = {};
@@ -64,10 +62,7 @@ async function fetchCPUsFromTechMons() {
     const single = parseInt(tds.eq(2).text().replace(/,/g, ""), 10);
     const multi = parseInt(tds.eq(3).text().replace(/,/g, ""), 10);
     if (!name || isNaN(single) || isNaN(multi)) return;
-    cpus[name] = {
-      cinebenchSingle: single,
-      cinebenchMulti: multi,
-    };
+    cpus[name] = { cinebenchSingle: single, cinebenchMulti: multi };
   });
 
   pass("table tbody tr").each((_, el) => {
@@ -82,21 +77,18 @@ async function fetchCPUsFromTechMons() {
   const cpuList = [];
   for (const [name, scores] of Object.entries(cpus)) {
     const { cinebenchSingle = 0, cinebenchMulti = 0, passmarkscore = undefined } = scores;
-    const isTooWeak = cinebenchSingle < 1000 && cinebenchMulti < 15000 && (!passmarkscore || passmarkscore < 10000);
+    const isTooWeak =
+      cinebenchSingle < 1000 &&
+      cinebenchMulti < 15000 &&
+      (!passmarkscore || passmarkscore < 10000);
     const isLaptopModel = /Apple\s*M\d|Ryzen.*(HX|HS|U|H|Z)|Core.*(HX|E|H)/i.test(name);
 
     const priceObj = await fetchNaverPrice(name);
-    if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) {
-      console.log("⛔ 제외 (가격 없음/이상치):", name);
-      continue;
-    }
+    if (!priceObj || priceObj.price < 10000 || priceObj.price > 2000000) continue;
 
     const valueScore = (passmarkscore || 0) / priceObj.price;
     const isLowValue = valueScore < 0.015;
-    if (isTooWeak || isLaptopModel || isLowValue) {
-      console.log("⛔ 필터 제외:", name, `(가성비 ${valueScore.toFixed(4)})`);
-      continue;
-    }
+    if (isTooWeak || isLaptopModel || isLowValue) continue;
 
     cpuList.push({
       name,
@@ -107,41 +99,47 @@ async function fetchCPUsFromTechMons() {
       image: priceObj.image,
     });
   }
-
-  console.log("✅ 필터링된 CPU 수:", cpuList.length);
   return cpuList;
 }
 
-async function fetchGptSummary(name) {
-  const [reviewPrompt, specPrompt] = [
-    `${name}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`,
-    `${name}의 주요 사양을 요약해서 알려줘. 코어 수, 스레드 수, 클럭 위주로.`,
-  ];
+// GPT 요청: 칩셋 + 리뷰/사양
+async function fetchGptInfo(name) {
+  const chipsetPrompt = `${name}와 호환 가능한 데스크탑 메인보드 칩셋을 JSON 배열로만 알려줘.`;
+  const reviewPrompt = `${name}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`;
+  const specPrompt = `${name}의 주요 사양을 요약해서 알려줘.`;
+
+  const req = (prompt) =>
+    fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+      }),
+    }).then((r) => r.json());
 
   try {
-    const [reviewRes, specRes] = await Promise.all([
-      fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-3.5-turbo", messages: [{ role: "user", content: reviewPrompt }], max_tokens: 200 }),
-      }),
-      fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-3.5-turbo", messages: [{ role: "user", content: specPrompt }], max_tokens: 200 }),
-      }),
+    const [chipsetRes, reviewRes, specRes] = await Promise.all([
+      req(chipsetPrompt),
+      req(reviewPrompt),
+      req(specPrompt),
     ]);
-    const reviewData = await reviewRes.json();
-    const specData = await specRes.json();
+    const chipsetsRaw = chipsetRes.choices?.[0]?.message?.content || "[]";
     return {
-      review: reviewData.choices?.[0]?.message?.content || "",
-      specSummary: specData.choices?.[0]?.message?.content || "",
+      supportedChipsets: JSON.parse(chipsetsRaw),
+      review: reviewRes.choices?.[0]?.message?.content || "",
+      specSummary: specRes.choices?.[0]?.message?.content || "",
     };
   } catch (e) {
-    return { review: "", specSummary: "" };
+    return { supportedChipsets: [], review: "", specSummary: "" };
   }
 }
 
+// MongoDB 저장
 async function saveCPUsToMongo(cpus) {
   const db = getDB();
   const collection = db.collection("parts");
@@ -149,7 +147,6 @@ async function saveCPUsToMongo(cpus) {
 
   for (const cpu of cpus) {
     const existing = await collection.findOne({ name: cpu.name });
-
     const updateFields = {
       category: "cpu",
       price: cpu.price,
@@ -158,46 +155,37 @@ async function saveCPUsToMongo(cpus) {
         cinebenchSingle: cpu.cinebenchSingle,
         cinebenchMulti: cpu.cinebenchMulti,
       },
-      review: cpu.review || "",
-      specSummary: cpu.specSummary || "",
-      image: cpu.image || "",
+      supportedChipsets: cpu.supportedChipsets,
+      review: cpu.review,
+      specSummary: cpu.specSummary,
+      image: cpu.image,
     };
-
     const priceEntry = { date: today, price: cpu.price || 0 };
 
     if (existing) {
-      const alreadyLogged = (existing.priceHistory || []).some(
-        (h) => String(h.date) === today
-      );
-
+      const already = (existing.priceHistory || []).some((h) => String(h.date) === today);
       await collection.updateOne(
         { _id: existing._id },
-        {
-          $set: updateFields,
-          ...(alreadyLogged ? {} : { $push: { priceHistory: priceEntry } }),
-        }
+        { $set: updateFields, ...(already ? {} : { $push: { priceHistory: priceEntry } }) }
       );
-
-      console.log(`🔁 업데이트됨: ${cpu.name} (${alreadyLogged ? "가격 기록 있음" : "새 가격 추가됨"})`);
     } else {
       await collection.insertOne({
         name: cpu.name,
         ...updateFields,
         priceHistory: [priceEntry],
       });
-
-      console.log("🆕 새로 삽입됨:", cpu.name);
     }
   }
 }
 
+// 실행 라우터
 router.post("/sync-cpus", (req, res) => {
-  res.json({ message: "✅ CPU 동기화 시작됨 (백그라운드에서 처리 중)" });
+  res.json({ message: "✅ CPU 동기화 시작됨 (백그라운드)" });
   setImmediate(async () => {
     const rawList = await fetchCPUsFromTechMons();
     const enriched = [];
     for (const cpu of rawList) {
-      const gpt = await fetchGptSummary(cpu.name);
+      const gpt = await fetchGptInfo(cpu.name);
       enriched.push({ ...cpu, ...gpt });
     }
     await saveCPUsToMongo(enriched);
