@@ -1,4 +1,4 @@
-// ✅ routes/0sync-cpus.js
+// routes/syncCPUs.js
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
