@@ -6,6 +6,7 @@ import fetch from "node-fetch";
 import { getDB } from "../db.js";
 
 const router = express.Router();
+// Naver API credentials
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -72,7 +73,7 @@ async function fetchCPUsFromTechMons() {
 
   pass("table tbody tr").each((_, el) => {
     const tds = pass(el).find("td");
-    const name = cleanName(tds.eq(0).text().trim());
+    const name = cleanName(tds.eq(0).text().trim()); // CPU model name
     const score = parseInt(tds.eq(1).text().replace(/,/g, ""), 10);
     if (!name || isNaN(score)) return;
     if (!cpus[name]) cpus[name] = {};
