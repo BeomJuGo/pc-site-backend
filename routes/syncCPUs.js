@@ -32,7 +32,7 @@ async function fetchNaverPrice(query) {
       "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
     },
   });
-async function fetchCPUsFromTechMons() {
+ async function fetchCPUsFromTechMons() {
   const cinebenchUrl = "https://tech-mons.com/desktop-cpu-cinebench/";
   const passmarkUrl = "https://tech-mons.com/desktop-cpu-benchmark-ranking/";
   const [cineHtml, passHtml] = await Promise.all([
@@ -83,3 +83,32 @@ async function fetchCPUsFromTechMons() {
       console.log("⛔ 필터 제외:", name, `(가성비 ${valueScore.toFixed(4)})`);
       continue;
     }
+
+async function saveCPUsToMongo(cpus) {
+        name: cpu.name,
+        ...updateFields,
+        priceHistory: [priceEntry],
+      });
+
+      console.log("🆕 새로 삽입됨:", cpu.name);
+    }
+  }
+}
+
+router.post("/sync-cpus", (req, res) => {
+  res.json({ message: "✅ CPU 동기화 시작됨 (백그라운드에서 처리 중)" });
+  setImmediate(async () => {
+    const rawList = await fetchCPUsFromTechMons();
+    const enriched = [];
+    for (const cpu of rawList) {
+      const gpt = await fetchGptSummary(cpu.name);
+      enriched.push({ ...cpu, ...gpt });
+    }
+    await saveCPUsToMongo(enriched);
+    console.log("🎉 모든 CPU 저장 완료");
+  });
+});
+
+export default router;
+
+// End of syncCPUs route
