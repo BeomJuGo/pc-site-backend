@@ -1,9 +1,9 @@
  (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/routes/recommend.js b/routes/recommend.js
-index 473e757e2fbb29668228865993dafa6542cbfa94..a2f5269349da2d1a31024abbc73fe128afb61826 100644
+index 473e757e2fbb29668228865993dafa6542cbfa94..fe751078536f3d5e3652e02cc98794415eff8fd5 100644
 --- a/routes/recommend.js
 +++ b/routes/recommend.js
-@@ -1,55 +1,80 @@
+@@ -1,55 +1,83 @@
  // routes/recommend.js
  import express from "express";
  import { getDB } from "../db.js";
@@ -65,11 +65,14 @@ index 473e757e2fbb29668228865993dafa6542cbfa94..a2f5269349da2d1a31024abbc73fe128
 +              continue;
 +            }
 +
-+            const totalPrice =
-+              Number(cpu.price) +
-+              Number(gpu.price) +
-+              Number(memory.price) +
-+              Number(board.price);
++            const cpuPrice = Number(cpu.price);
++            const gpuPrice = Number(gpu.price);
++            const memoryPrice = Number(memory.price);
++            const boardPrice = Number(board.price);
++            if ([cpuPrice, gpuPrice, memoryPrice, boardPrice].some(Number.isNaN)) {
++              continue;
++            }
++            const totalPrice = cpuPrice + gpuPrice + memoryPrice + boardPrice;
 +            if (totalPrice > totalBudget) continue;
 +
 +            let weightedScore = cpuScore + gpuScore;
