@@ -1,0 +1,55 @@
+name: Monthly Motherboard Sync
+
+on:
+  schedule:
+    # 매달 1일 KST 03:10 실행 → UTC로 18:10 (전날)
+    - cron: "10 18 1 * *"
+  workflow_dispatch: # 수동 실행 버튼
+
+jobs:
+  sync-motherboards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: sync-motherboards
+      cancel-in-progress: false
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+      API_PATH: /api/sync-motherboards
+      PAGES: "3" # 몇 페이지까지 크롤링할지 (원하면 바꿔도 됨)
+
+    steps:
+      - name: Call backend to sync motherboards (with retries)
+        shell: bash
+        run: |
+          set -e
+          echo "POST $BACKEND_URL$API_PATH pages=$PAGES"
+
+          # 필요 시 관리자 토큰 사용 (Render에서 보호해뒀다면 주석 해제)
+          # AUTH_HEADER="Authorization: Bearer ${{ secrets.ADMIN_API_TOKEN }}"
+          AUTH_HEADER=""
+
+          # 3회 재시도 (간헐적 네트워크/서버 이슈 대비)
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL$API_PATH" \
+              -H "Content-Type: application/json" \
+              -H "$AUTH_HEADER" \
+              -d "{\"pages\": ${PAGES}}") || true
+
+            echo "HTTP $http_code"
+            cat /tmp/resp.txt || true
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Success"
+              exit 0
+            fi
+
+            echo "⚠️ Failed (HTTP $http_code). Retrying in 20s..."
+            sleep 20
+          done
+
+          echo "❌ All retries failed"
+          exit 1
