@@ -52,7 +52,7 @@ async function fetchNaverPriceAndImage(query) {
   return { price: midPrice, image: firstImage };
 }
 
-router.post("/api/admin/update-prices", async (req, res) => {
+router.post("/update-prices", async (req, res) => {
   const db = getDB();
   const col = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
