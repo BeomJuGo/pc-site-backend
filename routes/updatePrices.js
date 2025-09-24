@@ -7,95 +7,91 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
-/**
- * 네이버 쇼핑에서 가격/이미지를 가져옵니다.
- * 카테고리별 최소 가격을 다르게 지정하고, 불필요한 키워드는 공통적으로 제거합니다.
- */
-async function fetchNaverPrice(name, category) {
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(
-    name
-  )}`;
+async function fetchNaverPriceAndImage(query) {
+  const encoded = encodeURIComponent(query);
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encoded}`;
   const res = await fetch(url, {
     headers: {
       "X-Naver-Client-Id": NAVER_CLIENT_ID,
       "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
     },
   });
-  const data = await res.json();
 
-  const prices = [];
-  let image = null;
-
-  for (const item of data.items || []) {
-    const title = item.title.replace(/<[^>]*>/g, "");
-    // 공통 제외 키워드: 중고/리퍼/쿨러/팬/방열/파워 등
-    if (
-      /리퍼|중고|쿨러|팬|방열|워터|수랭|라디에이터|블록|파워|램|케이스|케이블|어댑터|방열판|워터블럭|워터블록/i.test(
-        title
-      )
-    )
-      continue;
-    const price = parseInt(item.lprice, 10);
-    // 카테고리별 최소·최대 가격 설정
-    let minPrice = 10000;
-    let maxPrice = 5000000;
-    if (category === "gpu") minPrice = 150000; // GPU는 보통 더 비싸므로 하한을 높임
-
-    if (isNaN(price) || price < minPrice || price > maxPrice) continue;
-
-    prices.push(price);
-    if (!image) image = item.image;
+  if (!res.ok) {
+    console.error(`❌ 네이버 API 요청 실패: ${res.statusText}`);
+    return null;
   }
 
-  if (prices.length === 0) return null;
+  const json = await res.json();
+  const items = json.items || [];
 
-  // 중앙값 계산
-  prices.sort((a, b) => a - b);
-  const mid = Math.floor(prices.length / 2);
-  const median =
-    prices.length % 2 === 0
-      ? Math.round((prices[mid - 1] + prices[mid]) / 2)
-      : prices[mid];
+  // 디버깅 로그 출력
+  console.log(`🔍 검색어: ${query}`);
+  if (items.length === 0) {
+    console.log("⛔ 네이버 검색 결과 없음");
+    return null;
+  }
 
-  return { price: median, image };
+  items.forEach((item, i) => {
+    console.log(`📦 ${i + 1}. ${item.title} - ${item.lprice}원`);
+  });
+
+  const validPrices = items
+    .map((item) => parseInt(item.lprice, 10))
+    .filter((price) => !isNaN(price) && price >= 10000 && price <= 2000000)
+    .sort((a, b) => a - b);
+
+  if (validPrices.length === 0) {
+    console.log("⛔ 가격 필터 통과 못함 (10000원 ~ 2000000원)");
+    return null;
+  }
+
+  const midPrice = validPrices[Math.floor(validPrices.length / 2)];
+  const firstImage = items[0]?.image || "";
+
+  return { price: midPrice, image: firstImage };
 }
 
-// 가격/이미지 갱신 라우터: POST /api/update-prices
-router.post("/", async (req, res) => {
-  try {
-    const db = getDB();
-    const col = db.collection("parts");
-    const parts = await col.find({}).toArray();
-    const today = new Date().toISOString().slice(0, 10);
+router.post("/api/admin/update-prices", async (req, res) => {
+  const db = getDB();
+  const col = db.collection("parts");
+  const today = new Date().toISOString().slice(0, 10);
 
-    for (const part of parts) {
-      const result = await fetchNaverPrice(part.name, part.category);
-      if (!result) {
-        console.log("⛔ 가격 정보 없음:", part.name);
-        continue;
-      }
+  const parts = await col.find({
+    category: { $in: ["cpu", "gpu", "motherboard", "memory"] },
+  }).toArray();
 
-      const { price, image } = result;
-      const priceEntry = { date: today, price };
-      const already = (part.priceHistory || []).some(
-        (p) => p.date === today
-      );
+  console.log(`📦 총 ${parts.length}개의 부품 가격 업데이트 시작`);
 
-      await col.updateOne(
-        { _id: part._id },
-        {
-          $set: { price, image },
-          ...(already ? {} : { $push: { priceHistory: priceEntry } }),
-        }
-      );
-      console.log("💰 가격 업데이트:", part.name);
+  for (const part of parts) {
+    const result = await fetchNaverPriceAndImage(part.name);
+    if (!result) {
+      console.log(`⛔ 가격 가져오기 실패: ${part.name}`);
+      continue;
     }
 
-    res.json({ message: "✅ 가격 업데이트 완료" });
-  } catch (err) {
-    console.error("❌ 가격 업데이트 실패", err);
-    res.status(500).json({ error: "가격 업데이트 실패" });
+    const { price, image } = result;
+
+    const priceEntry = { date: today, price };
+
+    const updateFields = {
+      price,
+      image,
+    };
+
+    const already = (part.priceHistory || []).some((p) => p.date === today);
+    const updateOps = {
+      $set: updateFields,
+    };
+    if (!already) {
+      updateOps.$push = { priceHistory: priceEntry };
+    }
+
+    await col.updateOne({ _id: part._id }, updateOps);
+    console.log(`✅ 가격 업데이트 완료: ${part.name} → ${price}원`);
   }
+
+  res.json({ message: "✅ 가격 업데이트 완료" });
 });
 
 export default router;
