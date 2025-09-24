@@ -8,6 +8,7 @@ import syncGPUsRouter from "./routes/syncGPUs.js";
 import partsRouter from "./routes/parts.js";
 import recommendRouter from "./routes/recommend.js";
 import updatePricesRouter from "./routes/updatePrices.js";
+import syncMotherboardRouter from "./routes/syncMOTHERBOARD.js";
 
 dotenv.config();
 const app = express();
@@ -29,6 +30,7 @@ app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
 app.use("/api/recommend", recommendRouter);
 app.use("/api/admin", updatePricesRouter);
+app.use("/api", syncMotherboardRouter);
 
 // 네이버 가격 + 이미지 API
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
