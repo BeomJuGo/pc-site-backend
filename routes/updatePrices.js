@@ -8,172 +8,193 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
-/* -------------------------- 공통 유틸 -------------------------- */
+/* ========================= 공통 유틸 ========================= */
 const K_BLACKLIST = [
-  "중고", "리퍼", "리퍼비시", "벌크", "채굴", "해시", "마이닝",
-  "리뷰", "후기", "스펙", "사양", "가격", "가격비교", "쿠폰",
-  "호환", "호환성", "케이블", "연장", "어댑터", "라이저", "브라켓", "백플레이트",
-  "테스트", "교체", "수리", "서멀", "서멀구리스", "팬교체", "튜닝", "LED", "ARGB",
+  "중고","리퍼","리퍼비시","벌크","채굴","해시","마이닝",
+  "리뷰","후기","스펙","사양","가격비교","쿠폰","보증연장",
+  "호환","호환성","케이블","연장","어댑터","라이저","브라켓","백플레이트","라이저카드",
+  "테스트","교체","수리","서멀","구리스","팬교체","튜닝","ARGB","LED","라이팅",
+  "키캡","방열판","서멀패드","확장카드","컨버터","케이스","케이스쿨러","파워","파워서플라이",
 ];
+const K_REVIEW_TAIL = /(review[:\s].*|specs\s*(and|&)\s*price.*|price\s*(and|&)\s*specs.*|full\s*specs.*|features\s*and\s*specs.*)$/i;
 
-function hasBlacklist(title) {
-  return K_BLACKLIST.some(w => title.toLowerCase().includes(w.toLowerCase()));
-}
-
-function normalize(str = "") {
-  return str
+function norm(s = "") {
+  return s
     .replace(/[™®]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/<[^>]+>/g, " ")      // Naver title의 태그 제거
     .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-function median(nums) {
-  if (!nums.length) return null;
-  const a = [...nums].sort((x, y) => x - y);
-  const mid = Math.floor(a.length / 2);
-  return a.length % 2 ? a[mid] : Math.floor((a[mid - 1] + a[mid]) / 2);
+function cleanNameTail(name="") {
+  return norm(name).replace(K_REVIEW_TAIL, "").replace(/\s+/g," ").trim();
 }
 
-/* --------------------- 카테고리별 토큰/쿼리 --------------------- */
+function hasBlacklist(s = "") {
+  const t = s.toLowerCase();
+  return K_BLACKLIST.some(w => t.includes(w));
+}
+
+function median(arr) {
+  if (!arr.length) return null;
+  const a = [...arr].sort((x,y)=>x-y);
+  const m = Math.floor(a.length/2);
+  return a.length%2 ? a[m] : Math.floor((a[m-1]+a[m])/2);
+}
+
+function madFilter(prices, k = 3) {
+  // Median Absolute Deviation 으로 아웃라이어 제거
+  if (prices.length < 4) return prices; // 표본 적으면 스킵
+  const m = median(prices);
+  const absDev = prices.map(p => Math.abs(p - m));
+  const mad = median(absDev) || 1;
+  const lo = m - k * mad;
+  const hi = m + k * mad;
+  return prices.filter(p => p >= lo && p <= hi);
+}
+
+/* ============== 카테고리별 토큰/쿼리/가격범위 ============== */
+
+function priceBoundsByCategory(category) {
+  switch (category) {
+    case "gpu":         return { min: 60000,  max: 6000000 };
+    case "cpu":         return { min: 30000,  max: 3000000 };
+    case "motherboard": return { min: 25000,  max: 1800000 };
+    case "memory":      return { min: 10000,  max: 1500000 };
+    default:            return { min: 10000,  max: 3000000 };
+  }
+}
 
 function extractGpuTokens(name) {
-  const n = normalize(name);
-  // 예: "ASUS TUF GeForce RTX 4070 SUPER 12GB OC"
+  const n = cleanNameTail(name).toUpperCase();
   const tokens = [];
-  // 제조사/브랜드 토큰 (느슨하게)
-  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|GALAX|COLORFUL|INNO3D|ZOTAC|PNY|PALIT|SAPPHIRE|POWER ?COLOR|XFX|ASROCK)\b/i) || [])[0];
-  if (brand) tokens.push(brand.toUpperCase());
-
-  // 라인업
-  const series = (n.match(/\b(GEFORCE|RADEON)\b/i) || [])[0];
-  if (series) tokens.push(series.toUpperCase());
-
-  // 모델 넘버/서픽스
-  const model = (n.match(/\b(RTX|GTX|RX)\s*-?\s*\d{3,4}\s*(TI|SUPER|XT|XTX)?\b/i) || [])[0];
-  if (model) tokens.push(model.replace(/\s+/g, " ").toUpperCase());
-
-  // VRAM
-  const vram = (n.match(/\b(\d{1,3})\s*GB\b/i) || [])[1];
-  if (vram) tokens.push(`${vram}GB`);
-
+  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|GALAX|COLORFUL|INNO3D|ZOTAC|PNY|PALIT|SAPPHIRE|POWERCOLOR|XFX|ASROCK)\b/) || [])[0];
+  const series = (n.match(/\b(GEFORCE|RADEON)\b/) || [])[0];
+  const model = (n.match(/\b(RTX|GTX|RX)\s*-?\s*\d{3,4}\s*(TI|SUPER|XT|XTX)?\b/) || [])[0];
+  const vram  = (n.match(/\b(\d{1,3})\s*GB\b/) || [])[1];
+  if (brand) tokens.push(brand);
+  if (series) tokens.push(series);
+  if (model) tokens.push(model.replace(/\s+/g," "));
+  if (vram)  tokens.push(`${vram}GB`);
   return tokens;
 }
-
 function extractCpuTokens(name) {
-  const n = normalize(name);
-  // 예: "Ryzen 7 7800X3D" / "Core i5-14400F"
+  const n = cleanNameTail(name).toUpperCase();
   const tokens = [];
-  const amd = (n.match(/\b(RYZEN\s*[3579]|RYZEN\s?THREADRIPPER|ATHLON)\b/i) || [])[0];
-  const intel = (n.match(/\b(CORE\s*i[3579]|PENTIUM|CELERON)\b/i) || [])[0];
-  const gen = (n.match(/\b\d{3,5}(?:X3D|F|K|KF|KS)?\b/i) || [])[0];
-
-  if (amd) tokens.push(amd.toUpperCase());
-  if (intel) tokens.push(intel.toUpperCase());
-  if (gen) tokens.push(gen.toUpperCase());
-
+  const amd = (n.match(/\b(RYZEN\s*[3579]|RYZEN\s?THREADRIPPER|ATHLON)\b/) || [])[0];
+  const intel = (n.match(/\b(CORE\s*i[3579]|PENTIUM|CELERON)\b/) || [])[0];
+  const gen = (n.match(/\b\d{3,5}(X3D|F|K|KF|KS)?\b/) || [])[0];
+  if (amd) tokens.push(amd);
+  if (intel) tokens.push(intel);
+  if (gen) tokens.push(gen);
   return tokens;
 }
-
 function extractBoardTokens(name) {
-  const n = normalize(name);
-  // 예: "MSI MAG B760M Mortar WiFi"
+  const n = cleanNameTail(name).toUpperCase();
   const tokens = [];
-  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|ASROCK|BIOSTAR)\b/i) || [])[0];
-  const chipset = (n.match(/\b(Z\d{3}|B\d{3}|H\d{3}|X\d{3}|A\d{3}|B[\d]{3}M|H[\d]{3}M|Z[\d]{3}M)\b/i) || [])[0];
-  const socket = (n.match(/\b(AM4|AM5|LGA\s?\d{3,4})\b/i) || [])[0];
-
-  if (brand) tokens.push(brand.toUpperCase());
-  if (chipset) tokens.push(chipset.replace(/\s+/g, "").toUpperCase());
-  if (socket) tokens.push(socket.replace(/\s+/g, "").toUpperCase());
-
+  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|ASROCK|BIOSTAR)\b/) || [])[0];
+  const chipset = (n.match(/\b(Z\d{3}|B\d{3}|H\d{3}|X\d{3}|A\d{3})\b/) || [])[0];
+  const socket  = (n.match(/\b(AM4|AM5|LGA\s?\d{3,4})\b/) || [])[0];
+  if (brand) tokens.push(brand);
+  if (chipset) tokens.push(chipset.replace(/\s+/g,""));
+  if (socket) tokens.push(socket.replace(/\s+/g,""));
   return tokens;
 }
-
 function extractMemoryTokens(name) {
-  const n = normalize(name);
-  // 예: "G.SKILL Trident Z5 RGB DDR5-6400 32GB (2x16GB) CL32"
+  const n = cleanNameTail(name).toUpperCase();
   const tokens = [];
-  const brand = (n.match(/\b(G\.?SKILL|GSKILL|CORSAIR|KINGSTON|ADATA|TEAMGROUP|CRUCIAL|PATRIOT|SAMSUNG|MICRON)\b/i) || [])[0];
-  const ddr = (n.match(/\b(DDR[2-5])\b/i) || [])[0];
-  const speed = (n.match(/\b(\d{4,5})\s*(MHZ|MT\/S)?\b/i) || [])[1];
-  const kit = (n.match(/\b(\d{1,2})\s*x\s*(\d{1,3})\s*GB\b/i) || []);
-  const capacity = (n.match(/\b(\d{1,3})\s*GB\b/i) || [])[1];
-  const cl = (n.match(/\b(CL\s*\d{1,2})\b/i) || [])[1];
-
-  if (brand) tokens.push(brand.replace(/\./g, "").toUpperCase());
-  if (ddr) tokens.push(ddr.toUpperCase());
-  if (speed) tokens.push(`${speed}`);
+  const brand = (n.match(/\b(G\.?SKILL|GSKILL|CORSAIR|KINGSTON|ADATA|TEAMGROUP|CRUCIAL|PATRIOT|SAMSUNG|MICRON)\b/) || [])[0];
+  const ddr   = (n.match(/\b(DDR[2-5])\b/) || [])[0];
+  const speed = (n.match(/\b(\d{4,5})\b/) || [])[1]; // 3200/6000 등
+  const kit   = (n.match(/\b(\d{1,2})\s*X\s*(\d{1,3})\s*GB\b/) || []);
+  const cap   = (n.match(/\b(\d{1,3})\s*GB\b/) || [])[1];
+  const cl    = (n.match(/\bCL\s*\d{1,2}\b/) || [])[0];
+  if (brand) tokens.push(brand.replace(/\./g,""));
+  if (ddr) tokens.push(ddr);
+  if (speed) tokens.push(speed);
   if (kit.length) tokens.push(`${kit[1]}X${kit[2]}GB`);
-  else if (capacity) tokens.push(`${capacity}GB`);
-  if (cl) tokens.push(cl.replace(/\s+/g, "").toUpperCase());
-
+  else if (cap) tokens.push(`${cap}GB`);
+  if (cl) tokens.push(cl.replace(/\s+/g,""));
   return tokens;
-}
-
-function makeQuery(name, category) {
-  const base = normalize(name);
-  switch (category) {
-    case "gpu":
-      return `${base} 그래픽카드`;
-    case "cpu":
-      return `${base} CPU`;
-    case "motherboard":
-      return `${base} 메인보드`;
-    case "memory":
-      return `${base} 메모리 RAM`;
-    default:
-      return base;
-  }
 }
 
 function tokensByCategory(name, category) {
   switch (category) {
-    case "gpu": return extractGpuTokens(name);
-    case "cpu": return extractCpuTokens(name);
+    case "gpu":         return extractGpuTokens(name);
+    case "cpu":         return extractCpuTokens(name);
     case "motherboard": return extractBoardTokens(name);
-    case "memory": return extractMemoryTokens(name);
-    default: return [];
+    case "memory":      return extractMemoryTokens(name);
+    default:            return [];
   }
 }
 
-/* ---------------------- 스코어링 & 필터링 ---------------------- */
+function queryVariants(name, category) {
+  const base = cleanNameTail(name);
+  switch (category) {
+    case "gpu":
+      return [
+        `${base} 그래픽카드`,
+        `${base} GPU`,
+        `${base} 신품`,
+      ];
+    case "cpu":
+      return [
+        `${base} CPU`,
+        `${base} 정품`,
+      ];
+    case "motherboard":
+      return [
+        `${base} 메인보드`,
+        `${base} 메보`,
+      ];
+    case "memory":
+      return [
+        `${base} 메모리`,
+        `${base} RAM`,
+      ];
+    default:
+      return [base];
+  }
+}
 
-function scoreTitle(title, tokens) {
-  const t = normalize(title).toUpperCase();
-  if (hasBlacklist(t)) return -999; // 바로 제외
+/* ===================== 타이틀 스코어링 ===================== */
+function scoreTitle(titleRaw, tokens, category) {
+  const t = norm(titleRaw).toUpperCase();
+
+  if (hasBlacklist(t)) return -999;
 
   let score = 0;
+
+  // 토큰 커버리지
   for (const tok of tokens) {
     if (!tok) continue;
-    const ok = t.includes(tok.toUpperCase());
-    if (ok) score += Math.max(2, Math.min(8, Math.floor(tok.length / 2)));
+    if (t.includes(tok.toUpperCase())) {
+      // 긴 토큰 가중치 ↑
+      score += Math.max(2, Math.min(10, Math.floor(tok.length / 2)));
+    } else {
+      // 핵심 토큰(모델/시리즈/DDR 등)이 안 들어가면 감점
+      if (/(RTX|GTX|RX|GEFORCE|RADEON|DDR|Z\d{3}|B\d{3}|H\d{3}|X\d{3}|AM5|AM4|LGA\d{3,4}|CORE|RYZEN)/.test(tok)) {
+        score -= 2;
+      }
+    }
   }
 
-  // 강한 패턴 보너스
-  if (/\b(NON-?LHR|OC|GAMING|TUF|STRIX|VENTUS|EAGLE|TRINITY|HALL OF FAME|HOF)\b/i.test(t)) {
-    score += 1; // 모델 하위브랜드가 들어가면 약간 가산(너무 크지는 않게)
-  }
+  // 카테고리 힌트 단어 보너스/감점
+  if (category === "gpu" && (/\b(GRAPHIC|GPU|그래픽|비디오카드|VGA)\b/i.test(t))) score += 2;
+  if (category === "motherboard" && (/\b(BOARD|MAINBOARD|메인보드)\b/i.test(t))) score += 2;
+  if (category === "memory" && (/\b(RAM|메모리|DIMM|SO[-\s]?DIMM)\b/i.test(t))) score += 2;
+  if (category === "cpu" && (/\b(CPU|프로세서)\b/i.test(t))) score += 2;
 
-  // 리뷰/기사/가이드 가능성 낮추기
-  if (/REVIEW|SPECS|PRICE|VERSUS|VS/.test(t)) score -= 3;
+  // 리뷰/기사/비교 단어 감점
+  if (/\b(REVIEW|SPECS|PRICE|VERSUS|VS)\b/.test(t)) score -= 3;
 
   return score;
 }
 
-function priceBoundsByCategory(category) {
-  switch (category) {
-    case "gpu":         return { min: 50000, max: 5000000 };
-    case "cpu":         return { min: 30000, max: 3000000 };
-    case "motherboard": return { min: 20000, max: 1500000 };
-    case "memory":      return { min: 10000, max: 1200000 };
-    default:            return { min: 10000, max: 3000000 };
-  }
-}
-
-/* --------------------- 네이버 쇼핑 호출 --------------------- */
+/* ===================== 네이버 쇼핑 호출 ===================== */
 async function fetchNaverItems(query) {
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
+  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}&display=30`;
   const res = await fetch(url, {
     headers: {
       "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -188,91 +209,104 @@ async function fetchNaverItems(query) {
   return json.items || [];
 }
 
-/* ------------------ 카테고리 인식형 가격/이미지 ------------------ */
+/* ============== 스마트 가격/이미지 추출 파이프라인 ============== */
 async function fetchPriceImageSmart(name, category) {
-  const query = makeQuery(name, category);
+  const variants = queryVariants(name, category);
   const tokens = tokensByCategory(name, category);
   const { min, max } = priceBoundsByCategory(category);
 
-  console.log(`🔎 [${category}] 검색어: ${query}`);
+  console.log(`\n🔎 [${category}] 대상: ${name}`);
   console.log(`🧩 토큰: ${JSON.stringify(tokens)}`);
 
-  const items = await fetchNaverItems(query);
-  if (!items.length) {
-    console.log("⛔ 네이버 검색 결과 없음");
+  const pool = []; // {title, price, image, score}
+  for (const q of variants) {
+    console.log(`   ▶ 검색: ${q}`);
+    const items = await fetchNaverItems(q);
+
+    for (const it of items) {
+      const title = norm(it.title || "");
+      const price = parseInt(it.lprice, 10);
+      if (!title || isNaN(price)) continue;
+      if (price < min || price > max) continue;
+
+      const sc = scoreTitle(title, tokens, category);
+      if (sc <= 0) continue; // 스코어 낮거나 블랙리스트
+
+      pool.push({
+        title,
+        price,
+        image: it.image || "",
+        score: sc,
+      });
+    }
+  }
+
+  if (!pool.length) {
+    console.log("⛔ 후보 없음 (스코어/가격 필터 후 0)");
     return null;
   }
 
-  // 스코어 부여 + 가격 필터
-  const scored = [];
-  for (const it of items) {
-    const title = it.title?.replace(/<[^>]+>/g, "") || "";
-    const price = parseInt(it.lprice, 10);
-    if (isNaN(price) || price < min || price > max) {
-      console.log(`⏭️ 가격 범위 제외: ${title} (${price})`);
-      continue;
+  // 타이틀 중복 제거 (유사 타이틀 합치기) – 간단히 동일문자열 기준
+  const byTitle = new Map();
+  for (const c of pool) {
+    if (!byTitle.has(c.title) || byTitle.get(c.title).score < c.score) {
+      byTitle.set(c.title, c);
     }
-    const s = scoreTitle(title, tokens);
-    if (s <= 0) {
-      console.log(`⏭️ 스코어 낮음/블랙리스트: ${title} (score=${s})`);
-      continue;
-    }
-    scored.push({ title, price, image: it.image || "", score: s });
   }
+  const uniq = Array.from(byTitle.values());
 
-  // 디버깅 출력
-  scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .forEach((c, i) => console.log(`📦 후보${i + 1}: score=${c.score}, price=${c.price}, ${c.title}`));
+  // 스코어 상위 50% 선별
+  const sorted = uniq.sort((a,b)=>b.score - a.score);
+  const top = sorted.slice(0, Math.max(3, Math.ceil(sorted.length/2)));
 
-  if (!scored.length) {
-    console.log("⛔ 매칭 후보 없음 (스코어/가격 필터 후 0)");
-    return null;
-  }
+  // MAD로 아웃라이어 제거 → 중위가
+  const prices = top.map(x=>x.price);
+  const filtered = madFilter(prices, 3);
+  const used = filtered.length >= 2 ? filtered : prices;
+  const mid = median(used);
 
-  // 상위 스코어 절반의 가격만 대상으로 중위가 계산
-  const top = scored.sort((a, b) => b.score - a.score);
-  const cutoff = Math.max(3, Math.ceil(top.length / 2));
-  const consider = top.slice(0, cutoff);
-  const mid = median(consider.map(x => x.price));
-  const chosenImage = consider[0].image || top[0].image || "";
+  // 이미지: 스코어 최상위 후보 우선
+  const chosenImage = top[0]?.image || sorted[0]?.image || "";
 
+  // 디버깅
+  top.slice(0,8).forEach((c,i)=>{
+    console.log(`📦 후보${i+1}: score=${c.score}, price=${c.price}, title="${c.title}"`);
+  });
+  console.log(`🧮 가격결정: mid=${mid}, 표본=${used.length}/${top.length} (전체=${uniq.length})`);
+
+  if (!mid) return null;
   return { price: mid, image: chosenImage };
 }
 
-/* ---------------------- 라우터: 가격 업데이트 ---------------------- */
+/* ============================ 라우터 ============================ */
 router.post("/update-prices", async (req, res) => {
   const db = getDB();
   const col = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
 
-  // 필요한 카테고리만
   const parts = await col.find({
     category: { $in: ["cpu", "gpu", "motherboard", "memory"] },
   }).toArray();
 
-  console.log(`📦 총 ${parts.length}개의 부품 가격 업데이트 시작`);
+  console.log(`\n📦 총 ${parts.length}개의 부품 가격 업데이트 시작`);
 
   for (const part of parts) {
     try {
       const result = await fetchPriceImageSmart(part.name, part.category);
       if (!result) {
-        console.log(`⛔ 가격 가져오기 실패: ${part.category} | ${part.name}`);
+        console.log(`⛔ 실패: [${part.category}] ${part.name}`);
         continue;
       }
-
       const { price, image } = result;
-      const priceEntry = { date: today, price };
       const already = (part.priceHistory || []).some(p => p.date === today);
 
-      const updateOps = { $set: { price, image } };
-      if (!already) updateOps.$push = { priceHistory: priceEntry };
+      const ops = { $set: { price, image } };
+      if (!already) ops.$push = { priceHistory: { date: today, price } };
 
-      await col.updateOne({ _id: part._id }, updateOps);
-      console.log(`✅ 업데이트 완료: [${part.category}] ${part.name} → ${price}원`);
+      await col.updateOne({ _id: part._id }, ops);
+      console.log(`✅ 완료: [${part.category}] ${part.name} → ${price}원`);
     } catch (e) {
-      console.log(`❌ 처리 실패: [${part.category}] ${part.name} | ${e.message}`);
+      console.log(`❌ 예외: [${part.category}] ${part.name} | ${e.message}`);
     }
   }
 
