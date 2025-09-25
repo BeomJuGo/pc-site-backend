@@ -1,4 +1,4 @@
-name: Daily GPU Sync
+name: Monthly GPU Sync
 
 on:
   schedule:
