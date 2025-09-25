@@ -3,7 +3,7 @@ name: Weekly Memory Sync
 on:
   schedule:
     # 매달 월요일 KST 03:15 실행 → UTC 18:15 (일요일)
-    - cron: "15 18 1 * *"
+    - cron: "0 18 1 * *"
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:
