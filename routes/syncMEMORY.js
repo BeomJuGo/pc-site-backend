@@ -64,19 +64,30 @@ function extractProductCandidates($) {
 /* 이름/스펙 정제                        */
 /* ------------------------------------ */
 function cleanProductName(nameRaw = "") {
-  let name = nameRaw
+  let name = (nameRaw || "")
     .replace(/\s+/g, " ")
-    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[\u2013\u2014]/g, "-") // – — → -
     .trim();
 
-  // 흔한 꼬리표 제거
-  name = name.replace(/\s*[-–—]?\s*review[:\s].*$/i, "");
-  name = name.replace(/\s*[-–—]?\s*specs\s*(and|&)\s*price.*$/i, "");
-  name = name.replace(/\s*[-–—]?\s*price\s*(and|&)\s*specs.*$/i, "");
-  name = name.replace(/\s*[-–—]?\s*features\s*and\s*specs.*$/i, "");
-  name = name.replace(/\s*[-–—]?\s*full\s*specs.*$/i, "");
-  name = name.replace(/\s*[-–—]?\s*vs\s.*$/i, "");
-  name = name.replace(/\s*[-–—]?\s*versus\s.*$/i, "");
+  // 1) 흔한 꼬리표/구분자 패턴들을 과감히 제거
+  //   예: "… review: specs and price", "… specs and price", "… price and specs", "… full specs"
+  name = name.replace(/\s*[-–—:|]?\s*review[:\s].*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*specs?\s*(and|&)\s*price.*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*price\s*(and|&)\s*specs?.*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*full\s*specs?.*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*features\s*and\s*specs?.*$/i, "");
+
+  // 2) 비교/대상 표기 제거
+  name = name.replace(/\s*[-–—:|]?\s*vs\s+.*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*versus\s+.*$/i, "");
+
+  // 3) 사이트 브랜딩 꼬리표 제거 (on Versus, | Versus 등)
+  name = name.replace(/\s*[-–—:|]?\s*on\s+versus\s*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*versus\s*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*\|\s*versus\s*$/i, "");
+  name = name.replace(/\s*[-–—:|]?\s*–\s*versus\s*$/i, "");
+
+  // 4) 뒤에 붙은 불필요한 괄호/구문 정리(너무 공격적이지 않게 공백 재정리)
   name = name.replace(/\s+/g, " ").trim();
   return name;
 }
@@ -236,18 +247,19 @@ async function saveToDB(list) {
 }
 
 /* ------------------------------------ */
-/* 과거 문서 정리 유틸                   */
+/* 과거 문서 정리 (이름 꼬리표 제거)     */
 /* ------------------------------------ */
 function cleanupName(name = "") {
   return cleanProductName(name);
 }
 function cleanupInfo(info = "") {
-  if (!info) return "";
-  // 기존 info 텍스트 전부에서 Type/Speed/Capacity/CL만 다시 뽑아 재생성
-  return buildMemoryInfoFromText(info);
+  // info는 이미 Type/Speed/Capacity/CL만 추출해 만든 형태라
+  // 굳이 다시 파싱할 필요가 없지만, 혹시 쓸데없는 텍스트가 섞였으면 최소 정리
+  if (typeof info !== "string") return "";
+  return info.replace(/\s+/g, " ").trim();
 }
 
-async function cleanupOldDocs() {
+async function cleanupOldMemoryDocs() {
   const db = getDB();
   const col = db.collection("parts");
   const docs = await col.find({ category: "memory" }).toArray();
@@ -307,11 +319,11 @@ router.post("/sync-memory", async (req, res) => {
   }
 });
 
-// 과거 오염 데이터 정리 (이름 꼬리표/스펙 정리)
+// 과거 데이터 정리 (이름 꼬리표 제거)
 // POST /api/cleanup-memory
 router.post("/cleanup-memory", async (req, res) => {
   try {
-    const result = await cleanupOldDocs();
+    const result = await cleanupOldMemoryDocs();
     res.json({ message: "✅ 정리 완료", ...result });
   } catch (err) {
     console.error("❌ cleanup-memory 실패", err);
