@@ -2,6 +2,7 @@
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import fetch from "node-fetch";
 import { getDB } from "../db.js";
 
 const router = express.Router();
@@ -9,6 +10,71 @@ const router = express.Router();
 const ORIGIN = "https://versus.com";
 const LIST_URL = (p) => `${ORIGIN}/en/motherboard?page=${p}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ====== OpenAI ======
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+async function fetchAiOneLiner({ name, info }) {
+  if (!OPENAI_API_KEY) {
+    console.log("⚠️ OPENAI_API_KEY 미설정: AI 한줄평 생략");
+    return { review: "", specSummary: "" };
+  }
+  const prompt = `
+당신은 PC 부품 추천 전문가입니다. 아래 메인보드 정보를 바탕으로 한국어로 짧고 간결한 한줄평과 핵심 스펙 요약을 만들어 주세요.
+
+[제품명]
+${name}
+
+[핵심 정보]
+${info || "-"}
+
+[요구사항]
+- 한줄평(review): 1문장, 100자 이내, 과장 금지, 초보자도 이해하기 쉬운 표현
+- 스펙 요약(specSummary): 1문장, 100자 이내, 소켓/칩셋/대략적 용도(게이밍/크리에이티브/보급형 등) 포함
+- JSON만 출력, 설명/불릿/코드블록 불가
+
+형식:
+{
+  "review": "<한줄평>",
+  "specSummary": "<요약>"
+}
+  `.trim();
+
+  // 재시도(최대 3회, 지수 백오프)
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4",
+          temperature: 0.4,
+          messages: [
+            { role: "system", content: "너는 PC 부품 요약/추천 전문가야." },
+            { role: "user", content: prompt },
+          ],
+        }),
+      });
+      const data = await res.json();
+      const raw = data?.choices?.[0]?.message?.content || "";
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}") + 1;
+      const jsonStr = raw.slice(start, end);
+      const parsed = JSON.parse(jsonStr);
+      return {
+        review: typeof parsed.review === "string" ? parsed.review.trim() : "",
+        specSummary: typeof parsed.specSummary === "string" ? parsed.specSummary.trim() : "",
+      };
+    } catch (e) {
+      const wait = 800 * Math.pow(2, i);
+      console.log(`⚠️ AI 한줄평 실패(시도 ${i + 1}): ${e.message} → ${wait}ms 대기 후 재시도`);
+      await sleep(wait);
+    }
+  }
+  return { review: "", specSummary: "" };
+}
 
 /* ------------------------------------ */
 /* HTTP 요청 유틸                        */
@@ -85,24 +151,20 @@ function cleanProductName(nameRaw = "") {
 function extractSocketToken(text = "") {
   const TOKEN_PATTERNS = [
     /\b(AM5|AM4)\b/i,
-    /\b(LGA\s?\d{3,4})\b/i,       // LGA1700, LGA1851, LGA1581 등
+    /\b(LGA\s?\d{3,4})\b/i,
     /\b(s?TRX4|TR4)\b/i,
     /\b(LGA\s?\d{3,4}\s?-\s?\d{3,4})\b/i,
   ];
-
   for (const re of TOKEN_PATTERNS) {
     const m = text.match(re);
     if (m?.[1]) return m[1].replace(/\s+/g, "").toUpperCase().replace(/^LGA(\d+)/, "LGA$1");
     if (m?.[0]) return m[0].replace(/\s+/g, "").toUpperCase().replace(/^LGA(\d+)/, "LGA$1");
   }
-
-  // "Socket: <...>" 형태 백업
   const mSock = text.match(/socket\s*[:•\-]?\s*([A-Za-z0-9\s\-]+)/i);
   if (mSock?.[1]) {
     const t = mSock[1].trim();
     return extractSocketToken(t);
   }
-
   return "";
 }
 
@@ -112,10 +174,8 @@ function extractSocketToken(text = "") {
 function extractProductName($) {
   const h1 = $("h1").first().text().trim();
   if (h1) return cleanProductName(h1);
-
   const og = $('meta[property="og:title"]').attr("content");
   if (og) return cleanProductName(og);
-
   const title = $("title").text().trim();
   return cleanProductName(title || "");
 }
@@ -139,7 +199,7 @@ function extractSocketInfo($) {
   });
   if (info) return info;
 
-  // 2) 라벨/정의/카드/자유텍스트
+  // 2) 텍스트 블록
   const blocks = [];
   $('li, div, section, p, span, dt, dd').each((_, el) => {
     const t = $(el).text().trim();
@@ -171,7 +231,7 @@ function extractSocketInfo($) {
   const tok = extractSocketToken(full);
   if (tok) return `Socket: ${tok}`;
 
-  return ""; // 실패
+  return "";
 }
 
 function isLikelyMotherboardPage($) {
@@ -219,7 +279,7 @@ async function parseDetail(u) {
   return { name, info };
 }
 
-async function saveToDB(list) {
+async function saveToDB(list, { ai = true, force = false } = {}) {
   const db = getDB();
   const col = db.collection("parts");
   const existing = await col.find({ category: "motherboard" }).toArray();
@@ -227,16 +287,39 @@ async function saveToDB(list) {
 
   for (const it of list) {
     const old = byName.get(it.name);
-    const update = { category: "motherboard", info: it.info || "" };
+
+    let review = "";
+    let specSummary = "";
+    if (ai) {
+      // 기존에 review 있으면 스킵(강제 생성은 force)
+      if (!old?.review || force) {
+        const aiRes = await fetchAiOneLiner({ name: it.name, info: it.info });
+        review = aiRes.review || old?.review || "";
+        specSummary = aiRes.specSummary || old?.specSummary || "";
+      } else {
+        review = old.review;
+        specSummary = old.specSummary || "";
+      }
+    }
+
+    const update = {
+      category: "motherboard",
+      info: it.info || "",
+      ...(ai ? { review, specSummary } : {}),
+    };
 
     if (old) {
       await col.updateOne({ _id: old._id }, { $set: update });
-      console.log(`🔁 업데이트: ${it.name} | ${it.info || "—"}`);
+      console.log(`🔁 업데이트: ${it.name} | ${it.info || "—"} | review:${update.review ? "O" : "X"}`);
     } else {
-      await col.insertOne({ name: it.name, ...update, priceHistory: [] });
-      console.log(`🆕 삽입: ${it.name} | ${it.info || "—"}`);
+      await col.insertOne({
+        name: it.name,
+        ...update,
+        priceHistory: [],
+      });
+      console.log(`🆕 삽입: ${it.name} | ${it.info || "—"} | review:${update.review ? "O" : "X"}`);
     }
-    await sleep(150);
+    await sleep(180); // OpenAI 레이트 제한 고려
   }
 }
 
@@ -248,11 +331,9 @@ function cleanupName(name = "") {
 }
 function cleanupInfo(info = "") {
   if (!info) return "";
-  // 기존 info가 'Chipset: ...' 등으로 저장된 경우에서도 소켓 토큰만 살려서 재생성
   const token = extractSocketToken(info);
   return token ? `Socket: ${token}` : "";
 }
-
 async function cleanupOldDocs() {
   const db = getDB();
   const col = db.collection("parts");
@@ -279,15 +360,15 @@ async function cleanupOldDocs() {
 /* 라우터                                */
 /* ------------------------------------ */
 
-// 크롤링 & 저장
-// POST /api/sync-motherboards
-// body: { pages?: number, limit?: number }
+// POST /api/sync-motherboards  body: { pages?: number, limit?: number, ai?: boolean, force?: boolean }
 router.post("/sync-motherboards", async (req, res) => {
   try {
     const pages = Number(req?.body?.pages) || 2;
     const hardLimit = Number(req?.body?.limit) || 60;
+    const ai = req?.body?.ai !== false;      // 기본 true
+    const force = !!req?.body?.force;        // 기존 review 있어도 재생성
 
-    res.json({ message: `✅ 메인보드 동기화 시작 (pages=${pages}, limit=${hardLimit})` });
+    res.json({ message: `✅ 메인보드 동기화 시작 (pages=${pages}, limit=${hardLimit}, ai=${ai}, force=${force})` });
 
     setImmediate(async () => {
       const cand = await collectCandidates(pages);
@@ -296,7 +377,7 @@ router.post("/sync-motherboards", async (req, res) => {
         const parsed = await parseDetail(u);
         if (!parsed) continue;
         picked.push(parsed);
-        await sleep(350);
+        await sleep(300);
       }
 
       if (picked.length === 0) {
@@ -304,7 +385,7 @@ router.post("/sync-motherboards", async (req, res) => {
         return;
       }
 
-      await saveToDB(picked);
+      await saveToDB(picked, { ai, force });
       console.log("🎉 메인보드 저장 완료");
     });
   } catch (err) {
@@ -313,8 +394,7 @@ router.post("/sync-motherboards", async (req, res) => {
   }
 });
 
-// 과거 오염 데이터 정리(이름 꼬리표/소켓 토큰 정리)
-// POST /api/cleanup-motherboards
+// 과거 오염 데이터 정리
 router.post("/cleanup-motherboards", async (req, res) => {
   try {
     const result = await cleanupOldDocs();
