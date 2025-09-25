@@ -1,4 +1,4 @@
-name: Daily CPU Sync
+name: Monthly CPU Sync
 
 on:
   schedule:
