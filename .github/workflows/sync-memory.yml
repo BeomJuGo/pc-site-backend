@@ -1,4 +1,4 @@
-name: Weekly Memory Sync
+name: Monthly Memory Sync
 
 on:
   schedule:
