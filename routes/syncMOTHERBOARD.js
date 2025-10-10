@@ -1,6 +1,7 @@
-// routes/syncMOTHERBOARD.js - 다나와 메인보드 크롤링 (Puppeteer 버전)
+// routes/syncMOTHERBOARD.js - Render 호환 버전
 import express from "express";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import fetch from "node-fetch";
 import { getDB } from "../db.js";
 
@@ -13,30 +14,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ==================== OpenAI 한줄평 생성 ==================== */
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("⚠️ OPENAI_API_KEY 미설정: AI 한줄평 생략");
+    console.log("⚠️ OPENAI_API_KEY 미설정");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `
-당신은 PC 부품 전문가입니다. 다나와에서 크롤링한 메인보드 정보를 바탕으로 한국어로 간결한 한줄평과 핵심 스펙 요약을 작성해주세요.
-
-[제품명]
-${name}
-
-[스펙 정보]
-${spec || "-"}
-
-[요구사항]
-- 한줄평(review): 1문장, 100자 이내, 초보자도 이해하기 쉬운 표현
-- 스펙 요약(specSummary): 1문장, 100자 이내, 소켓/칩셋/폼팩터 포함
-- JSON만 출력
-
-형식:
-{
-  "review": "<한줄평>",
-  "specSummary": "<요약>"
-}
-  `.trim();
+  const prompt = `메인보드 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내 한줄평>", "specSummary":"<소켓/칩셋/폼팩터 요약>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -50,7 +32,7 @@ ${spec || "-"}
           model: "gpt-4",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 요약 전문가야." },
+            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
             { role: "user", content: prompt },
           ],
         }),
@@ -60,17 +42,14 @@ ${spec || "-"}
       const raw = data?.choices?.[0]?.message?.content || "";
       const start = raw.indexOf("{");
       const end = raw.lastIndexOf("}") + 1;
-      const jsonStr = raw.slice(start, end);
-      const parsed = JSON.parse(jsonStr);
+      const parsed = JSON.parse(raw.slice(start, end));
 
       return {
         review: parsed.review?.trim() || "",
         specSummary: parsed.specSummary?.trim() || "",
       };
     } catch (e) {
-      const wait = 800 * Math.pow(2, i);
-      console.log(`⚠️ AI 한줄평 실패(${i + 1}): ${e.message} → ${wait}ms 대기`);
-      await sleep(wait);
+      await sleep(800 * Math.pow(2, i));
     }
   }
   return { review: "", specSummary: "" };
@@ -78,42 +57,27 @@ ${spec || "-"}
 
 /* ==================== 소켓 정보 추출 ==================== */
 function extractSocketInfo(spec = "") {
-  // AM5
-  if (/AM5|소켓AM5/i.test(spec)) return "Socket: AM5";
-  if (/B650|X670|A620/i.test(spec)) return "Socket: AM5";
-
-  // AM4
-  if (/AM4|소켓AM4/i.test(spec)) return "Socket: AM4";
-  if (/B550|X570|A520|B450|X470/i.test(spec)) return "Socket: AM4";
-
-  // LGA1700
-  if (/LGA\s?1700|소켓1700/i.test(spec)) return "Socket: LGA1700";
-  if (/Z790|B760|H770|Z690|B660|H610/i.test(spec)) return "Socket: LGA1700";
-
-  // LGA1200
-  if (/LGA\s?1200|소켓1200/i.test(spec)) return "Socket: LGA1200";
-  if (/Z590|B560|H570|H510|Z490|B460|H470|H410/i.test(spec))
-    return "Socket: LGA1200";
-
+  if (/AM5|B650|X670|A620/i.test(spec)) return "Socket: AM5";
+  if (/AM4|B550|X570|A520/i.test(spec)) return "Socket: AM4";
+  if (/LGA\s?1700|Z790|B760|H770|Z690|B660/i.test(spec)) return "Socket: LGA1700";
+  if (/LGA\s?1200|Z590|B560|H570/i.test(spec)) return "Socket: LGA1200";
   return "";
 }
 
-/* ==================== Puppeteer 다나와 크롤링 ==================== */
-async function crawlDanawaMotherboards(maxPages = 30) {
+/* ==================== Puppeteer 다나와 크롤링 (Render 호환) ==================== */
+async function crawlDanawaMotherboards(maxPages = 5) {
   console.log(`🔍 다나와 메인보드 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   let browser;
   const products = [];
 
   try {
+    // Render 환경에서 작동하는 Chromium 설정
     browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
     });
 
     const page = await browser.newPage();
@@ -125,7 +89,6 @@ async function crawlDanawaMotherboards(maxPages = 30) {
       console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
 
       try {
-        // 첫 페이지는 기본 URL, 이후는 JavaScript 함수로 페이지 이동
         if (pageNum === 1) {
           await page.goto(DANAWA_BASE_URL, {
             waitUntil: "networkidle2",
@@ -138,8 +101,6 @@ async function crawlDanawaMotherboards(maxPages = 30) {
               movePage(p);
             }
           }, pageNum);
-
-          // 페이지 로딩 대기
           await sleep(3000);
         }
 
@@ -152,34 +113,25 @@ async function crawlDanawaMotherboards(maxPages = 30) {
 
           items.forEach((item) => {
             try {
-              // 제품명
               const nameEl = item.querySelector(".prod_name a");
               const name = nameEl?.textContent?.trim();
 
               if (!name) return;
 
-              // 가격
               const priceEl = item.querySelector(".price_sect strong");
               const priceText = priceEl?.textContent?.trim() || "0";
               const price = parseInt(priceText.replace(/[^\d]/g, ""), 10) || 0;
 
-              // 이미지
               const imgEl = item.querySelector("img");
               const image = imgEl?.src || "";
 
-              // 스펙 정보
               const specEl = item.querySelector(".spec_list");
               const spec = specEl?.textContent
                 ?.trim()
                 .replace(/\s+/g, " ")
                 .replace(/더보기/g, "");
 
-              results.push({
-                name,
-                price,
-                image,
-                spec: spec || "",
-              });
+              results.push({ name, price, image, spec: spec || "" });
             } catch (e) {
               console.log("⚠️ 아이템 파싱 실패:", e.message);
             }
@@ -191,7 +143,7 @@ async function crawlDanawaMotherboards(maxPages = 30) {
         console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
         products.push(...pageProducts);
 
-        // 다음 페이지가 있는지 확인
+        // 다음 페이지 확인
         const hasNext = await page.evaluate(() => {
           const nextBtn = document.querySelector(".nav_next");
           return nextBtn && !nextBtn.classList.contains("disabled");
@@ -202,7 +154,7 @@ async function crawlDanawaMotherboards(maxPages = 30) {
           break;
         }
 
-        await sleep(1000); // 서버 부하 방지
+        await sleep(1500);
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
         break;
@@ -234,8 +186,6 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
 
   for (const board of motherboards) {
     const old = byName.get(board.name);
-
-    // 소켓 정보 추출
     const info = extractSocketInfo(board.spec);
 
     let review = "";
@@ -266,22 +216,15 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
     const today = new Date().toISOString().slice(0, 10);
 
     if (old) {
-      // 기존 문서 업데이트
       const ops = { $set: update };
-
-      // 가격 히스토리 추가 (오늘 날짜가 없으면)
       const hasToday = old.priceHistory?.some((p) => p.date === today);
       if (board.price > 0 && !hasToday) {
-        ops.$push = {
-          priceHistory: { date: today, price: board.price },
-        };
+        ops.$push = { priceHistory: { date: today, price: board.price } };
       }
-
       await col.updateOne({ _id: old._id }, ops);
       updated++;
       console.log(`🔁 업데이트: ${board.name} (${board.price.toLocaleString()}원)`);
     } else {
-      // 새 문서 삽입
       await col.insertOne({
         name: board.name,
         ...update,
@@ -291,10 +234,9 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
       console.log(`🆕 삽입: ${board.name} (${board.price.toLocaleString()}원)`);
     }
 
-    if (ai) await sleep(200); // OpenAI 레이트 리밋 방지
+    if (ai) await sleep(200);
   }
 
-  // 기존 목록에 없는 항목 삭제
   const currentNames = new Set(motherboards.map((b) => b.name));
   const toDelete = existing
     .filter((e) => !currentNames.has(e.name))
@@ -313,12 +255,12 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
 /* ==================== 라우터 ==================== */
 router.post("/sync-motherboards", async (req, res) => {
   try {
-    const maxPages = Number(req?.body?.pages) || 5;
+    const maxPages = Number(req?.body?.pages) || 3;
     const ai = req?.body?.ai !== false;
     const force = !!req?.body?.force;
 
     res.json({
-      message: `✅ 다나와 메인보드 동기화 시작 (pages=${maxPages}, ai=${ai}, force=${force})`,
+      message: `✅ 다나와 메인보드 동기화 시작 (pages=${maxPages}, ai=${ai})`,
     });
 
     setImmediate(async () => {
