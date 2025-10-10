@@ -14,18 +14,41 @@ import syncMemoryRouter from "./routes/syncMEMORY.js";
 dotenv.config();
 const app = express();
 
-// CORS 설정 (배포 도메인에 맞게 수정)
+// ========================================
+// CORS 설정 강화 (OPTIONS preflight 포함)
+// ========================================
+const allowedOrigins = [
+  "https://goodpricepc.vercel.app",
+  "http://localhost:3000", // 로컬 개발용
+  "http://localhost:3001",
+];
+
 app.use(
   cors({
-    origin: "https://goodpricepc.vercel.app",
+    origin: function (origin, callback) {
+      // origin이 없는 경우 (Postman 등) 또는 허용된 origin인 경우
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log("❌ CORS 차단된 origin:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// OPTIONS preflight 요청 명시적 처리
+app.options("*", cors());
 
 // JSON 파싱 미들웨어
 app.use(express.json());
 
+// ========================================
 // 라우트 등록
+// ========================================
 app.use("/api/admin", syncCPUsRouter);
 app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
@@ -34,7 +57,9 @@ app.use("/api/admin", updatePricesRouter);
 app.use("/api", syncMotherboardRouter);
 app.use("/api", syncMemoryRouter);
 
+// ========================================
 // 네이버 가격 + 이미지 API
+// ========================================
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
@@ -56,7 +81,9 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
+// ========================================
 // GPT 정보 API (CPU/GPU 스펙, 리뷰 요약용)
+// ========================================
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.post("/api/gpt-info", async (req, res) => {
@@ -99,8 +126,7 @@ app.post("/api/gpt-info", async (req, res) => {
     const specData = await specRes.json();
 
     const review = reviewData.choices?.[0]?.message?.content || "한줄평 생성 실패";
-    const specSummary =
-      specData.choices?.[0]?.message?.content || "사양 요약 실패";
+    const specSummary = specData.choices?.[0]?.message?.content || "사양 요약 실패";
 
     res.json({ review, specSummary });
   } catch (error) {
@@ -109,10 +135,25 @@ app.post("/api/gpt-info", async (req, res) => {
   }
 });
 
+// ========================================
+// 헬스 체크 엔드포인트 (CORS 테스트용)
+// ========================================
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    cors: "enabled",
+    allowedOrigins,
+  });
+});
+
+// ========================================
 // DB 연결 후 서버 시작
+// ========================================
 connectDB().then(() => {
   const PORT = process.env.PORT || 10000;
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
+    console.log(`🌐 CORS 허용 도메인:`, allowedOrigins);
   });
 });
