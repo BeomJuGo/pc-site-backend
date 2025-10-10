@@ -1,4 +1,4 @@
-// routes/syncMOTHERBOARD.js - Render 호환 버전
+// routes/syncMOTHERBOARD.js - 타임아웃 개선 버전
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
@@ -18,7 +18,7 @@ async function fetchAiOneLiner({ name, spec }) {
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `메인보드 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내 한줄평>", "specSummary":"<소켓/칩셋/폼팩터 요약>"}`;
+  const prompt = `메인보드 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<소켓/칩셋/폼팩터>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -64,23 +64,47 @@ function extractSocketInfo(spec = "") {
   return "";
 }
 
-/* ==================== Puppeteer 다나와 크롤링 (Render 호환) ==================== */
-async function crawlDanawaMotherboards(maxPages = 5) {
+/* ==================== Puppeteer 다나와 크롤링 (개선 버전) ==================== */
+async function crawlDanawaMotherboards(maxPages = 3) {
   console.log(`🔍 다나와 메인보드 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   let browser;
   const products = [];
 
   try {
-    // Render 환경에서 작동하는 Chromium 설정
+    // Chromium 최적화 설정
+    chromium.setGraphicsMode = false;
+
     browser = await puppeteer.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-setuid-sandbox',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions'
+      ],
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
+    
+    // 불필요한 리소스 차단 (속도 향상)
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     );
@@ -90,50 +114,82 @@ async function crawlDanawaMotherboards(maxPages = 5) {
 
       try {
         if (pageNum === 1) {
-          await page.goto(DANAWA_BASE_URL, {
-            waitUntil: "networkidle2",
+          // 첫 페이지 로딩 (재시도 로직 포함)
+          let retries = 3;
+          let loaded = false;
+
+          while (retries > 0 && !loaded) {
+            try {
+              await page.goto(DANAWA_BASE_URL, {
+                waitUntil: 'domcontentloaded', // networkidle2 대신 사용
+                timeout: 60000, // 60초로 증가
+              });
+              loaded = true;
+              console.log('✅ 페이지 로딩 완료');
+            } catch (e) {
+              retries--;
+              console.log(`⚠️ 로딩 재시도 (남은 횟수: ${retries})`);
+              if (retries === 0) throw e;
+              await sleep(2000);
+            }
+          }
+
+          // 제품 리스트가 로드될 때까지 대기
+          await page.waitForSelector('.main_prodlist .prod_item', {
             timeout: 30000,
+          }).catch(() => {
+            console.log('⚠️ 제품 리스트 로딩 지연');
           });
+
+          await sleep(3000); // 추가 대기
+
         } else {
-          // movePage() JavaScript 함수 실행
+          // 2페이지 이상: JavaScript 페이지 이동
           await page.evaluate((p) => {
             if (typeof movePage === "function") {
               movePage(p);
             }
           }, pageNum);
-          await sleep(3000);
+
+          // 페이지 전환 대기
+          await sleep(5000);
+
+          // 제품 리스트 재로딩 대기
+          await page.waitForSelector('.main_prodlist .prod_item', {
+            timeout: 20000,
+          }).catch(() => {
+            console.log('⚠️ 페이지 전환 후 리스트 로딩 지연');
+          });
         }
 
         // 제품 리스트 추출
         const pageProducts = await page.evaluate(() => {
-          const items = document.querySelectorAll(
-            ".main_prodlist .product_list .prod_item"
-          );
+          const items = document.querySelectorAll('.main_prodlist .product_list .prod_item');
           const results = [];
 
           items.forEach((item) => {
             try {
-              const nameEl = item.querySelector(".prod_name a");
+              const nameEl = item.querySelector('.prod_name a');
               const name = nameEl?.textContent?.trim();
 
               if (!name) return;
 
-              const priceEl = item.querySelector(".price_sect strong");
-              const priceText = priceEl?.textContent?.trim() || "0";
-              const price = parseInt(priceText.replace(/[^\d]/g, ""), 10) || 0;
+              const priceEl = item.querySelector('.price_sect strong');
+              const priceText = priceEl?.textContent?.trim() || '0';
+              const price = parseInt(priceText.replace(/[^\d]/g, ''), 10) || 0;
 
-              const imgEl = item.querySelector("img");
-              const image = imgEl?.src || "";
+              const imgEl = item.querySelector('img');
+              const image = imgEl?.src || imgEl?.dataset?.original || '';
 
-              const specEl = item.querySelector(".spec_list");
+              const specEl = item.querySelector('.spec_list');
               const spec = specEl?.textContent
                 ?.trim()
-                .replace(/\s+/g, " ")
-                .replace(/더보기/g, "");
+                .replace(/\s+/g, ' ')
+                .replace(/더보기/g, '');
 
-              results.push({ name, price, image, spec: spec || "" });
+              results.push({ name, price, image, spec: spec || '' });
             } catch (e) {
-              console.log("⚠️ 아이템 파싱 실패:", e.message);
+              // 개별 아이템 파싱 실패는 무시
             }
           });
 
@@ -141,12 +197,18 @@ async function crawlDanawaMotherboards(maxPages = 5) {
         });
 
         console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
+        
+        if (pageProducts.length === 0) {
+          console.log('⚠️ 페이지에서 제품을 찾지 못함 - 크롤링 중단');
+          break;
+        }
+
         products.push(...pageProducts);
 
         // 다음 페이지 확인
         const hasNext = await page.evaluate(() => {
-          const nextBtn = document.querySelector(".nav_next");
-          return nextBtn && !nextBtn.classList.contains("disabled");
+          const nextBtn = document.querySelector('.nav_next');
+          return nextBtn && !nextBtn.classList.contains('disabled');
         });
 
         if (!hasNext && pageNum < maxPages) {
@@ -154,10 +216,23 @@ async function crawlDanawaMotherboards(maxPages = 5) {
           break;
         }
 
-        await sleep(1500);
+        await sleep(2000); // 서버 부하 방지
+
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
-        break;
+        
+        // 스크린샷 저장 (디버깅용)
+        try {
+          const screenshot = await page.screenshot({ encoding: 'base64' });
+          console.log('📸 스크린샷 저장됨 (base64, 처음 100자):', screenshot.substring(0, 100));
+        } catch (screenshotErr) {
+          console.log('⚠️ 스크린샷 저장 실패');
+        }
+
+        // 첫 페이지 실패 시 중단, 그 외는 계속
+        if (pageNum === 1) {
+          break;
+        }
       }
     }
   } catch (error) {
