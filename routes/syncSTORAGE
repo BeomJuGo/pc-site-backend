@@ -1,11 +1,15 @@
-// scripts/syncStorage.js
+// routes/syncSTORAGE.js - Express Router 버전
+import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { getDB, connectDB, closeDB } from "../db.js";
+import { getDB } from "../db.js";
+
+const router = express.Router();
 
 // 다나와 SSD/HDD 카테고리
 const DANAWA_SSD_URL = "https://prod.danawa.com/list/?cate=112760"; // SSD
 const DANAWA_HDD_URL = "https://prod.danawa.com/list/?cate=112763"; // HDD
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * 스토리지 스펙 파싱
@@ -244,68 +248,82 @@ async function scrapeStorages() {
 /**
  * DB 동기화
  */
-async function syncStorages() {
-  await connectDB();
+async function syncStoragesToDB(storages) {
   const db = getDB();
-
-  console.log("\n=== 스토리지 동기화 시작 ===");
-  const storages = await scrapeStorages();
-
-  if (storages.length === 0) {
-    console.log("⚠️  수집된 스토리지가 없습니다.");
-    await closeDB();
-    return;
-  }
+  const col = db.collection("parts");
+  const today = new Date().toISOString().slice(0, 10);
 
   let inserted = 0;
   let updated = 0;
 
   for (const storage of storages) {
-    const existing = await db.collection("parts").findOne({
+    const existing = await col.findOne({
       category: "storage",
       name: storage.name
     });
 
+    const update = {
+      category: "storage",
+      info: storage.info,
+      price: storage.price,
+      image: storage.image,
+      manufacturer: storage.manufacturer,
+      specs: storage.specs
+    };
+
     if (existing) {
-      // 가격 히스토리 업데이트
-      const lastPrice = existing.priceHistory?.[existing.priceHistory.length - 1]?.price;
-      if (lastPrice !== storage.price) {
-        await db.collection("parts").updateOne(
-          { _id: existing._id },
-          {
-            $set: {
-              price: storage.price,
-              updatedAt: new Date()
-            },
-            $push: {
-              priceHistory: {
-                date: new Date(),
-                price: storage.price
-              }
-            }
-          }
-        );
-        updated++;
+      const ops = { $set: update };
+      const hasToday = existing.priceHistory?.some(p => p.date === today);
+      if (storage.price > 0 && !hasToday) {
+        ops.$push = { priceHistory: { date: today, price: storage.price } };
       }
+      await col.updateOne({ _id: existing._id }, ops);
+      updated++;
+      console.log(`🔁 업데이트: ${storage.name}`);
     } else {
-      // 신규 삽입
-      await db.collection("parts").insertOne(storage);
+      await col.insertOne({
+        name: storage.name,
+        ...update,
+        priceHistory: storage.price > 0 ? [{ date: today, price: storage.price }] : [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
       inserted++;
+      console.log(`🆕 삽입: ${storage.name}`);
     }
+
+    await sleep(100);
   }
 
-  console.log(`\n📊 동기화 결과:`);
-  console.log(`   - 신규 추가: ${inserted}개`);
-  console.log(`   - 가격 업데이트: ${updated}개`);
-  console.log(`   - 총 스토리지: ${storages.length}개`);
-  console.log("=== 스토리지 동기화 완료 ===\n");
-
-  await closeDB();
+  console.log(`\n📊 동기화 결과: 삽입 ${inserted}개, 업데이트 ${updated}개`);
+  return { inserted, updated };
 }
 
-// 직접 실행 시
-if (import.meta.url === `file://${process.argv[1]}`) {
-  syncStorages();
-}
+/* ==================== 라우터 ==================== */
+router.post("/sync-storage", async (req, res) => {
+  try {
+    res.json({ message: "✅ 스토리지 동기화 시작" });
 
-export { syncStorages };
+    setImmediate(async () => {
+      try {
+        console.log("\n=== 스토리지 동기화 시작 ===");
+        const storages = await scrapeStorages();
+
+        if (storages.length === 0) {
+          console.log("⛔ 크롤링된 데이터 없음");
+          return;
+        }
+
+        await syncStoragesToDB(storages);
+        console.log("🎉 스토리지 동기화 완료");
+      } catch (err) {
+        console.error("❌ 동기화 실패:", err);
+      }
+    });
+  } catch (err) {
+    console.error("❌ sync-storage 실패", err);
+    res.status(500).json({ error: "sync-storage 실패" });
+  }
+});
+
+export default router;
