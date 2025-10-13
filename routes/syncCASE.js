@@ -138,13 +138,7 @@ async function scrapeCases() {
             expansionSlots: specs.expansionSlots,
             sidePanels: specs.sidePanels,
             frontPorts: specs.frontPorts
-          },
-          priceHistory: [{
-            date: new Date(),
-            price: price
-          }],
-          createdAt: new Date(),
-          updatedAt: new Date()
+          }
         });
       } catch (err) {
         console.error("파싱 오류:", err.message);
