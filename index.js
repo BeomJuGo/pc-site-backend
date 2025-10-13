@@ -3,6 +3,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./db.js";
+
+// 기존 라우터
 import syncCPUsRouter from "./routes/syncCPUs.js";
 import syncGPUsRouter from "./routes/syncGPUs.js";
 import partsRouter from "./routes/parts.js";
@@ -10,6 +12,12 @@ import recommendRouter from "./routes/recommend.js";
 import updatePricesRouter from "./routes/updatePrices.js";
 import syncMotherboardRouter from "./routes/syncMOTHERBOARD.js";
 import syncMemoryRouter from "./routes/syncMEMORY.js";
+
+// 🆕 새로 추가된 라우터 (PSU, Case, Cooler, Storage)
+import syncPSURouter from "./routes/syncPSU.js";
+import syncCaseRouter from "./routes/syncCASE.js";
+import syncCoolerRouter from "./routes/syncCOOLER.js";
+import syncStorageRouter from "./routes/syncSTORAGE.js";
 
 dotenv.config();
 const app = express();
@@ -49,6 +57,7 @@ app.use(express.json());
 // ========================================
 // 라우트 등록
 // ========================================
+// 기존 라우터
 app.use("/api/admin", syncCPUsRouter);
 app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
@@ -56,6 +65,12 @@ app.use("/api/recommend", recommendRouter);
 app.use("/api/admin", updatePricesRouter);
 app.use("/api", syncMotherboardRouter);
 app.use("/api", syncMemoryRouter);
+
+// 🆕 새로 추가된 라우터
+app.use("/api", syncPSURouter);
+app.use("/api", syncCaseRouter);
+app.use("/api", syncCoolerRouter);
+app.use("/api", syncStorageRouter);
 
 // ========================================
 // 네이버 가격 + 이미지 API
@@ -144,6 +159,10 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
     cors: "enabled",
     allowedOrigins,
+    routes: {
+      basic: ["cpu", "gpu", "motherboard", "memory"],
+      new: ["psu", "case", "cooler", "storage"]
+    }
   });
 });
 
@@ -155,5 +174,6 @@ connectDB().then(() => {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ 서버 실행 중: http://localhost:${PORT}`);
     console.log(`🌐 CORS 허용 도메인:`, allowedOrigins);
+    console.log(`📦 등록된 sync 라우터: CPU, GPU, Motherboard, Memory, PSU, Case, Cooler, Storage`);
   });
 });
