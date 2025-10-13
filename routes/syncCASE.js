@@ -1,10 +1,14 @@
-// scripts/syncCase.js
+// routes/syncCASE.js - Express Router 버전
+import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { getDB, connectDB, closeDB } from "../db.js";
+import { getDB } from "../db.js";
+
+const router = express.Router();
 
 // 다나와 케이스 카테고리
 const DANAWA_CASE_URL = "https://prod.danawa.com/list/?cate=112775";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * 케이스 스펙 파싱
@@ -158,68 +162,82 @@ async function scrapeCases() {
 /**
  * DB 동기화
  */
-async function syncCases() {
-  await connectDB();
+async function syncCasesToDB(cases) {
   const db = getDB();
-
-  console.log("\n=== 케이스 동기화 시작 ===");
-  const cases = await scrapeCases();
-
-  if (cases.length === 0) {
-    console.log("⚠️  수집된 케이스가 없습니다.");
-    await closeDB();
-    return;
-  }
+  const col = db.collection("parts");
+  const today = new Date().toISOString().slice(0, 10);
 
   let inserted = 0;
   let updated = 0;
 
   for (const caseItem of cases) {
-    const existing = await db.collection("parts").findOne({
+    const existing = await col.findOne({
       category: "case",
       name: caseItem.name
     });
 
+    const update = {
+      category: "case",
+      info: caseItem.info,
+      price: caseItem.price,
+      image: caseItem.image,
+      manufacturer: caseItem.manufacturer,
+      specs: caseItem.specs
+    };
+
     if (existing) {
-      // 가격 히스토리 업데이트
-      const lastPrice = existing.priceHistory?.[existing.priceHistory.length - 1]?.price;
-      if (lastPrice !== caseItem.price) {
-        await db.collection("parts").updateOne(
-          { _id: existing._id },
-          {
-            $set: {
-              price: caseItem.price,
-              updatedAt: new Date()
-            },
-            $push: {
-              priceHistory: {
-                date: new Date(),
-                price: caseItem.price
-              }
-            }
-          }
-        );
-        updated++;
+      const ops = { $set: update };
+      const hasToday = existing.priceHistory?.some(p => p.date === today);
+      if (caseItem.price > 0 && !hasToday) {
+        ops.$push = { priceHistory: { date: today, price: caseItem.price } };
       }
+      await col.updateOne({ _id: existing._id }, ops);
+      updated++;
+      console.log(`🔁 업데이트: ${caseItem.name}`);
     } else {
-      // 신규 삽입
-      await db.collection("parts").insertOne(caseItem);
+      await col.insertOne({
+        name: caseItem.name,
+        ...update,
+        priceHistory: caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
       inserted++;
+      console.log(`🆕 삽입: ${caseItem.name}`);
     }
+
+    await sleep(100);
   }
 
-  console.log(`\n📊 동기화 결과:`);
-  console.log(`   - 신규 추가: ${inserted}개`);
-  console.log(`   - 가격 업데이트: ${updated}개`);
-  console.log(`   - 총 케이스: ${cases.length}개`);
-  console.log("=== 케이스 동기화 완료 ===\n");
-
-  await closeDB();
+  console.log(`\n📊 동기화 결과: 삽입 ${inserted}개, 업데이트 ${updated}개`);
+  return { inserted, updated };
 }
 
-// 직접 실행 시
-if (import.meta.url === `file://${process.argv[1]}`) {
-  syncCases();
-}
+/* ==================== 라우터 ==================== */
+router.post("/sync-case", async (req, res) => {
+  try {
+    res.json({ message: "✅ 케이스 동기화 시작" });
 
-export { syncCases };
+    setImmediate(async () => {
+      try {
+        console.log("\n=== 케이스 동기화 시작 ===");
+        const cases = await scrapeCases();
+
+        if (cases.length === 0) {
+          console.log("⛔ 크롤링된 데이터 없음");
+          return;
+        }
+
+        await syncCasesToDB(cases);
+        console.log("🎉 케이스 동기화 완료");
+      } catch (err) {
+        console.error("❌ 동기화 실패:", err);
+      }
+    });
+  } catch (err) {
+    console.error("❌ sync-case 실패", err);
+    res.status(500).json({ error: "sync-case 실패" });
+  }
+});
+
+export default router;
