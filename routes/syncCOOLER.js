@@ -1,3 +1,4 @@
+// routes/syncCOOLER.js - Express Router 버전
 import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -5,7 +6,7 @@ import { getDB } from "../db.js";
 
 const router = express.Router();
 
-// 다나워 쿨러 카테고리
+// 다나와 쿨러 카테고리
 const DANAWA_COOLER_URL = "https://prod.danawa.com/list/?cate=11236855";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -155,13 +156,7 @@ async function scrapeCoolers() {
             socketSupport: specs.socketSupport,
             noise: specs.noise,
             rpm: specs.rpm
-          },
-          priceHistory: [{
-            date: new Date(),
-            price: price
-          }],
-          createdAt: new Date(),
-          updatedAt: new Date()
+          }
         });
       } catch (err) {
         console.error("파싱 오류:", err.message);
@@ -175,6 +170,7 @@ async function scrapeCoolers() {
 
   return coolers;
 }
+
 /**
  * DB 동기화
  */
