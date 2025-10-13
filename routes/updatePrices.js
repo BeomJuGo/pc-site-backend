@@ -1,4 +1,4 @@
-// routes/updatePrices.js
+// routes/updatePrices.js - 8개 카테고리 지원 (CPU, GPU, Motherboard, Memory, PSU, Case, Cooler, Storage)
 import express from "express";
 import fetch from "node-fetch";
 import { getDB } from "../db.js";
@@ -23,10 +23,9 @@ const K_BLACKLIST_COMMON = [
   "중고","리퍼","리퍼비시","벌크","채굴","해시","마이닝",
   "리뷰","후기","스펙","사양","가격비교","쿠폰","보증연장",
   "호환","호환성","테스트","교체","수리","튜닝","ARGB","LED","라이팅",
-  "케이스","케이스쿨러","파워","파워서플라이",
 ];
 
-const GPU_CATEGORY_HINTS = ["그래픽카드", "비디오카드", "VGA", "GPU"]; // category 텍스트용
+const GPU_CATEGORY_HINTS = ["그래픽카드", "비디오카드", "VGA", "GPU"];
 const GPU_TITLE_MUST = /(RTX|GTX|RX)\b/i;
 
 function norm(s = "") {
@@ -71,6 +70,10 @@ function priceBoundsByCategory(category) {
     case "cpu":         return { min: 30000,  max: 3000000 };
     case "motherboard": return { min: 25000,  max: 1800000 };
     case "memory":      return { min: 10000,  max: 1500000 };
+    case "psu":         return { min: 20000,  max: 500000 };   // 🆕 PSU
+    case "case":        return { min: 20000,  max: 500000 };   // 🆕 케이스
+    case "cooler":      return { min: 10000,  max: 300000 };   // 🆕 쿨러
+    case "storage":     return { min: 30000,  max: 2000000 };  // 🆕 스토리지
     default:            return { min: 10000,  max: 3000000 };
   }
 }
@@ -91,7 +94,6 @@ function extractGpuTokens(name) {
 
 function tokensByCategory(name, category) {
   if (category === "gpu") return extractGpuTokens(name);
-  // (다른 카테고리는 직전 버전과 동일—여기선 GPU 정확도 개선이 목적)
   return [];
 }
 
@@ -110,6 +112,14 @@ function queryVariants(name, category) {
       return [`${base} 메인보드`, `${base} 메보`];
     case "memory":
       return [`${base} 메모리`, `${base} RAM`];
+    case "psu":
+      return [`${base} 파워`, `${base} 파워서플라이`, `${base} PSU`]; // 🆕
+    case "case":
+      return [`${base} 케이스`, `${base} PC케이스`]; // 🆕
+    case "cooler":
+      return [`${base} 쿨러`, `${base} CPU쿨러`]; // 🆕
+    case "storage":
+      return [`${base} SSD`, `${base} 저장장치`]; // 🆕
     default:
       return [base];
   }
@@ -211,25 +221,18 @@ async function fetchPriceImageSmart(name, category) {
       if (category === "gpu") {
         // 1) 네이버 카테고리가 GPU 계열이 아닐 경우 PASS
         const catOk = isNaverGpuCategory(it) || /그래픽\s*카드|GPU|비디오\s*카드|VGA/i.test(title);
-        if (!catOk) {
-          // 디버깅: 카테고리 미스
-          // console.log(`   ⏭️ 카테고리 불일치: ${title} [${it.category1}/${it.category2}/${it.category3}/${it.category4}]`);
-          continue;
-        }
+        if (!catOk) continue;
+        
         // 2) 액세서리 키워드가 하나라도 등장하면 제외
-        if (isGpuAccessoryTitle(title)) {
-          // console.log(`   ⏭️ 액세서리 제외: ${title}`);
-          continue;
-        }
+        if (isGpuAccessoryTitle(title)) continue;
+        
         // 3) 본품 특징 점수화
         const sc = scoreGpuTitle(title, tokens);
-        if (sc <= 0) {
-          // console.log(`   ⏭️ 스코어 낮음: ${title} (score=${sc})`);
-          continue;
-        }
+        if (sc <= 0) continue;
+        
         pool.push({ title, price, image: it.image, score: sc });
       } else {
-        // 기존 카테고리 로직(간단 스코어) — 필요하면 동일한 강화 규칙 적용 가능
+        // 기존 카테고리 로직(간단 스코어)
         let sc = 1;
         if (containsAny(title, K_BLACKLIST_COMMON)) sc = -999;
         if (sc > 0) pool.push({ title, price, image: it.image, score: sc });
@@ -278,17 +281,28 @@ router.post("/update-prices", async (req, res) => {
   const col = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
 
+  // 🆕 8개 카테고리 모두 포함
   const parts = await col.find({
-    category: { $in: ["cpu", "gpu", "motherboard", "memory"] },
+    category: { 
+      $in: [
+        "cpu", "gpu", "motherboard", "memory",      // 기존 4개
+        "psu", "case", "cooler", "storage"          // 신규 4개
+      ] 
+    },
   }).toArray();
 
   console.log(`\n📦 총 ${parts.length}개의 부품 가격 업데이트 시작`);
+  console.log(`📋 카테고리: CPU, GPU, Motherboard, Memory, PSU, Case, Cooler, Storage\n`);
+
+  let successCount = 0;
+  let failCount = 0;
 
   for (const part of parts) {
     try {
       const result = await fetchPriceImageSmart(part.name, part.category);
       if (!result) {
         console.log(`⛔ 실패: [${part.category}] ${part.name}`);
+        failCount++;
         continue;
       }
       const { price, image } = result;
@@ -298,13 +312,21 @@ router.post("/update-prices", async (req, res) => {
       if (!already) ops.$push = { priceHistory: { date: today, price } };
 
       await col.updateOne({ _id: part._id }, ops);
-      console.log(`✅ 완료: [${part.category}] ${part.name} → ${price}원`);
+      console.log(`✅ 완료: [${part.category}] ${part.name} → ${price.toLocaleString()}원`);
+      successCount++;
     } catch (e) {
       console.log(`❌ 예외: [${part.category}] ${part.name} | ${e.message}`);
+      failCount++;
     }
   }
 
-  res.json({ message: "✅ 가격 업데이트 완료" });
+  console.log(`\n📊 가격 업데이트 완료: 성공 ${successCount}개, 실패 ${failCount}개`);
+  res.json({ 
+    message: "✅ 가격 업데이트 완료",
+    total: parts.length,
+    success: successCount,
+    fail: failCount
+  });
 });
 
 export default router;
