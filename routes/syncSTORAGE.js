@@ -164,13 +164,7 @@ async function scrapeStorages() {
             writeSpeed: specs.writeSpeed,
             tbw: specs.tbw,
             warranty: specs.warranty
-          },
-          priceHistory: [{
-            date: new Date(),
-            price: price
-          }],
-          createdAt: new Date(),
-          updatedAt: new Date()
+          }
         });
       } catch (err) {
         console.error("SSD 파싱 오류:", err.message);
@@ -224,13 +218,7 @@ async function scrapeStorages() {
             rpm: specs.rpm,
             cache: specs.cache,
             warranty: specs.warranty
-          },
-          priceHistory: [{
-            date: new Date(),
-            price: price
-          }],
-          createdAt: new Date(),
-          updatedAt: new Date()
+          }
         });
       } catch (err) {
         console.error("HDD 파싱 오류:", err.message);
