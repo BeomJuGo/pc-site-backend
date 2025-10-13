@@ -1,1 +1,244 @@
 
+// scripts/syncCooler.js
+import axios from "axios";
+import * as cheerio from "cheerio";
+import { getDB, connectDB, closeDB } from "../db.js";
+
+// 다나워 쿨러 카테고리
+const DANAWA_COOLER_URL = "https://prod.danawa.com/list/?cate=11236855";
+
+/**
+ * 쿨러 스펙 파싱
+ */
+function parseCoolerSpecs(name = "", specText = "") {
+  const combined = `${name} ${specText}`.toUpperCase();
+
+  // 쿨링 타입
+  let type = "공랭";
+  if (/수랭|LIQUID|WATER|AIO/i.test(combined)) type = "수랭";
+
+  // 쿨러 형태
+  let coolerType = "타워형";
+  if (type === "수랭") {
+    if (/240MM|280MM|360MM|420MM/i.test(combined)) {
+      coolerType = "일체형수랭";
+    }
+  } else {
+    if (/로우프로파일|LOW\s*PROFILE/i.test(combined)) coolerType = "로우프로파일";
+    else if (/타워|TOWER/i.test(combined)) coolerType = "타워형";
+    else if (/탑플로우|TOP\s*FLOW/i.test(combined)) coolerType = "탑플로우";
+  }
+
+  // 높이 (mm)
+  const heightMatch = combined.match(/높이[:\s]*(\d+)\s*MM|HEIGHT[:\s]*(\d+)\s*MM|(\d+)\s*MM(?=\s|$)/i);
+  const height = heightMatch ? parseInt(heightMatch[1] || heightMatch[2] || heightMatch[3]) : 
+                 (coolerType === "로우프로파일" ? 65 : 
+                  type === "수랭" ? 0 : 155);
+
+  // TDP 지원
+  const tdpMatch = combined.match(/(\d+)\s*W\s*TDP|TDP[:\s]*(\d+)\s*W/i);
+  const tdpRating = tdpMatch ? parseInt(tdpMatch[1] || tdpMatch[2]) : 
+                    (type === "수랭" ? 250 : 180);
+
+  // 팬 크기 (mm)
+  const fanMatch = combined.match(/(\d+)\s*MM\s*팬|(\d+)\s*MM\s*FAN/i);
+  const fanSize = fanMatch ? parseInt(fanMatch[1] || fanMatch[2]) : 
+                  (type === "수랭" ? 120 : 120);
+
+  // 팬 개수
+  const fanCountMatch = combined.match(/(\d+)\s*팬|(\d+)FAN/i);
+  const fanCount = fanCountMatch ? parseInt(fanCountMatch[1] || fanCountMatch[2]) : 1;
+
+  // 소켓 지원 파싱
+  const socketSupport = [];
+  if (/AM5/i.test(combined)) socketSupport.push("AM5");
+  if (/AM4/i.test(combined)) socketSupport.push("AM4");
+  if (/AM3/i.test(combined)) socketSupport.push("AM3");
+  if (/TR4|TRX4/i.test(combined)) socketSupport.push("TRX4");
+  if (/LGA\s*1700|LGA1700/i.test(combined)) socketSupport.push("LGA1700");
+  if (/LGA\s*1200|LGA1200/i.test(combined)) socketSupport.push("LGA1200");
+  if (/LGA\s*1151|LGA1151/i.test(combined)) socketSupport.push("LGA1151");
+  if (/LGA\s*2066|LGA2066/i.test(combined)) socketSupport.push("LGA2066");
+
+  // 소켓 정보가 없으면 기본 소켓 추가
+  if (socketSupport.length === 0) {
+    socketSupport.push("AM4", "LGA1700", "LGA1200");
+  }
+
+  // 소음 레벨
+  const noiseMatch = combined.match(/(\d+(?:\.\d+)?)\s*DBA/i);
+  const noise = noiseMatch ? `${noiseMatch[1]} dBA` : "";
+
+  // RPM
+  const rpmMatch = combined.match(/(\d+)\s*[-~]\s*(\d+)\s*RPM/i);
+  const rpm = rpmMatch ? `${rpmMatch[1]}-${rpmMatch[2]} RPM` : "";
+
+  return {
+    type,
+    coolerType,
+    height,
+    tdpRating,
+    fanSize,
+    fanCount,
+    socketSupport: [...new Set(socketSupport)], // 중복 제거
+    noise,
+    rpm,
+    info: `${type}, ${coolerType}${height > 0 ? ', ' + height + 'mm' : ''}`.trim()
+  };
+}
+
+/**
+ * 제조사 추출
+ */
+function extractManufacturer(name = "") {
+  const brands = [
+    "Noctua", "녹투아", "be quiet!", "비콰이엇", "Cooler Master", "쿨러마스터",
+    "Deepcool", "딥쿨", "Arctic", "아틱", "Thermalright", "써멀라이트",
+    "ID-COOLING", "Scythe", "사이즈", "NZXT", "Corsair", "커세어",
+    "Thermaltake", "써멀테이크", "ASUS", "MSI", "Zalman", "잘만"
+  ];
+
+  for (const brand of brands) {
+    if (name.includes(brand)) return brand;
+  }
+  return "기타";
+}
+
+/**
+ * 다나와 쿨러 크롤링
+ */
+async function scrapeCoolers() {
+  const coolers = [];
+
+  try {
+    console.log("❄️ 다나와 쿨러 페이지 크롤링 중...");
+    const { data } = await axios.get(DANAWA_COOLER_URL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      }
+    });
+
+    const $ = cheerio.load(data);
+
+    $(".product_list .prod_item").each((i, el) => {
+      try {
+        const $el = $(el);
+        const name = $el.find(".prod_name a").text().trim();
+        if (!name) return;
+
+        const priceText = $el.find(".price_sect .price").text().trim();
+        const price = parseInt(priceText.replace(/[^0-9]/g, "")) || 0;
+        if (price === 0) return;
+
+        const image = $el.find(".thumb_image img").attr("src") || "";
+        const specText = $el.find(".spec_list").text().trim();
+
+        const specs = parseCoolerSpecs(name, specText);
+        const manufacturer = extractManufacturer(name);
+
+        coolers.push({
+          category: "cooler",
+          name,
+          price,
+          image,
+          info: specs.info,
+          manufacturer,
+          specs: {
+            type: specs.type,
+            coolerType: specs.coolerType,
+            height: specs.height,
+            tdpRating: specs.tdpRating,
+            fanSize: specs.fanSize,
+            fanCount: specs.fanCount,
+            socketSupport: specs.socketSupport,
+            noise: specs.noise,
+            rpm: specs.rpm
+          },
+          priceHistory: [{
+            date: new Date(),
+            price: price
+          }],
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      } catch (err) {
+        console.error("파싱 오류:", err.message);
+      }
+    });
+
+    console.log(`✅ ${coolers.length}개 쿨러 수집 완료`);
+  } catch (error) {
+    console.error("❌ 크롤링 오류:", error.message);
+  }
+
+  return coolers;
+}
+
+/**
+ * DB 동기화
+ */
+async function syncCoolers() {
+  await connectDB();
+  const db = getDB();
+
+  console.log("\n=== 쿨러 동기화 시작 ===");
+  const coolers = await scrapeCoolers();
+
+  if (coolers.length === 0) {
+    console.log("⚠️  수집된 쿨러가 없습니다.");
+    await closeDB();
+    return;
+  }
+
+  let inserted = 0;
+  let updated = 0;
+
+  for (const cooler of coolers) {
+    const existing = await db.collection("parts").findOne({
+      category: "cooler",
+      name: cooler.name
+    });
+
+    if (existing) {
+      // 가격 히스토리 업데이트
+      const lastPrice = existing.priceHistory?.[existing.priceHistory.length - 1]?.price;
+      if (lastPrice !== cooler.price) {
+        await db.collection("parts").updateOne(
+          { _id: existing._id },
+          {
+            $set: {
+              price: cooler.price,
+              updatedAt: new Date()
+            },
+            $push: {
+              priceHistory: {
+                date: new Date(),
+                price: cooler.price
+              }
+            }
+          }
+        );
+        updated++;
+      }
+    } else {
+      // 신규 삽입
+      await db.collection("parts").insertOne(cooler);
+      inserted++;
+    }
+  }
+
+  console.log(`\n📊 동기화 결과:`);
+  console.log(`   - 신규 추가: ${inserted}개`);
+  console.log(`   - 가격 업데이트: ${updated}개`);
+  console.log(`   - 총 쿨러: ${coolers.length}개`);
+  console.log("=== 쿨러 동기화 완료 ===\n");
+
+  await closeDB();
+}
+
+// 직접 실행 시
+if (import.meta.url === `file://${process.argv[1]}`) {
+  syncCoolers();
+}
+
+export { syncCoolers };
