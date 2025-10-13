@@ -1,10 +1,14 @@
-// scripts/syncPSU.js
+// routes/syncPSU.js - Express Router 버전
+import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { getDB, connectDB, closeDB } from "../db.js";
+import { getDB } from "../db.js";
+
+const router = express.Router();
 
 // 다나와 파워 카테고리
 const DANAWA_PSU_URL = "https://prod.danawa.com/list/?cate=112777";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * PSU 스펙 파싱
@@ -142,68 +146,82 @@ async function scrapePSUs() {
 /**
  * DB 동기화
  */
-async function syncPSUs() {
-  await connectDB();
+async function syncPSUsToDB(psus) {
   const db = getDB();
-
-  console.log("\n=== PSU 동기화 시작 ===");
-  const psus = await scrapePSUs();
-
-  if (psus.length === 0) {
-    console.log("⚠️  수집된 PSU가 없습니다.");
-    await closeDB();
-    return;
-  }
+  const col = db.collection("parts");
+  const today = new Date().toISOString().slice(0, 10);
 
   let inserted = 0;
   let updated = 0;
 
   for (const psu of psus) {
-    const existing = await db.collection("parts").findOne({
+    const existing = await col.findOne({
       category: "psu",
       name: psu.name
     });
 
+    const update = {
+      category: "psu",
+      info: psu.info,
+      price: psu.price,
+      image: psu.image,
+      manufacturer: psu.manufacturer,
+      specs: psu.specs
+    };
+
     if (existing) {
-      // 가격 히스토리 업데이트
-      const lastPrice = existing.priceHistory?.[existing.priceHistory.length - 1]?.price;
-      if (lastPrice !== psu.price) {
-        await db.collection("parts").updateOne(
-          { _id: existing._id },
-          {
-            $set: {
-              price: psu.price,
-              updatedAt: new Date()
-            },
-            $push: {
-              priceHistory: {
-                date: new Date(),
-                price: psu.price
-              }
-            }
-          }
-        );
-        updated++;
+      const ops = { $set: update };
+      const hasToday = existing.priceHistory?.some(p => p.date === today);
+      if (psu.price > 0 && !hasToday) {
+        ops.$push = { priceHistory: { date: today, price: psu.price } };
       }
+      await col.updateOne({ _id: existing._id }, ops);
+      updated++;
+      console.log(`🔁 업데이트: ${psu.name}`);
     } else {
-      // 신규 삽입
-      await db.collection("parts").insertOne(psu);
+      await col.insertOne({
+        name: psu.name,
+        ...update,
+        priceHistory: psu.price > 0 ? [{ date: today, price: psu.price }] : [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
       inserted++;
+      console.log(`🆕 삽입: ${psu.name}`);
     }
+
+    await sleep(100);
   }
 
-  console.log(`\n📊 동기화 결과:`);
-  console.log(`   - 신규 추가: ${inserted}개`);
-  console.log(`   - 가격 업데이트: ${updated}개`);
-  console.log(`   - 총 PSU: ${psus.length}개`);
-  console.log("=== PSU 동기화 완료 ===\n");
-
-  await closeDB();
+  console.log(`\n📊 동기화 결과: 삽입 ${inserted}개, 업데이트 ${updated}개`);
+  return { inserted, updated };
 }
 
-// 직접 실행 시
-if (import.meta.url === `file://${process.argv[1]}`) {
-  syncPSUs();
-}
+/* ==================== 라우터 ==================== */
+router.post("/sync-psu", async (req, res) => {
+  try {
+    res.json({ message: "✅ PSU 동기화 시작" });
 
-export { syncPSUs };
+    setImmediate(async () => {
+      try {
+        console.log("\n=== PSU 동기화 시작 ===");
+        const psus = await scrapePSUs();
+
+        if (psus.length === 0) {
+          console.log("⛔ 크롤링된 데이터 없음");
+          return;
+        }
+
+        await syncPSUsToDB(psus);
+        console.log("🎉 PSU 동기화 완료");
+      } catch (err) {
+        console.error("❌ 동기화 실패:", err);
+      }
+    });
+  } catch (err) {
+    console.error("❌ sync-psu 실패", err);
+    res.status(500).json({ error: "sync-psu 실패" });
+  }
+});
+
+export default router;
