@@ -175,7 +175,49 @@ async function scrapeCoolers() {
 
   return coolers;
 }
+/**
+ * DB 동기화
+ */
+async function syncCoolersToDB(coolers) {
+  const db = getDB();
+  const col = db.collection("parts");
+  const today = new Date().toISOString().slice(0, 10);
 
+  let inserted = 0;
+  let updated = 0;
+
+  for (const cooler of coolers) {
+    const existing = await col.findOne({
+      category: "cooler",
+      name: cooler.name
+    });
+
+    const update = {
+      category: "cooler",
+      info: cooler.info,
+      price: cooler.price,
+      image: cooler.image,
+      manufacturer: cooler.manufacturer,
+      specs: cooler.specs
+    };
+
+    if (existing) {
+      const ops = { $set: update };
+      const hasToday = existing.priceHistory?.some(p => p.date === today);
+      if (cooler.price > 0 && !hasToday) {
+        ops.$push = { priceHistory: { date: today, price: cooler.price } };
+      }
+      await col.updateOne({ _id: existing._id }, ops);
+      updated++;
+      console.log(`🔁 업데이트: ${cooler.name}`);
+    } else {
+      await col.insertOne({
+        name: cooler.name,
+        ...update,
+        priceHistory: cooler.price > 0 ? [{ date: today, price: cooler.price }] : [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
       inserted++;
       console.log(`🆕 삽입: ${cooler.name}`);
     }
