@@ -199,8 +199,15 @@ router.post("/", async (req, res) => {
     const weights = scoreWeights[purpose] || scoreWeights["가성비"];
 
     // CPU/GPU 후보 필터링 (용도별)
-    let cpuCand = cpus.filter(c => c.benchScore > 0);
-    let gpuCand = gpus.filter(g => g.benchScore > 0);
+    // 🆕 필드명 수정: benchScore → benchmarkScore
+    let cpuCand = cpus.filter(c => {
+      const score = c.benchmarkScore?.passmarkscore || c.benchScore || 0;
+      return score > 0;
+    });
+    let gpuCand = gpus.filter(g => {
+      const score = g.benchmarkScore?.["3dmarkscore"] || g.benchScore || 0;
+      return score > 0;
+    });
 
     if (purpose === "사무용") {
       cpuCand = cpuCand.filter(c => c.price <= 300000);
@@ -209,15 +216,35 @@ router.post("/", async (req, res) => {
 
     // 🆕 후보 개수 로깅
     console.log(`🔍 필터링 후: CPU(${cpuCand.length}), GPU(${gpuCand.length})`);
+    
+    if (cpuCand.length === 0 || gpuCand.length === 0) {
+      return res.status(500).json({
+        message: "CPU 또는 GPU 데이터가 부족합니다. 데이터 동기화를 실행해주세요.",
+        debug: {
+          cpus: cpus.length,
+          cpuCand: cpuCand.length,
+          gpus: gpus.length,
+          gpuCand: gpuCand.length
+        }
+      });
+    }
 
     // 성능 점수 계산
     const topCPUs = cpuCand
-      .sort((a, b) => (b.benchScore / b.price) - (a.benchScore / a.price))
-      .slice(0, 30); // 20 → 30으로 증가
+      .sort((a, b) => {
+        const scoreA = a.benchmarkScore?.passmarkscore || a.benchScore || 0;
+        const scoreB = b.benchmarkScore?.passmarkscore || b.benchScore || 0;
+        return (scoreB / b.price) - (scoreA / a.price);
+      })
+      .slice(0, 30);
     
     const topGPUs = gpuCand
-      .sort((a, b) => (b.benchScore / b.price) - (a.benchScore / a.price))
-      .slice(0, 30); // 20 → 30으로 증가
+      .sort((a, b) => {
+        const scoreA = a.benchmarkScore?.["3dmarkscore"] || a.benchScore || 0;
+        const scoreB = b.benchmarkScore?.["3dmarkscore"] || b.benchScore || 0;
+        return (scoreB / b.price) - (scoreA / a.price);
+      })
+      .slice(0, 30);
 
     console.log(`✨ 상위 후보: CPU(${topCPUs.length}), GPU(${topGPUs.length})`);
 
@@ -354,9 +381,13 @@ router.post("/", async (req, res) => {
 
                     if (totalPrice > budget) continue;
 
+                    // 🆕 성능 점수 계산 (필드명 수정)
+                    const cpuScore = cpu.benchmarkScore?.passmarkscore || cpu.benchScore || 0;
+                    const gpuScore = gpu.benchmarkScore?.["3dmarkscore"] || gpu.benchScore || 0;
+                    
                     const score =
-                      cpu.benchScore * weights.cpu +
-                      gpu.benchScore * weights.gpu;
+                      cpuScore * weights.cpu +
+                      gpuScore * weights.gpu;
 
                     results.push({
                       cpu,
