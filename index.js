@@ -13,7 +13,7 @@ import updatePricesRouter from "./routes/updatePrices.js";
 import syncMotherboardRouter from "./routes/syncMOTHERBOARD.js";
 import syncMemoryRouter from "./routes/syncMEMORY.js";
 
-// 🆕 새로 추가된 라우터 (PSU, Case, Cooler, Storage)
+// 새로 추가된 라우터
 import syncPSURouter from "./routes/syncPSU.js";
 import syncCaseRouter from "./routes/syncCASE.js";
 import syncCoolerRouter from "./routes/syncCOOLER.js";
@@ -23,50 +23,89 @@ dotenv.config();
 const app = express();
 
 // ========================================
-// CORS 설정 강화 (OPTIONS preflight 포함)
+// 🆕 CORS 설정 강화 (가장 먼저 적용)
 // ========================================
 const allowedOrigins = [
   "https://goodpricepc.vercel.app",
-  "http://localhost:3000", // 로컬 개발용
+  "http://localhost:3000",
   "http://localhost:3001",
 ];
 
+// 🆕 1. 기본 CORS 미들웨어 (모든 요청에 적용)
 app.use(
   cors({
     origin: function (origin, callback) {
-      // origin이 없는 경우 (Postman 등) 또는 허용된 origin인 경우
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.log("❌ CORS 차단된 origin:", origin);
-        callback(new Error("Not allowed by CORS"));
+      // origin이 없는 경우 (같은 도메인, Postman 등) 허용
+      if (!origin) {
+        return callback(null, true);
       }
+      
+      // 허용된 origin인 경우
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // 그 외의 경우
+      console.log("❌ CORS 차단된 origin:", origin);
+      callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+    allowedHeaders: [
+      "Content-Type", 
+      "Authorization", 
+      "X-Requested-With",
+      "Accept",
+      "Origin"
+    ],
+    exposedHeaders: ["Content-Length", "X-JSON"],
+    maxAge: 86400, // 24시간 동안 preflight 결과 캐싱
   })
 );
 
-// OPTIONS preflight 요청 명시적 처리
-app.options("*", cors());
+// 🆕 2. OPTIONS preflight 요청 명시적 처리
+app.options("*", (req, res) => {
+  const origin = req.headers.origin;
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin || "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Max-Age", "86400");
+    return res.status(204).send();
+  }
+  return res.status(403).send("Forbidden");
+});
+
+// 🆕 3. 추가 CORS 헤더 (안전장치)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
+  next();
+});
 
 // JSON 파싱 미들웨어
 app.use(express.json());
 
+// 🆕 4. 요청 로깅 (디버깅용)
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path} from ${req.headers.origin || 'same-origin'}`);
+  next();
+});
+
 // ========================================
 // 라우트 등록
 // ========================================
-// 기존 라우터
 app.use("/api/admin", syncCPUsRouter);
 app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
-app.use("/api/recommend", recommendRouter);
+app.use("/api/recommend", recommendRouter); // 🔴 이 경로 확인
 app.use("/api/admin", updatePricesRouter);
 app.use("/api", syncMotherboardRouter);
 app.use("/api", syncMemoryRouter);
-
-// 🆕 새로 추가된 라우터
 app.use("/api", syncPSURouter);
 app.use("/api", syncCaseRouter);
 app.use("/api", syncCoolerRouter);
@@ -97,7 +136,7 @@ app.get("/api/naver-price", async (req, res) => {
 });
 
 // ========================================
-// GPT 정보 API (CPU/GPU 스펙, 리뷰 요약용)
+// GPT 정보 API
 // ========================================
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -151,18 +190,46 @@ app.post("/api/gpt-info", async (req, res) => {
 });
 
 // ========================================
-// 헬스 체크 엔드포인트 (CORS 테스트용)
+// 🆕 헬스 체크 엔드포인트 (Wake-up용)
 // ========================================
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
     cors: "enabled",
     allowedOrigins,
     routes: {
       basic: ["cpu", "gpu", "motherboard", "memory"],
       new: ["psu", "case", "cooler", "storage"]
     }
+  });
+});
+
+// 🆕 루트 경로 헬스 체크
+app.get("/", (req, res) => {
+  res.json({
+    message: "PC 추천 백엔드 API",
+    status: "running",
+    endpoints: [
+      "/api/health",
+      "/api/recommend",
+      "/api/parts",
+      "/api/admin/sync-cpus",
+      "/api/admin/sync-gpus"
+    ]
+  });
+});
+
+// ========================================
+// 🆕 에러 핸들러
+// ========================================
+app.use((err, req, res, next) => {
+  console.error("❌ 서버 에러:", err);
+  res.status(err.status || 500).json({
+    error: err.message || "Internal Server Error",
+    path: req.path,
+    method: req.method
   });
 });
 
@@ -176,4 +243,7 @@ connectDB().then(() => {
     console.log(`🌐 CORS 허용 도메인:`, allowedOrigins);
     console.log(`📦 등록된 sync 라우터: CPU, GPU, Motherboard, Memory, PSU, Case, Cooler, Storage`);
   });
+}).catch(err => {
+  console.error("❌ MongoDB 연결 실패:", err);
+  process.exit(1);
 });
