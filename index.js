@@ -10,7 +10,6 @@ import syncGPUsRouter from "./routes/syncGPUs.js";
 import partsRouter from "./routes/parts.js";
 import recommendRouter from "./routes/recommend.js";
 import updatePricesRouter from "./routes/updatePrices.js";
-import recommendRouter from "./routes/recommend.js";
 import syncMotherboardRouter from "./routes/syncMOTHERBOARD.js";
 import syncMemoryRouter from "./routes/syncMEMORY.js";
 
