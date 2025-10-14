@@ -1,4 +1,4 @@
-// routes/syncSTORAGE.js - Puppeteer 버전 (개선)
+// routes/syncSTORAGE.js - 가격 제외 버전 (updatePrices.js가 가격 전담)
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
@@ -56,94 +56,115 @@ async function fetchAiOneLiner({ name, spec }) {
   return { review: "", specSummary: "" };
 }
 
-/* ==================== 스토리지 스펙 파싱 ==================== */
-function parseStorageSpecs(name = "", specText = "", category = "SSD") {
-  const combined = `${name} ${specText}`.toUpperCase();
-
-  const type = category === "SSD" ? "SSD" : "HDD";
-
-  let interface_ = "SATA";
-  if (/NVME|NVMe/i.test(combined)) interface_ = "NVMe";
-  else if (/M\.2.*SATA|M\.2\s*SATA/i.test(combined)) interface_ = "M.2 SATA";
-  else if (/M\.2/i.test(combined)) interface_ = "NVMe";
-  else if (/SATA/i.test(combined)) interface_ = "SATA";
-
-  let formFactor = "2.5\"";
-  if (/M\.2\s*2280/i.test(combined)) formFactor = "M.2 2280";
-  else if (/M\.2\s*2260/i.test(combined)) formFactor = "M.2 2260";
-  else if (/M\.2/i.test(combined)) formFactor = "M.2 2280";
-  else if (/3\.5/i.test(combined)) formFactor = "3.5\"";
-
-  const capacityMatch = combined.match(/(\d+)\s*TB|(\d+)\s*GB/i);
-  let capacity = 0;
-  if (capacityMatch) {
-    if (capacityMatch[1]) capacity = parseInt(capacityMatch[1]) * 1000;
-    else if (capacityMatch[2]) capacity = parseInt(capacityMatch[2]);
-  }
-
-  let pcieGen = 0;
-  if (type === "SSD" && interface_ === "NVMe") {
-    if (/PCIE\s*5|GEN\s*5/i.test(combined)) pcieGen = 5;
-    else if (/PCIE\s*4|GEN\s*4/i.test(combined)) pcieGen = 4;
-    else if (/PCIE\s*3|GEN\s*3/i.test(combined)) pcieGen = 3;
-    else pcieGen = 3;
-  }
-
-  const readMatch = combined.match(/읽기[:\s]*(\d+)|READ[:\s]*(\d+)/i);
-  const writeMatch = combined.match(/쓰기[:\s]*(\d+)|WRITE[:\s]*(\d+)/i);
-  const readSpeed = readMatch ? parseInt(readMatch[1] || readMatch[2]) : 0;
-  const writeSpeed = writeMatch ? parseInt(writeMatch[1] || writeMatch[2]) : 0;
-
-  const tbwMatch = combined.match(/(\d+)\s*TBW/i);
-  const tbw = tbwMatch ? parseInt(tbwMatch[1]) : 0;
-
-  const warrantyMatch = combined.match(/(\d+)\s*년/i);
-  const warranty = warrantyMatch ? parseInt(warrantyMatch[1]) : 3;
-
-  const rpmMatch = combined.match(/(\d+)\s*RPM/i);
-  const rpm = type === "HDD" && rpmMatch ? parseInt(rpmMatch[1]) : 0;
-
-  const cacheMatch = combined.match(/(\d+)\s*MB\s*캐시/i);
-  const cache = type === "HDD" && cacheMatch ? parseInt(cacheMatch[1]) : 0;
-
-  return {
-    type,
-    interface: interface_,
-    formFactor,
-    capacity,
-    pcieGen,
-    readSpeed,
-    writeSpeed,
-    tbw,
-    warranty,
-    rpm,
-    cache,
-    info: `${formFactor} ${interface_}, ${capacity}GB${pcieGen ? ', PCIe ' + pcieGen + '.0' : ''}`.trim()
-  };
-}
-
 /* ==================== 제조사 추출 ==================== */
-function extractManufacturer(name = "") {
+function extractManufacturer(name) {
   const brands = [
-    "삼성전자", "Samsung", "WD", "Seagate", "시게이트",
-    "Crucial", "Kingston", "SK hynix", "Intel", "Corsair"
+    "삼성전자", "Samsung", "Western Digital", "WD", "Seagate", "씨게이트",
+    "Crucial", "크루셜", "Kingston", "킹스턴", "SK하이닉스", "Toshiba",
+    "Sabrent", "ADATA", "Corsair", "Intel", "Micron", "SanDisk"
   ];
   for (const brand of brands) {
     if (name.includes(brand)) return brand;
   }
-  return "기타";
+  return "";
 }
 
-/* ==================== Puppeteer 크롤링 ==================== */
-async function crawlDanawaStorage(url, category, maxPages = 3) {
-  console.log(`🔍 ${category} 크롤링 시작 (최대 ${maxPages}페이지)`);
+/* ==================== 스토리지 스펙 파싱 ==================== */
+function parseStorageSpecs(name = "", spec = "", type = "SSD") {
+  const combined = `${name} ${spec}`;
+  const parts = [];
+
+  // 용량
+  const capacityMatch = combined.match(/(\d+(?:\.\d+)?)\s*(TB|GB)/i);
+  let capacity = "";
+  if (capacityMatch) {
+    const value = parseFloat(capacityMatch[1]);
+    const unit = capacityMatch[2].toUpperCase();
+    capacity = `${value}${unit}`;
+    parts.push(`용량: ${capacity}`);
+  }
+
+  if (type === "SSD") {
+    // 인터페이스
+    if (/NVMe/i.test(combined)) parts.push("인터페이스: NVMe");
+    else if (/SATA/i.test(combined)) parts.push("인터페이스: SATA");
+
+    // 폼팩터
+    if (/M\.2/i.test(combined)) parts.push("폼팩터: M.2");
+    else if (/2\.5"/i.test(combined)) parts.push("폼팩터: 2.5\"");
+
+    // PCIe Gen
+    const pcieMatch = combined.match(/PCIe\s*(\d\.\d|[3-5])/i);
+    if (pcieMatch) parts.push(`PCIe: Gen${pcieMatch[1]}`);
+
+    // 읽기/쓰기 속도
+    const readMatch = combined.match(/읽기[:\s]*(\d+(?:,\d+)?)\s*MB\/s/i);
+    if (readMatch) parts.push(`읽기: ${readMatch[1]}MB/s`);
+
+    const writeMatch = combined.match(/쓰기[:\s]*(\d+(?:,\d+)?)\s*MB\/s/i);
+    if (writeMatch) parts.push(`쓰기: ${writeMatch[1]}MB/s`);
+
+    // TBW
+    const tbwMatch = combined.match(/TBW[:\s]*(\d+(?:,\d+)?)\s*TB/i);
+    if (tbwMatch) parts.push(`TBW: ${tbwMatch[1]}TB`);
+
+  } else if (type === "HDD") {
+    // RPM
+    const rpmMatch = combined.match(/(\d+)\s*RPM/i);
+    if (rpmMatch) parts.push(`RPM: ${rpmMatch[1]}`);
+
+    // 캐시
+    const cacheMatch = combined.match(/캐시[:\s]*(\d+)\s*MB/i);
+    if (cacheMatch) parts.push(`캐시: ${cacheMatch[1]}MB`);
+
+    // 인터페이스
+    if (/SATA/i.test(combined)) parts.push("인터페이스: SATA");
+  }
+
+  // 보증기간
+  const warrantyMatch = combined.match(/(\d+)년\s*보증/i);
+  if (warrantyMatch) parts.push(`보증: ${warrantyMatch[1]}년`);
+
+  return {
+    type,
+    interface: type === "SSD" 
+      ? (/NVMe/i.test(combined) ? "NVMe" : "SATA")
+      : "SATA",
+    formFactor: /M\.2/i.test(combined) ? "M.2" : "2.5\"",
+    capacity,
+    pcieGen: type === "SSD" ? (combined.match(/PCIe\s*(\d\.\d|[3-5])/i)?.[1] || "") : "",
+    readSpeed: type === "SSD" ? (combined.match(/읽기[:\s]*(\d+(?:,\d+)?)\s*MB\/s/i)?.[1] || "") : "",
+    writeSpeed: type === "SSD" ? (combined.match(/쓰기[:\s]*(\d+(?:,\d+)?)\s*MB\/s/i)?.[1] || "") : "",
+    tbw: type === "SSD" ? (combined.match(/TBW[:\s]*(\d+(?:,\d+)?)\s*TB/i)?.[1] || "") : "",
+    rpm: type === "HDD" ? (combined.match(/(\d+)\s*RPM/i)?.[1] || "") : "",
+    cache: type === "HDD" ? (combined.match(/캐시[:\s]*(\d+)\s*MB/i)?.[1] || "") : "",
+    warranty: warrantyMatch?.[1] || "",
+    info: parts.join(", "),
+    specText: spec
+  };
+}
+
+/* ==================== Puppeteer 다나와 크롤링 ==================== */
+async function crawlDanawaStorage(url, type = "SSD", maxPages = 3) {
+  console.log(`🔍 다나와 ${type} 크롤링 시작 (최대 ${maxPages}페이지)`);
+
   let browser;
   const products = [];
 
   try {
     chromium.setGraphicsMode = false;
+
     browser = await puppeteer.launch({
-      args: [...chromium.args, '--disable-gpu', '--disable-dev-shm-usage'],
+      args: [
+        ...chromium.args,
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-setuid-sandbox',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions'
+      ],
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
@@ -151,48 +172,102 @@ async function crawlDanawaStorage(url, category, maxPages = 3) {
     });
 
     const page = await browser.newPage();
+    
+    // 불필요한 리소스 차단 (속도 향상)
     await page.setRequestInterception(true);
     page.on('request', (req) => {
-      if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+      const resourceType = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
         req.abort();
       } else {
         req.continue();
       }
     });
 
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    );
+
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
+
       try {
         if (pageNum === 1) {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-          await sleep(3000);
+          let retries = 3;
+          let loaded = false;
+
+          while (retries > 0 && !loaded) {
+            try {
+              console.log(`🔄 1페이지 로딩 시도 (남은 재시도: ${retries})`);
+              await page.goto(url, {
+                waitUntil: "domcontentloaded",
+                timeout: 60000,
+              });
+              loaded = true;
+            } catch (err) {
+              retries--;
+              if (retries === 0) throw err;
+              console.log("⏳ 재시도 대기 중...");
+              await sleep(3000);
+            }
+          }
         } else {
-          await page.evaluate((p) => movePage(p), pageNum);
-          await sleep(5000);
+          const nextBtnSelector = `a.num[page="${pageNum}"]`;
+          await page.waitForSelector(nextBtnSelector, { timeout: 10000 });
+          await page.click(nextBtnSelector);
+          await sleep(2000);
         }
 
-        const pageProducts = await page.evaluate(() => {
-          const items = document.querySelectorAll('.prod_item');
-          return Array.from(items).map(item => ({
-            name: item.querySelector('.prod_name a')?.textContent?.trim(),
-            price: parseInt(item.querySelector('.price_sect strong')?.textContent?.replace(/[^\d]/g, '')) || 0,
-            image: item.querySelector('img')?.src || '',
-            spec: item.querySelector('.spec_list')?.textContent?.trim() || ''
-          })).filter(p => p.name && p.price > 0);
+        await page.waitForSelector("ul.product_list > li.prod_item", {
+          timeout: 10000,
         });
 
-        console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개`);
-        products.push(...pageProducts);
+        const items = await page.evaluate(() => {
+          const liList = Array.from(
+            document.querySelectorAll("ul.product_list > li.prod_item")
+          );
+          return liList.map((li) => {
+            const nameEl = li.querySelector("p.prod_name a");
+            const imgEl = li.querySelector("a.thumb_link img");
+            const specEl = li.querySelector("div.spec_list");
 
-        if (pageProducts.length === 0) break;
+            return {
+              name: nameEl?.textContent?.trim() || "",
+              image: imgEl?.src || "",
+              spec: specEl?.textContent?.trim() || "",
+            };
+          });
+        });
+
+        products.push(...items.filter((p) => p.name));
+        console.log(`✅ 페이지 ${pageNum}: ${items.length}개 수집 완료`);
+
+        await sleep(2000);
+
       } catch (e) {
-        console.error(`❌ 페이지 ${pageNum} 실패:`, e.message);
-        if (pageNum === 1) break;
+        console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
+        
+        try {
+          const screenshot = await page.screenshot({ encoding: 'base64' });
+          console.log('📸 스크린샷 저장됨');
+        } catch (screenshotErr) {
+          console.log('⚠️ 스크린샷 저장 실패');
+        }
+
+        if (pageNum === 1) {
+          break;
+        }
       }
     }
+  } catch (error) {
+    console.error("❌ 크롤링 실패:", error.message);
   } finally {
-    if (browser) await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 
+  console.log(`🎉 총 ${products.length}개 제품 수집 완료`);
   return products;
 }
 
@@ -203,87 +278,153 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
   const existing = await col.find({ category: "storage" }).toArray();
   const byName = new Map(existing.map((x) => [x.name, x]));
 
-  let inserted = 0, updated = 0;
+  console.log(`📊 저장 대상: ${storages.length}개`);
+
+  let inserted = 0;
+  let updated = 0;
 
   for (const storage of storages) {
     const old = byName.get(storage.name);
-    let review = "", specSummary = "";
 
-    if (ai && (!old?.review || force)) {
-      const aiRes = await fetchAiOneLiner({ name: storage.name, spec: storage.spec });
-      review = aiRes.review || old?.review || "";
-      specSummary = aiRes.specSummary || old?.specSummary || "";
-    } else if (old) {
-      review = old.review;
-      specSummary = old.specSummary || "";
+    let review = "";
+    let specSummary = "";
+
+    if (ai) {
+      if (!old?.review || force) {
+        const aiRes = await fetchAiOneLiner({
+          name: storage.name,
+          spec: storage.spec,
+        });
+        review = aiRes.review || old?.review || "";
+        specSummary = aiRes.specSummary || old?.specSummary || "";
+      } else {
+        review = old.review;
+        specSummary = old.specSummary || "";
+      }
     }
 
     const update = {
       category: "storage",
       info: storage.info,
-      price: storage.price,
       image: storage.image,
-      manufacturer: storage.manufacturer,
+      manufacturer: extractManufacturer(storage.name),
       specs: storage.specs,
       ...(ai ? { review, specSummary } : {}),
     };
 
-    const today = new Date().toISOString().slice(0, 10);
-
     if (old) {
-      const ops = { $set: update };
-      if (storage.price > 0 && !old.priceHistory?.some(p => p.date === today)) {
-        ops.$push = { priceHistory: { date: today, price: storage.price } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      // 🆕 가격 및 priceHistory 업데이트 제거
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
+      console.log(`🔁 업데이트: ${storage.name}`);
     } else {
+      // 🆕 신규 등록 시 price: 0으로 초기화
       await col.insertOne({
         name: storage.name,
         ...update,
-        priceHistory: storage.price > 0 ? [{ date: today, price: storage.price }] : [],
+        price: 0,
+        priceHistory: [],
       });
       inserted++;
+      console.log(`🆕 신규 추가: ${storage.name} (가격: updatePrices.js에서 설정 예정)`);
     }
 
     if (ai) await sleep(200);
   }
 
-  console.log(`📈 삽입 ${inserted}개, 업데이트 ${updated}개`);
+  const currentNames = new Set(storages.map((s) => s.name));
+  const toDelete = existing
+    .filter((e) => !currentNames.has(e.name))
+    .map((e) => e.name);
+
+  if (toDelete.length > 0) {
+    await col.deleteMany({ category: "storage", name: { $in: toDelete } });
+    console.log(`🗑️ 삭제됨: ${toDelete.length}개`);
+  }
+
+  console.log(
+    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
+  );
+  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
 }
 
-/* ==================== 라우터 ==================== */
+/* ==================== Express 라우터 ==================== */
 router.post("/sync-storage", async (req, res) => {
-  const maxPages = Number(req?.body?.pages) || 3;
-  const ai = req?.body?.ai !== false;
-  const force = !!req?.body?.force;
+  try {
+    const maxPages = parseInt(req.body?.maxPages) || 3;
+    const ai = req.body?.ai !== false;
+    const force = req.body?.force === true;
 
-  res.json({ message: `✅ 스토리지 동기화 시작 (pages=${maxPages}, ai=${ai})` });
+    res.json({
+      message: `✅ 다나와 스토리지 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 제외)`,
+    });
 
-  setImmediate(async () => {
-    try {
-      const ssdProducts = await crawlDanawaStorage(DANAWA_SSD_URL, "SSD", maxPages);
-      const hddProducts = await crawlDanawaStorage(DANAWA_HDD_URL, "HDD", maxPages);
-
-      const allStorage = [
-        ...ssdProducts.map(p => {
+    setImmediate(async () => {
+      try {
+        console.log("\n=== 스토리지 동기화 시작 ===");
+        
+        // SSD 크롤링
+        const ssdProducts = await crawlDanawaStorage(DANAWA_SSD_URL, "SSD", maxPages);
+        const ssdData = ssdProducts.map(p => {
           const specs = parseStorageSpecs(p.name, p.spec, "SSD");
-          return { ...p, ...specs, manufacturer: extractManufacturer(p.name), specs };
-        }),
-        ...hddProducts.map(p => {
-          const specs = parseStorageSpecs(p.name, p.spec, "HDD");
-          return { ...p, ...specs, manufacturer: extractManufacturer(p.name), specs };
-        })
-      ];
+          return {
+            name: p.name,
+            image: p.image,
+            info: specs.info,
+            spec: specs.specText,
+            specs: {
+              type: specs.type,
+              interface: specs.interface,
+              formFactor: specs.formFactor,
+              capacity: specs.capacity,
+              pcieGen: specs.pcieGen,
+              readSpeed: specs.readSpeed,
+              writeSpeed: specs.writeSpeed,
+              tbw: specs.tbw,
+              warranty: specs.warranty
+            }
+          };
+        });
 
-      if (allStorage.length > 0) {
+        // HDD 크롤링
+        const hddProducts = await crawlDanawaStorage(DANAWA_HDD_URL, "HDD", maxPages);
+        const hddData = hddProducts.map(p => {
+          const specs = parseStorageSpecs(p.name, p.spec, "HDD");
+          return {
+            name: p.name,
+            image: p.image,
+            info: specs.info,
+            spec: specs.specText,
+            specs: {
+              type: specs.type,
+              interface: specs.interface,
+              formFactor: specs.formFactor,
+              capacity: specs.capacity,
+              rpm: specs.rpm,
+              cache: specs.cache,
+              warranty: specs.warranty
+            }
+          };
+        });
+
+        const allStorage = [...ssdData, ...hddData];
+
+        if (allStorage.length === 0) {
+          console.log("⛔ 크롤링된 데이터 없음");
+          return;
+        }
+
         await saveToMongoDB(allStorage, { ai, force });
-        console.log("🎉 스토리지 동기화 완료");
+        console.log("🎉 스토리지 동기화 완료 (제품명, 스펙, 이미지)");
+        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
+      } catch (err) {
+        console.error("❌ 동기화 실패:", err);
       }
-    } catch (err) {
-      console.error("❌ 동기화 실패:", err);
-    }
-  });
+    });
+  } catch (err) {
+    console.error("❌ sync-storage 실패", err);
+    res.status(500).json({ error: "sync-storage 실패" });
+  }
 });
 
 export default router;
