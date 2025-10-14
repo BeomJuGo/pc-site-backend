@@ -1,4 +1,4 @@
-// routes/syncMEMORY.js - 다나와 메모리 크롤링 버전
+// routes/syncMEMORY.js - 가격 제외 버전 (updatePrices.js가 가격 전담)
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
@@ -81,6 +81,7 @@ function extractMemoryInfo(spec = "") {
 /* ==================== Puppeteer 다나와 크롤링 ==================== */
 async function crawlDanawaMemory(maxPages = 3) {
   console.log(`🔍 다나와 메모리 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
 
   let browser;
   const products = [];
@@ -181,10 +182,7 @@ async function crawlDanawaMemory(maxPages = 3) {
 
               if (!name) return;
 
-              const priceEl = item.querySelector('.price_sect strong');
-              const priceText = priceEl?.textContent?.trim() || '0';
-              const price = parseInt(priceText.replace(/[^\d]/g, ''), 10) || 0;
-
+              // 🆕 이미지만 수집 (가격 제외)
               const imgEl = item.querySelector('img');
               const image = imgEl?.src || imgEl?.dataset?.original || '';
 
@@ -194,7 +192,7 @@ async function crawlDanawaMemory(maxPages = 3) {
                 .replace(/\s+/g, ' ')
                 .replace(/더보기/g, '');
 
-              results.push({ name, price, image, spec: spec || '' });
+              results.push({ name, image, spec: spec || '' });
             } catch (e) {
               // 개별 아이템 파싱 실패는 무시
             }
@@ -247,7 +245,7 @@ async function crawlDanawaMemory(maxPages = 3) {
     }
   }
 
-  console.log(`🎉 총 ${products.length}개 제품 수집 완료`);
+  console.log(`🎉 총 ${products.length}개 제품 수집 완료 (제품명, 스펙, 이미지만)`);
   return products;
 }
 
@@ -284,33 +282,29 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
       }
     }
 
+    // 🆕 가격 제외 (updatePrices.js가 별도로 업데이트)
     const update = {
       category: "memory",
       info,
-      price: memory.price,
       image: memory.image,
       ...(ai ? { review, specSummary } : {}),
     };
 
-    const today = new Date().toISOString().slice(0, 10);
-
     if (old) {
-      const ops = { $set: update };
-      const hasToday = old.priceHistory?.some((p) => p.date === today);
-      if (memory.price > 0 && !hasToday) {
-        ops.$push = { priceHistory: { date: today, price: memory.price } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      // 🆕 가격 및 priceHistory 업데이트 제거
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
-      console.log(`🔁 업데이트: ${memory.name} (${memory.price.toLocaleString()}원)`);
+      console.log(`🔁 업데이트: ${memory.name}`);
     } else {
+      // 🆕 신규 등록 시 price: 0으로 초기화 (updatePrices.js가 나중에 설정)
       await col.insertOne({
         name: memory.name,
         ...update,
-        priceHistory: memory.price > 0 ? [{ date: today, price: memory.price }] : [],
+        price: 0,
+        priceHistory: [],
       });
       inserted++;
-      console.log(`🆕 삽입: ${memory.name} (${memory.price.toLocaleString()}원)`);
+      console.log(`🆕 삽입: ${memory.name} (가격: updatePrices.js에서 설정 예정)`);
     }
 
     if (ai) await sleep(200);
@@ -329,6 +323,7 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
   console.log(
     `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
   );
+  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
 }
 
 /* ==================== 라우터 ==================== */
@@ -339,7 +334,7 @@ router.post("/sync-memory", async (req, res) => {
     const force = !!req?.body?.force;
 
     res.json({
-      message: `✅ 다나와 메모리 동기화 시작 (pages=${maxPages}, ai=${ai})`,
+      message: `✅ 다나와 메모리 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 제외)`,
     });
 
     setImmediate(async () => {
@@ -352,7 +347,8 @@ router.post("/sync-memory", async (req, res) => {
         }
 
         await saveToMongoDB(memories, { ai, force });
-        console.log("🎉 메모리 동기화 완료");
+        console.log("🎉 메모리 동기화 완료 (제품명, 스펙, 이미지)");
+        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
       }
