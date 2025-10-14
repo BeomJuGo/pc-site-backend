@@ -10,6 +10,7 @@ import syncGPUsRouter from "./routes/syncGPUs.js";
 import partsRouter from "./routes/parts.js";
 import recommendRouter from "./routes/recommend.js";
 import updatePricesRouter from "./routes/updatePrices.js";
+import recommendRouter from "./routes/recommend.js";
 import syncMotherboardRouter from "./routes/syncMOTHERBOARD.js";
 import syncMemoryRouter from "./routes/syncMEMORY.js";
 
@@ -102,15 +103,34 @@ app.use((req, res, next) => {
 app.use("/api/admin", syncCPUsRouter);
 app.use("/api/admin", syncGPUsRouter);
 app.use("/api/parts", partsRouter);
-app.use("/api/recommend", recommendRouter); // 🔴 이 경로 확인
 app.use("/api/admin", updatePricesRouter);
+app.use("/api/recommend", recommendRouter); 
 app.use("/api", syncMotherboardRouter);
 app.use("/api", syncMemoryRouter);
 app.use("/api", syncPSURouter);
 app.use("/api", syncCaseRouter);
 app.use("/api", syncCoolerRouter);
 app.use("/api", syncStorageRouter);
-
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Not Found",
+    message: `경로를 찾을 수 없습니다: ${req.method} ${req.path}`,
+    availableRoutes: [
+      "GET /",
+      "GET /api/parts",
+      "POST /api/recommend", // 🆕 추가!
+      "POST /api/admin/update-prices",
+      "POST /api/admin/sync-cpus",
+      "POST /api/admin/sync-gpus",
+      "POST /api/admin/sync-motherboards",
+      "POST /api/admin/sync-memories",
+      "POST /api/admin/sync-psus",
+      "POST /api/admin/sync-cases",
+      "POST /api/admin/sync-coolers",
+      "POST /api/admin/sync-storages",
+    ],
+  });
+});
 // ========================================
 // 네이버 가격 + 이미지 API
 // ========================================
