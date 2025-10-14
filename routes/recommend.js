@@ -1,4 +1,4 @@
-// routes/recommend.js - 초경량 알고리즘
+// routes/recommend.js - 개선된 추천 알고리즘
 import express from "express";
 import { getDB } from "../db.js";
 
@@ -38,7 +38,7 @@ function extractMemoryCapacity(memory) {
       if (capacity >= 4 && capacity <= 256) return capacity;
     }
   }
-  return 0;
+  return 16; // 기본값
 }
 
 function extractTdp(text = "") {
@@ -46,7 +46,10 @@ function extractTdp(text = "") {
   return match ? parseInt(match[1]) : 0;
 }
 
-/* ==================== 간단한 추천 로직 ==================== */
+const getCpuScore = (cpu) => cpu.benchmarkScore?.passmarkscore || cpu.benchScore || 0;
+const getGpuScore = (gpu) => gpu.benchmarkScore?.["3dmarkscore"] || gpu.benchScore || 0;
+
+/* ==================== 개선된 추천 로직 ==================== */
 
 router.post("/", async (req, res) => {
   try {
@@ -75,181 +78,213 @@ router.post("/", async (req, res) => {
 
     console.log(`📦 부품: CPU(${cpus.length}), GPU(${gpus.length}), Memory(${memories.length}), Board(${boards.length})`);
 
-    // 🆕 개선된 예산 배분 (더 유연함)
-    const budgetRatios = {
-      "사무용": { cpu: 0.20, gpu: 0.15, memory: 0.12, board: 0.15, psu: 0.10, cooler: 0.06, storage: 0.12, case: 0.10 },
-      "게임용": { cpu: 0.20, gpu: 0.45, memory: 0.10, board: 0.10, psu: 0.08, cooler: 0.02, storage: 0.03, case: 0.02 },
-      "작업용": { cpu: 0.30, gpu: 0.30, memory: 0.15, board: 0.10, psu: 0.08, cooler: 0.02, storage: 0.03, case: 0.02 },
-      "가성비": { cpu: 0.22, gpu: 0.35, memory: 0.12, board: 0.12, psu: 0.09, cooler: 0.03, storage: 0.04, case: 0.03 },
+    // 용도별 가중치
+    const weights = {
+      "사무용": { cpu: 0.4, gpu: 0.2 },
+      "게임용": { cpu: 0.3, gpu: 0.6 },
+      "작업용": { cpu: 0.5, gpu: 0.4 },
+      "가성비": { cpu: 0.4, gpu: 0.5 },
     };
-    const ratios = budgetRatios[purpose] || budgetRatios["가성비"];
-    
-    // 🆕 예산 여유 (부품 선택을 더 유연하게)
-    const budgetMultiplier = 1.3; // 각 부품은 할당 예산의 1.3배까지 허용
+    const weight = weights[purpose] || weights["가성비"];
 
-    // 🆕 단계별 부품 선택 (8중 루프 제거!)
-    function selectBestPart(parts, maxPrice, scoreFn) {
-      const candidates = parts
-        .filter(p => p.price > 0 && p.price <= maxPrice)
-        .sort((a, b) => scoreFn(b) / b.price - scoreFn(a) / a.price)
-        .slice(0, 3);
-      return candidates[0] || null;
+    // CPU/GPU 필터링 및 정렬 (가성비 순)
+    const cpuCandidates = cpus
+      .filter(c => getCpuScore(c) > 0)
+      .sort((a, b) => (getCpuScore(b) / b.price) - (getCpuScore(a) / a.price))
+      .slice(0, 8); // 상위 8개
+
+    const gpuCandidates = gpus
+      .filter(g => getGpuScore(g) > 0)
+      .sort((a, b) => (getGpuScore(b) / b.price) - (getGpuScore(a) / a.price))
+      .slice(0, 8); // 상위 8개
+
+    console.log(`🔍 후보: CPU(${cpuCandidates.length}), GPU(${gpuCandidates.length})`);
+
+    if (cpuCandidates.length === 0 || gpuCandidates.length === 0) {
+      return res.status(404).json({
+        message: "CPU 또는 GPU 데이터가 부족합니다.",
+        debug: { cpus: cpuCandidates.length, gpus: gpuCandidates.length }
+      });
     }
 
-    // CPU 점수 추출 함수
-    const getCpuScore = (cpu) => {
-      return cpu.benchmarkScore?.passmarkscore || cpu.benchScore || 0;
-    };
+    // 조합 생성
+    const results = [];
+    let attempts = 0;
+    const maxAttempts = 64; // CPU 8개 × GPU 8개
 
-    // GPU 점수 추출 함수
-    const getGpuScore = (gpu) => {
-      return gpu.benchmarkScore?.["3dmarkscore"] || gpu.benchScore || 0;
-    };
+    for (const cpu of cpuCandidates) {
+      for (const gpu of gpuCandidates) {
+        attempts++;
+        if (attempts > maxAttempts) break;
 
-    // 3가지 빌드 생성 (가성비, 균형, 고성능)
-    const builds = [];
-    const buildTypes = [
-      { label: "가성비", budgetMultiplier: 0.85 },
-      { label: "균형", budgetMultiplier: 0.95 },
-      { label: "고성능", budgetMultiplier: 1.0 },
-    ];
+        const cpuGpuCost = cpu.price + gpu.price;
+        const remaining = budget - cpuGpuCost;
 
-    for (const buildType of buildTypes) {
-      const targetBudget = budget * buildType.budgetMultiplier;
-      
-      // 1단계: CPU 선택
-      const cpu = selectBestPart(
-        cpus,
-        targetBudget * ratios.cpu * budgetMultiplier, // 🆕 여유 적용
-        getCpuScore
-      );
-      if (!cpu) continue;
+        // CPU+GPU가 예산의 80%를 초과하면 스킵
+        if (cpuGpuCost > budget * 0.8) continue;
+        if (remaining < 200000) continue; // 최소 20만원은 남아야 함
 
-      // 2단계: GPU 선택
-      const gpu = selectBestPart(
-        gpus,
-        targetBudget * ratios.gpu * budgetMultiplier, // 🆕 여유 적용
-        getGpuScore
-      );
-      if (!gpu) continue;
-
-      // 3단계: 메인보드 선택 (소켓 호환)
-      const cpuSocket = extractCpuSocket(cpu);
-      const board = selectBestPart(
-        boards.filter(b => {
+        // 메인보드 선택 (소켓 호환)
+        const cpuSocket = extractCpuSocket(cpu);
+        const compatibleBoards = boards.filter(b => {
           const bSocket = extractBoardSocket(b);
-          return !cpuSocket || !bSocket || bSocket === cpuSocket;
-        }),
-        targetBudget * ratios.board * budgetMultiplier, // 🆕 여유 적용
-        () => 1000
-      );
-      if (!board) continue;
+          return (!cpuSocket || !bSocket || bSocket === cpuSocket) && 
+                 b.price <= remaining * 0.25;
+        });
+        if (compatibleBoards.length === 0) continue;
+        
+        const board = compatibleBoards.sort((a, b) => b.price - a.price)[0]; // 가장 비싼 것
 
-      // 4단계: 메모리 선택 (DDR 호환)
-      const boardDdr = extractDdrType(board.info || board.specSummary || "");
-      const memory = selectBestPart(
-        memories.filter(m => {
+        // 메모리 선택 (DDR 호환)
+        const boardDdr = extractDdrType(board.info || board.specSummary || "");
+        const compatibleMemories = memories.filter(m => {
           const mDdr = extractDdrType(m.name || m.info || "");
           const capacity = extractMemoryCapacity(m);
-          return (!boardDdr || !mDdr || mDdr === boardDdr) && capacity >= 8;
-        }),
-        targetBudget * ratios.memory * budgetMultiplier, // 🆕 여유 적용
-        () => extractMemoryCapacity
-      );
-      if (!memory) continue;
+          return (!boardDdr || !mDdr || mDdr === boardDdr) && 
+                 capacity >= 8 && 
+                 m.price <= remaining * 0.25;
+        });
+        if (compatibleMemories.length === 0) continue;
+        
+        const memory = compatibleMemories.sort((a, b) => 
+          extractMemoryCapacity(b) - extractMemoryCapacity(a)
+        )[0]; // 가장 용량 큰 것
 
-      // 5단계: PSU 선택 (전력 충분)
-      const cpuTdp = extractTdp(cpu.info || cpu.specSummary || "");
-      const gpuTdp = extractTdp(gpu.info || "");
-      const totalTdp = cpuTdp + gpuTdp + 100;
-      const psu = selectBestPart(
-        psus.filter(p => {
+        // PSU 선택 (전력 충분)
+        const cpuTdp = extractTdp(cpu.info || cpu.specSummary || "");
+        const gpuTdp = extractTdp(gpu.info || "");
+        const totalTdp = cpuTdp + gpuTdp + 100;
+        const compatiblePsus = psus.filter(p => {
           const psuWattage = extractTdp(p.name || p.info || "");
-          return psuWattage >= totalTdp * 1.2;
-        }),
-        targetBudget * ratios.psu * budgetMultiplier, // 🆕 여유 적용
-        () => 1000
-      );
-      if (!psu) continue;
+          return psuWattage >= totalTdp * 1.2 && p.price <= remaining * 0.15;
+        });
+        if (compatiblePsus.length === 0) continue;
+        
+        const psu = compatiblePsus.sort((a, b) => a.price - b.price)[0]; // 가장 저렴한 것
 
-      // 6단계: 쿨러 선택
-      const cooler = selectBestPart(
-        coolers,
-        targetBudget * ratios.cooler * budgetMultiplier, // 🆕 여유 적용
-        () => 1000
-      );
-      if (!cooler) continue;
+        // 쿨러 선택
+        const compatibleCoolers = coolers.filter(c => c.price <= remaining * 0.1);
+        if (compatibleCoolers.length === 0) continue;
+        const cooler = compatibleCoolers.sort((a, b) => a.price - b.price)[0];
 
-      // 7단계: 스토리지 선택
-      const storage = selectBestPart(
-        storages,
-        targetBudget * ratios.storage * budgetMultiplier, // 🆕 여유 적용
-        () => 1000
-      );
-      if (!storage) continue;
+        // 스토리지 선택
+        const compatibleStorages = storages.filter(s => s.price <= remaining * 0.15);
+        if (compatibleStorages.length === 0) continue;
+        const storage = compatibleStorages.sort((a, b) => b.price - a.price)[0]; // 가장 비싼 것
 
-      // 8단계: 케이스 선택
-      const caseItem = selectBestPart(
-        cases,
-        targetBudget * ratios.case * budgetMultiplier, // 🆕 여유 적용
-        () => 1000
-      );
-      if (!caseItem) continue;
+        // 케이스 선택
+        const compatibleCases = cases.filter(c => c.price <= remaining * 0.1);
+        if (compatibleCases.length === 0) continue;
+        const caseItem = compatibleCases.sort((a, b) => a.price - b.price)[0];
 
-      // 총 가격 계산
-      const totalPrice =
-        cpu.price + gpu.price + memory.price + board.price +
-        psu.price + cooler.price + storage.price + caseItem.price;
+        // 총 가격 계산
+        const totalPrice = cpu.price + gpu.price + memory.price + board.price + 
+                          psu.price + cooler.price + storage.price + caseItem.price;
 
-      // 🆕 예산 초과 시 스킵 (10% 여유 허용)
-      if (totalPrice > budget * 1.1) continue;
+        // 예산 초과 시 스킵
+        if (totalPrice > budget) continue;
 
-      // 점수 계산
-      const score = getCpuScore(cpu) * 0.4 + getGpuScore(gpu) * 0.6;
+        // 점수 계산
+        const score = getCpuScore(cpu) * weight.cpu + getGpuScore(gpu) * weight.gpu;
 
-      builds.push({
-        label: buildType.label,
-        totalPrice,
-        score: Math.round(score),
-        parts: {
-          cpu: { name: cpu.name, price: cpu.price, image: cpu.image },
-          gpu: { name: gpu.name, price: gpu.price, image: gpu.image },
-          memory: { name: memory.name, price: memory.price, image: memory.image },
-          motherboard: { name: board.name, price: board.price, image: board.image },
-          psu: { name: psu.name, price: psu.price, image: psu.image },
-          cooler: { name: cooler.name, price: cooler.price, image: cooler.image },
-          storage: { name: storage.name, price: storage.price, image: storage.image },
-          case: { name: caseItem.name, price: caseItem.price, image: caseItem.image },
-        },
-        compatibility: {
-          socket: `${cpuSocket} ↔ ${extractBoardSocket(board)}`,
-          ddr: `${extractDdrType(cpu.info || "")} ↔ ${extractDdrType(memory.name)}`,
-          power: `${totalTdp}W → ${extractTdp(psu.name)}W`,
-          formFactor: "ATX",
-        },
+        results.push({
+          cpu, gpu, memory, board, psu, cooler, storage, case: caseItem,
+          totalPrice, score,
+          cpuSocket, boardDdr,
+          totalTdp,
+        });
+
+        // 50개 조합이 생성되면 중단
+        if (results.length >= 50) break;
+      }
+      if (results.length >= 50) break;
+    }
+
+    console.log(`🎉 조합 생성 완료: ${results.length}개 (${attempts}번 시도)`);
+
+    if (results.length === 0) {
+      return res.status(404).json({
+        message: "예산에 맞는 조합을 찾을 수 없습니다. 예산을 늘려주세요.",
+        debug: { budget, purpose, attempts }
       });
     }
 
-    console.log(`🎉 빌드 생성 완료: ${builds.length}개`);
+    // 점수 순 정렬
+    results.sort((a, b) => b.score - a.score);
 
-    if (builds.length === 0) {
-      return res.status(404).json({
-        message: "예산에 맞는 조합을 찾을 수 없습니다. 예산을 늘려주세요.",
-        debug: { budget, purpose }
-      });
+    // 3가지 빌드 선택: 가성비, 균형, 고성능
+    const builds = [];
+    
+    // 1. 가성비: 가격 대비 점수가 가장 높은 것
+    const costEfficient = results
+      .slice()
+      .sort((a, b) => (b.score / b.totalPrice) - (a.score / a.totalPrice))[0];
+    builds.push({ label: "가성비", ...costEfficient });
+
+    // 2. 균형: 중간 가격대
+    const midPrice = budget * 0.85;
+    const balanced = results
+      .slice()
+      .sort((a, b) => Math.abs(a.totalPrice - midPrice) - Math.abs(b.totalPrice - midPrice))[0];
+    if (balanced && balanced !== costEfficient) {
+      builds.push({ label: "균형", ...balanced });
+    }
+
+    // 3. 고성능: 점수가 가장 높은 것
+    const highPerf = results[0];
+    if (highPerf && highPerf !== costEfficient && highPerf !== balanced) {
+      builds.push({ label: "고성능", ...highPerf });
+    }
+
+    // 중복 제거 후 부족하면 추가
+    const uniqueBuilds = Array.from(new Set(builds.map(b => b.cpu.name + b.gpu.name)))
+      .map(key => builds.find(b => b.cpu.name + b.gpu.name === key));
+    
+    while (uniqueBuilds.length < 3 && uniqueBuilds.length < results.length) {
+      const next = results.find(r => 
+        !uniqueBuilds.some(b => b.cpu.name === r.cpu.name && b.gpu.name === r.gpu.name)
+      );
+      if (next) {
+        uniqueBuilds.push({ 
+          label: uniqueBuilds.length === 1 ? "균형" : "고성능", 
+          ...next 
+        });
+      } else {
+        break;
+      }
     }
 
     // 추천 근거
     const reasons = [
       `${purpose} 용도에 최적화된 구성`,
-      `예산 ${budget.toLocaleString()}원 내에서 ${builds.length}가지 조합 추천`,
-      `호환성 검증 완료`,
+      `예산 ${budget.toLocaleString()}원으로 ${uniqueBuilds.length}가지 조합 추천`,
+      `${results.length}개 조합 중 최적 선택`,
     ];
 
     res.json({
-      builds,
-      recommended: builds[1]?.label || builds[0].label,
-      message: `${purpose} 용도로 ${builds.length}가지 조합을 추천합니다!`,
+      builds: uniqueBuilds.map(b => ({
+        label: b.label,
+        totalPrice: b.totalPrice,
+        score: Math.round(b.score),
+        parts: {
+          cpu: { name: b.cpu.name, price: b.cpu.price, image: b.cpu.image },
+          gpu: { name: b.gpu.name, price: b.gpu.price, image: b.gpu.image },
+          memory: { name: b.memory.name, price: b.memory.price, image: b.memory.image },
+          motherboard: { name: b.board.name, price: b.board.price, image: b.board.image },
+          psu: { name: b.psu.name, price: b.psu.price, image: b.psu.image },
+          cooler: { name: b.cooler.name, price: b.cooler.price, image: b.cooler.image },
+          storage: { name: b.storage.name, price: b.storage.price, image: b.storage.image },
+          case: { name: b.case.name, price: b.case.price, image: b.case.image },
+        },
+        compatibility: {
+          socket: `${b.cpuSocket} ↔ ${extractBoardSocket(b.board)}`,
+          ddr: `${b.boardDdr} ↔ ${extractDdrType(b.memory.name)}`,
+          power: `${b.totalTdp}W → ${extractTdp(b.psu.name)}W`,
+          formFactor: "ATX",
+        },
+      })),
+      recommended: uniqueBuilds[1]?.label || uniqueBuilds[0]?.label,
+      message: `${purpose} 용도로 ${uniqueBuilds.length}가지 조합을 추천합니다!`,
       reasons,
     });
 
