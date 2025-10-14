@@ -1,4 +1,4 @@
-// routes/recommend.js (완전 개선 버전)
+// routes/recommend.js (완전 개선 + 디버깅 버전)
 import express from "express";
 import { getDB } from "../db.js";
 
@@ -226,13 +226,13 @@ function getCpuScore(cpu) {
 
 function getGpuScore(gpu) {
   const bench = gpu.benchmarkScore || {};
-  return bench["3dmarkscore"] || 0; // GPU는 3dmarkscore 사용
+  return bench["3dmarkscore"] || 0;
 }
 
 function getMemoryScore(memory) {
   const capacity = extractMemoryCapacity(memory);
   const isDDR5 = extractMemoryDDR(memory) === "DDR5";
-  return capacity * (isDDR5 ? 1.2 : 1.0); // DDR5는 20% 가산
+  return capacity * (isDDR5 ? 1.2 : 1.0);
 }
 
 /* ==================== 용도별 프로파일 ==================== */
@@ -244,7 +244,7 @@ const PROFILES = {
     minMemory: 16,
     recMemory: 32,
     preferDDR: "DDR5",
-    storageMin: 500, // GB
+    storageMin: 500,
     storageRec: 1000,
     storageType: "NVMe"
   },
@@ -294,48 +294,40 @@ function calculateComboScore({ cpu, gpu, memory, board, psu, cooler, storage, ca
   const gpuScore = getGpuScore(gpu);
   const memScore = getMemoryScore(memory);
   
-  // 기본 성능 점수
   let score = weights.cpu * cpuScore + weights.gpu * gpuScore + weights.memory * memScore;
   
-  // 메모리 용량 보너스
   const memCapacity = extractMemoryCapacity(memory);
   if (memCapacity >= profile.recMemory) score += 500;
   else if (memCapacity >= profile.minMemory) score += 200;
   
-  // DDR5 보너스
   if (profile.preferDDR === "DDR5" && extractMemoryDDR(memory) === "DDR5") {
     score += 300;
   }
   
-  // 스토리지 용량 보너스
   const storageSpecs = storage.specs || {};
   const storageCapacity = storageSpecs.capacity || 0;
   if (storageCapacity >= profile.storageRec) score += 200;
   else if (storageCapacity >= profile.storageMin) score += 100;
   
-  // NVMe 보너스
   if (profile.storageType === "NVMe" && storageSpecs.interface === "NVMe") {
     score += 150;
   }
   
-  // 병목 패널티
   if (cpuScore && gpuScore) {
     const ratio = Math.max(cpuScore / gpuScore, gpuScore / cpuScore);
-    if (ratio > 2.5) score *= 0.80; // 큰 병목 20% 감점
-    else if (ratio > 1.8) score *= 0.90; // 중간 병목 10% 감점
+    if (ratio > 2.5) score *= 0.80;
+    else if (ratio > 1.8) score *= 0.90;
   }
   
-  // 가격 대비 성능
   if (totalPrice > 0) {
     const valueRatio = score / totalPrice;
-    score += valueRatio * 50000; // 가성비 보너스
+    score += valueRatio * 50000;
   }
   
-  // 전력 효율 보너스
   const cpuTDP = estimateCpuTDP(cpu);
   const gpuTDP = estimateGpuTDP(gpu);
   const totalTDP = cpuTDP + gpuTDP;
-  if (totalTDP < 300) score += 100; // 저전력 시스템 보너스
+  if (totalTDP < 300) score += 100;
   
   return Math.round(score);
 }
@@ -346,7 +338,6 @@ function getStablePrice(part) {
   const hist = part.priceHistory || [];
   if (hist.length === 0) return part.price || 0;
   
-  // 최근 7일 중위값
   const recent = hist.slice(-7).map(h => h.price).filter(p => p > 0);
   if (!recent.length) return part.price || 0;
   
@@ -355,21 +346,52 @@ function getStablePrice(part) {
   return recent.length % 2 ? recent[mid] : Math.round((recent[mid - 1] + recent[mid]) / 2);
 }
 
-/* ==================== 메인 추천 로직 ==================== */
+/* ==================== 🆕 디버깅 유틸 ==================== */
+
+function logPartSample(parts, category, limit = 3) {
+  console.log(`\n📦 [${category}] 샘플 (상위 ${limit}개):`);
+  parts.slice(0, limit).forEach((part, i) => {
+    const price = part._price || part.price || 0;
+    const score = category === "cpu" ? getCpuScore(part) : 
+                  category === "gpu" ? getGpuScore(part) : 0;
+    console.log(`   ${i+1}. ${part.name.substring(0, 50)} - ${price.toLocaleString()}원 ${score ? `(점수: ${score.toLocaleString()})` : ''}`);
+    if (part.specs) {
+      console.log(`      specs: ${JSON.stringify(part.specs).substring(0, 100)}...`);
+    }
+  });
+}
+
+function extractPsuWattage(psu) {
+  const text = psu.info || psu.name || "";
+  const match = text.match(/(\d+)\s*W/i);
+  return match ? parseInt(match[1]) : 0;
+}
+
+/* ==================== 메인 추천 로직 (디버깅 강화) ==================== */
 
 router.post("/", async (req, res) => {
+  const startTime = Date.now();
+  
   try {
     const { budget = 1000000, purpose = "가성비", allowOver = 0 } = req.body;
     const totalBudget = Number(budget);
-    const overRatio = Math.min(Math.max(Number(allowOver) || 0, 0), 0.15); // 최대 15% 초과 허용
+    const overRatio = Math.min(Math.max(Number(allowOver) || 0, 0), 0.15);
     const budgetCap = totalBudget * (1 + overRatio);
     
     const profile = getProfile(purpose);
     const db = getDB();
     
-    console.log(`💰 추천 시작: 예산 ${totalBudget.toLocaleString()}원, 용도: ${purpose}`);
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`💰 AI 추천 시작`);
+    console.log(`   예산: ${totalBudget.toLocaleString()}원 (최대: ${budgetCap.toLocaleString()}원)`);
+    console.log(`   용도: ${purpose}`);
+    console.log(`   초과 허용: ${(overRatio * 100).toFixed(1)}%`);
+    console.log(`${'='.repeat(70)}\n`);
     
-    // 모든 부품 로드
+    // 🆕 1단계: 모든 부품 로드
+    console.log(`📥 1단계: 데이터베이스에서 부품 로드 중...`);
+    const loadStart = Date.now();
+    
     const [cpus, gpus, memories, boards, psus, coolers, storages, cases] = await Promise.all([
       db.collection("parts").find({ category: "cpu", price: { $gt: 0 } }).toArray(),
       db.collection("parts").find({ category: "gpu", price: { $gt: 0 } }).toArray(),
@@ -381,24 +403,60 @@ router.post("/", async (req, res) => {
       db.collection("parts").find({ category: "case", price: { $gt: 0 } }).toArray(),
     ]);
     
-    console.log(`📦 부품 수: CPU ${cpus.length}, GPU ${gpus.length}, 메모리 ${memories.length}, 메인보드 ${boards.length}`);
-    console.log(`📦 PSU ${psus.length}, 쿨러 ${coolers.length}, 저장장치 ${storages.length}, 케이스 ${cases.length}`);
+    console.log(`✅ 로드 완료 (${Date.now() - loadStart}ms)`);
+    console.log(`\n📊 카테고리별 부품 수:`);
+    console.log(`   🔧 CPU: ${cpus.length}개`);
+    console.log(`   🎮 GPU: ${gpus.length}개`);
+    console.log(`   💾 메모리: ${memories.length}개`);
+    console.log(`   🔌 메인보드: ${boards.length}개`);
+    console.log(`   ⚡ PSU: ${psus.length}개`);
+    console.log(`   ❄️  쿨러: ${coolers.length}개`);
+    console.log(`   💿 스토리지: ${storages.length}개`);
+    console.log(`   📦 케이스: ${cases.length}개`);
     
-    // 가격 안정화
+    // 🆕 데이터 부족 경고
+    const warnings = [];
+    if (cpus.length < 10) warnings.push(`CPU (${cpus.length}개)`);
+    if (gpus.length < 10) warnings.push(`GPU (${gpus.length}개)`);
+    if (memories.length < 5) warnings.push(`메모리 (${memories.length}개)`);
+    if (boards.length < 10) warnings.push(`메인보드 (${boards.length}개)`);
+    if (psus.length < 5) warnings.push(`PSU (${psus.length}개)`);
+    if (coolers.length < 5) warnings.push(`쿨러 (${coolers.length}개)`);
+    if (storages.length < 5) warnings.push(`스토리지 (${storages.length}개)`);
+    if (cases.length < 5) warnings.push(`케이스 (${cases.length}개)`);
+    
+    if (warnings.length > 0) {
+      console.log(`\n⚠️  경고: 다음 카테고리의 데이터가 부족합니다:`);
+      warnings.forEach(w => console.log(`   - ${w}`));
+      console.log(`   → GitHub Actions에서 sync 워크플로우를 실행하세요!`);
+    }
+    
+    // 🆕 샘플 데이터 출력
+    if (cpus.length > 0) logPartSample(cpus, "CPU");
+    if (gpus.length > 0) logPartSample(gpus, "GPU");
+    if (psus.length > 0) logPartSample(psus, "PSU");
+    
+    // 🆕 2단계: 가격 안정화
+    console.log(`\n💵 2단계: 가격 안정화 처리 중...`);
     for (const part of [...cpus, ...gpus, ...memories, ...boards, ...psus, ...coolers, ...storages, ...cases]) {
       part._price = getStablePrice(part);
     }
+    console.log(`✅ 가격 안정화 완료`);
     
-    // 예산 기반 1차 필터링
+    // 🆕 3단계: 예산 기반 필터링
+    console.log(`\n🔍 3단계: 예산 기반 1차 필터링...`);
     const budgetGuide = profile.budget;
+    
     const cpuCand = cpus.filter(c => {
       const ratio = c._price / totalBudget;
-      return ratio >= budgetGuide.cpu * 0.5 && ratio <= budgetGuide.cpu * 2.0; // 넓게 필터
+      return ratio >= budgetGuide.cpu * 0.5 && ratio <= budgetGuide.cpu * 2.0;
     });
+    
     const gpuCand = gpus.filter(g => {
       const ratio = g._price / totalBudget;
       return ratio >= budgetGuide.gpu * 0.5 && ratio <= budgetGuide.gpu * 2.0;
     });
+    
     const memCand = memories.filter(m => extractMemoryCapacity(m) >= profile.minMemory);
     const boardCand = boards;
     const psuCand = psus;
@@ -409,47 +467,122 @@ router.post("/", async (req, res) => {
     });
     const caseCand = cases;
     
-    console.log(`✅ 필터 후: CPU ${cpuCand.length}, GPU ${gpuCand.length}`);
+    console.log(`\n✅ 필터링 결과:`);
+    console.log(`   CPU: ${cpus.length} → ${cpuCand.length}개 (예산범위: ${(budgetGuide.cpu * 0.5 * 100).toFixed(0)}% ~ ${(budgetGuide.cpu * 2.0 * 100).toFixed(0)}%)`);
+    console.log(`   GPU: ${gpus.length} → ${gpuCand.length}개 (예산범위: ${(budgetGuide.gpu * 0.5 * 100).toFixed(0)}% ~ ${(budgetGuide.gpu * 2.0 * 100).toFixed(0)}%)`);
+    console.log(`   메모리: ${memories.length} → ${memCand.length}개 (최소 ${profile.minMemory}GB)`);
+    console.log(`   메인보드: ${boards.length}개 (필터 없음)`);
+    console.log(`   PSU: ${psus.length}개 (필터 없음)`);
+    console.log(`   쿨러: ${coolers.length}개 (필터 없음)`);
+    console.log(`   스토리지: ${storages.length} → ${storageCand.length}개 (최소 ${profile.storageMin}GB)`);
+    console.log(`   케이스: ${cases.length}개 (필터 없음)`);
     
-    // 조합 생성 (샘플링으로 최적화)
-    const combos = [];
-    const maxCombos = 50000; // 최대 조합 수 제한
-    let checked = 0;
+    // 🆕 필터 후 데이터 부족 체크
+    if (cpuCand.length === 0 || gpuCand.length === 0) {
+      console.log(`\n❌ 치명적 오류: CPU 또는 GPU 후보가 없습니다!`);
+      return res.json({
+        builds: [],
+        message: `예산 범위 내 부품을 찾을 수 없습니다. CPU 후보: ${cpuCand.length}개, GPU 후보: ${gpuCand.length}개`
+      });
+    }
     
-    // CPU, GPU를 성능순 정렬 후 상위 N개만 사용
+    // 🆕 4단계: 상위 부품 선택
+    console.log(`\n🏆 4단계: 성능 기반 상위 부품 선택...`);
     const topCPUs = cpuCand.sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 20);
     const topGPUs = gpuCand.sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 20);
     
+    console.log(`   선택된 CPU: ${topCPUs.length}개 (최고 점수: ${getCpuScore(topCPUs[0]).toLocaleString()})`);
+    console.log(`   선택된 GPU: ${topGPUs.length}개 (최고 점수: ${getGpuScore(topGPUs[0]).toLocaleString()})`);
+    
+    // 🆕 5단계: 조합 생성
+    console.log(`\n🔄 5단계: 호환 조합 생성 중...`);
+    const combos = [];
+    const maxCombos = 50000;
+    let checked = 0;
+    
+    // 🆕 호환성 실패 통계
+    const compatFails = {
+      socket: 0,
+      ddr: 0,
+      power: 0,
+      coolerSocket: 0,
+      coolerTDP: 0,
+      formFactor: 0,
+      gpuSize: 0,
+      coolerHeight: 0,
+      psuCompat: 0,
+      budget: 0
+    };
+    
+    const comboStart = Date.now();
+    let lastLog = comboStart;
+    
     for (const cpu of topCPUs) {
       for (const gpu of topGPUs) {
-        for (const board of boardCand.slice(0, 15)) { // 보드 15개만
-          if (!isSocketCompatible(cpu, board)) continue;
+        for (const board of boardCand.slice(0, 15)) {
+          if (!isSocketCompatible(cpu, board)) {
+            compatFails.socket++;
+            continue;
+          }
           
-          for (const memory of memCand.slice(0, 10)) { // 메모리 10개만
-            if (!isDDRCompatible(memory, board)) continue;
+          for (const memory of memCand.slice(0, 10)) {
+            if (!isDDRCompatible(memory, board)) {
+              compatFails.ddr++;
+              continue;
+            }
             
             for (const psu of psuCand.slice(0, 10)) {
-              if (!isPowerSufficient(cpu, gpu, psu)) continue;
+              if (!isPowerSufficient(cpu, gpu, psu)) {
+                compatFails.power++;
+                continue;
+              }
               
               for (const cooler of coolerCand.slice(0, 10)) {
-                if (!isCoolerSocketCompatible(cpu, cooler)) continue;
-                if (!isCoolerTDPSufficient(cpu, cooler)) continue;
+                if (!isCoolerSocketCompatible(cpu, cooler)) {
+                  compatFails.coolerSocket++;
+                  continue;
+                }
+                if (!isCoolerTDPSufficient(cpu, cooler)) {
+                  compatFails.coolerTDP++;
+                  continue;
+                }
                 
                 for (const storage of storageCand.slice(0, 8)) {
                   for (const caseItem of caseCand.slice(0, 8)) {
                     checked++;
+                    
+                    // 🆕 진행상황 로그 (5초마다)
+                    if (Date.now() - lastLog > 5000) {
+                      console.log(`   진행: ${checked.toLocaleString()}개 체크, ${combos.length}개 조합 발견...`);
+                      lastLog = Date.now();
+                    }
+                    
                     if (checked > maxCombos) break;
                     
-                    // 물리적 호환성 체크
-                    if (!isFormFactorCompatible(board, caseItem)) continue;
-                    if (!isGpuSizeCompatible(gpu, caseItem)) continue;
-                    if (!isCoolerHeightCompatible(cooler, caseItem)) continue;
-                    if (!isPsuCompatible(psu, caseItem)) continue;
+                    if (!isFormFactorCompatible(board, caseItem)) {
+                      compatFails.formFactor++;
+                      continue;
+                    }
+                    if (!isGpuSizeCompatible(gpu, caseItem)) {
+                      compatFails.gpuSize++;
+                      continue;
+                    }
+                    if (!isCoolerHeightCompatible(cooler, caseItem)) {
+                      compatFails.coolerHeight++;
+                      continue;
+                    }
+                    if (!isPsuCompatible(psu, caseItem)) {
+                      compatFails.psuCompat++;
+                      continue;
+                    }
                     
                     const totalPrice = cpu._price + gpu._price + memory._price + board._price + 
                                      psu._price + cooler._price + storage._price + caseItem._price;
                     
-                    if (totalPrice > budgetCap) continue;
+                    if (totalPrice > budgetCap) {
+                      compatFails.budget++;
+                      continue;
+                    }
                     
                     const score = calculateComboScore({
                       cpu, gpu, memory, board, psu, cooler, storage, caseItem, purpose, totalPrice
@@ -475,16 +608,51 @@ router.post("/", async (req, res) => {
       if (checked > maxCombos) break;
     }
     
-    console.log(`🔍 조합 생성 완료: ${combos.length}개 (체크: ${checked}개)`);
+    console.log(`\n✅ 조합 생성 완료 (${Date.now() - comboStart}ms)`);
+    console.log(`   체크: ${checked.toLocaleString()}개`);
+    console.log(`   발견: ${combos.length.toLocaleString()}개`);
+    
+    // 🆕 호환성 실패 통계 출력
+    console.log(`\n📉 호환성 체크 실패 통계:`);
+    const totalFails = Object.values(compatFails).reduce((a, b) => a + b, 0);
+    console.log(`   총 실패: ${totalFails.toLocaleString()}회`);
+    Object.entries(compatFails).forEach(([key, value]) => {
+      if (value > 0) {
+        const percent = ((value / totalFails) * 100).toFixed(1);
+        console.log(`   - ${key}: ${value.toLocaleString()}회 (${percent}%)`);
+      }
+    });
     
     if (combos.length === 0) {
+      console.log(`\n❌ 최종 결과: 호환 조합 없음`);
+      console.log(`\n💡 해결 방법:`);
+      console.log(`   1. 예산을 늘리세요 (현재: ${totalBudget.toLocaleString()}원)`);
+      console.log(`   2. 다른 용도를 선택하세요 (현재: ${purpose})`);
+      console.log(`   3. GitHub Actions에서 sync 워크플로우를 실행하여 부품 데이터를 업데이트하세요`);
+      
       return res.json({
         builds: [],
-        message: "예산과 호환 조건에 맞는 조합을 찾을 수 없습니다. 예산을 늘리거나 조건을 완화해주세요."
+        message: "예산과 호환 조건에 맞는 조합을 찾을 수 없습니다. 예산을 늘리거나 조건을 완화해주세요.",
+        debug: {
+          checked,
+          found: combos.length,
+          compatibilityFails: compatFails,
+          candidateCounts: {
+            cpu: cpuCand.length,
+            gpu: gpuCand.length,
+            memory: memCand.length,
+            motherboard: boardCand.length,
+            psu: psuCand.length,
+            cooler: coolerCand.length,
+            storage: storageCand.length,
+            case: caseCand.length
+          }
+        }
       });
     }
     
-    // 3가지 빌드 추출
+    // 🆕 6단계: 3가지 빌드 추출
+    console.log(`\n🎯 6단계: 최적 빌드 추출 중...`);
     const byScore = [...combos].sort((a, b) => b.score - a.score);
     const byValue = [...combos].sort((a, b) => (b.score / b.totalPrice) - (a.score / a.totalPrice));
     const byPrice = [...combos].sort((a, b) => a.totalPrice - b.totalPrice);
@@ -498,6 +666,7 @@ router.post("/", async (req, res) => {
       if (!seen.has(key)) {
         seen.add(key);
         builds.push({ ...combo, label: "가성비" });
+        console.log(`   ✅ 가성비: ${combo.cpu.name.substring(0, 20)} + ${combo.gpu.name.substring(0, 20)} = ${combo.totalPrice.toLocaleString()}원`);
         break;
       }
     }
@@ -514,6 +683,7 @@ router.post("/", async (req, res) => {
       if (!seen.has(key)) {
         seen.add(key);
         builds.push({ ...balanced, label: "균형" });
+        console.log(`   ✅ 균형: ${balanced.cpu.name.substring(0, 20)} + ${balanced.gpu.name.substring(0, 20)} = ${balanced.totalPrice.toLocaleString()}원`);
       }
     }
     
@@ -523,11 +693,13 @@ router.post("/", async (req, res) => {
       if (!seen.has(key)) {
         seen.add(key);
         builds.push({ ...combo, label: "고성능" });
+        console.log(`   ✅ 고성능: ${combo.cpu.name.substring(0, 20)} + ${combo.gpu.name.substring(0, 20)} = ${combo.totalPrice.toLocaleString()}원`);
         break;
       }
     }
     
-    // 응답 포맷팅
+    // 🆕 7단계: 응답 포맷팅
+    console.log(`\n📤 7단계: 응답 생성 중...`);
     const response = builds.map(build => {
       const reasons = generateReasons(build, purpose);
       
@@ -555,21 +727,25 @@ router.post("/", async (req, res) => {
       };
     });
     
-    console.log(`✅ 추천 완료: ${response.length}개 빌드`);
+    const totalTime = Date.now() - startTime;
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`✅ 추천 완료!`);
+    console.log(`   총 소요시간: ${totalTime}ms (${(totalTime/1000).toFixed(1)}초)`);
+    console.log(`   생성된 빌드: ${response.length}개`);
+    console.log(`${'='.repeat(70)}\n`);
     
     return res.json({ builds: response });
     
   } catch (err) {
-    console.error("❌ 추천 실패:", err);
-    return res.status(500).json({ error: "추천 처리 중 오류 발생", message: err.message });
+    console.error("\n❌ 추천 실패:", err);
+    console.error("스택 트레이스:", err.stack);
+    return res.status(500).json({ 
+      error: "추천 처리 중 오류 발생", 
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
-
-function extractPsuWattage(psu) {
-  const text = psu.info || psu.name || "";
-  const match = text.match(/(\d+)\s*W/i);
-  return match ? parseInt(match[1]) : 0;
-}
 
 function formatPart(part) {
   return {
@@ -588,33 +764,27 @@ function generateReasons(build, purpose) {
   const reasons = [];
   const profile = getProfile(purpose);
   
-  // 1. 소켓 호환
   const cpuSocket = extractCpuSocket(build.cpu);
   const boardSocket = extractBoardSocket(build.motherboard);
   reasons.push(`✅ 소켓 호환: ${cpuSocket} ↔ ${boardSocket}`);
   
-  // 2. 메모리 호환
   const memDDR = extractMemoryDDR(build.memory);
   const boardDDR = extractBoardDDR(build.motherboard);
   const memCap = extractMemoryCapacity(build.memory);
   reasons.push(`✅ 메모리: ${memDDR} ${memCap}GB (${profile.minMemory}GB 이상 권장)`);
   
-  // 3. 전력
   const totalTDP = estimateCpuTDP(build.cpu) + estimateGpuTDP(build.gpu);
   const psuWatt = extractPsuWattage(build.psu);
   reasons.push(`✅ 전력: ${totalTDP}W 소비 → ${psuWatt}W PSU (${Math.round(psuWatt/totalTDP*100)}% 여유)`);
   
-  // 4. 쿨러
   const cpuTDP = estimateCpuTDP(build.cpu);
   const coolerSpecs = build.cooler.specs || {};
   const coolerTDP = coolerSpecs.tdpRating || 0;
   reasons.push(`✅ 쿨러: CPU ${cpuTDP}W ↔ 쿨러 ${coolerTDP}W 지원`);
   
-  // 5. 물리적 호환
   const boardFF = extractBoardFormFactor(build.motherboard);
   reasons.push(`✅ 케이스: ${boardFF} 메인보드 지원`);
   
-  // 6. 용도별 최적화
   if (purpose === "게임용") {
     const gpuScore = getGpuScore(build.gpu);
     reasons.push(`🎮 게이밍 최적화: GPU 성능 ${gpuScore.toLocaleString()} (높을수록 좋음)`);
@@ -623,7 +793,6 @@ function generateReasons(build, purpose) {
     reasons.push(`💼 작업용 최적화: CPU 성능 ${cpuScore.toLocaleString()} (멀티코어 중시)`);
   }
   
-  // 7. 스토리지
   const storageSpecs = build.storage.specs || {};
   const storageCap = storageSpecs.capacity || 0;
   const storageType = storageSpecs.interface || "";
