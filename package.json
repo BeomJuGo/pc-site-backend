@@ -1,26 +1,19 @@
 {
-  "name": "backend",
+  "name": "pc-site-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "node --test",
-    "start": "node index.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "type": "module",
+  "scripts": {
+    "start": "node --max-old-space-size=512 index.js"
+  },
   "dependencies": {
-    "@sparticuz/chromium": "^130.0.0",
-    "axios": "^1.8.3",
-    "cheerio": "^1.1.2",
+    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "mongodb": "^5.6.0",
-    "mongoose": "^8.12.1",
-    "node-fetch": "^3.3.2",
-    "puppeteer-core": "^23.8.0"
+    "mongodb": "^6.3.0",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12",
+    "puppeteer-core": "^21.6.1",
+    "@sparticuz/chromium": "^119.0.2",
+    "node-fetch": "^3.3.2"
   }
 }
