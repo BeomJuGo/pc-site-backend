@@ -1,4 +1,13 @@
 // routes/updatePrices.js - 다나와 크롤링 버전 (네이버 API 대체)
+// 
+// 【매칭 전략】
+// - GPU, CPU: 칩셋/모델 기준 (여러 제조사 제품 중 최저가)
+//   예) "RTX 5090" → MSI, ASUS, GIGABYTE 등 모든 RTX 5090 중 최저가
+// 
+// - Memory, Motherboard, PSU, Case, Cooler, Storage: 제품명 유사도 기준
+//   예) DB의 "삼성전자 DDR5-5600 32GB" → 다나와에서 동일 제품명 찾기
+//   (이미 sync 파일들로 다나와에서 정확한 제품명을 크롤링하여 DB에 저장했기 때문)
+//
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
@@ -21,6 +30,7 @@ const DANAWA_URLS = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ========================= 칩셋/모델명 추출 함수 ========================= */
+// GPU, CPU만 사용 (나머지 카테고리는 제품명 직접 매칭)
 
 // GPU 칩셋 추출 (RTX 5090, RX 7900 XT 등)
 function extractGpuChipset(name) {
@@ -66,56 +76,15 @@ function extractCpuModel(name) {
   return null;
 }
 
-// 메모리 스펙 추출 (DDR5-5600 32GB)
-function extractMemorySpec(name) {
-  const n = name.toUpperCase();
-  const tokens = [];
-  
-  // DDR 타입 + 속도
-  const ddrMatch = n.match(/\bDDR[345](?:-\d{4,5})?\b/);
-  if (ddrMatch) tokens.push(ddrMatch[0]);
-  
-  // 용량
-  const capacityMatch = n.match(/\b(\d{1,3})\s*GB\b/);
-  if (capacityMatch) tokens.push(capacityMatch[1] + "GB");
-  
-  return tokens.length > 0 ? tokens.join(" ") : null;
-}
-
-// 메인보드 칩셋 추출 (B650, Z790 등)
-function extractBoardChipset(name) {
-  const n = name.toUpperCase();
-  const chipsetMatch = n.match(/\b([ABXZ]\d{3}[E]?|H\d{3})\b/);
-  return chipsetMatch ? chipsetMatch[0] : null;
-}
-
-// PSU 용량 추출 (750W, 850W 등)
-function extractPsuWattage(name) {
-  const n = name.toUpperCase();
-  const wattMatch = n.match(/\b(\d{3,4})\s*W\b/);
-  return wattMatch ? wattMatch[1] + "W" : null;
-}
-
-// 범용 매칭 함수 (카테고리별 핵심 키워드 추출)
+// 칩셋/모델명 추출 (GPU, CPU만 사용)
 function extractCoreIdentifier(name, category) {
   switch (category) {
     case "gpu":
       return extractGpuChipset(name);
     case "cpu":
       return extractCpuModel(name);
-    case "memory":
-      return extractMemorySpec(name);
-    case "motherboard":
-      return extractBoardChipset(name);
-    case "psu":
-      return extractPsuWattage(name);
-    case "case":
-    case "cooler":
-    case "storage":
-      // 케이스/쿨러/스토리지는 제품명 전체 사용 (브랜드 제거)
-      return name.replace(/^(NZXT|CORSAIR|LIAN\s*LI|SAMSUNG|WD|CRUCIAL|NOCTUA|DEEPCOOL)\s*/i, "").trim();
     default:
-      return name;
+      return null; // 나머지 카테고리는 제품명 매칭 사용
   }
 }
 
@@ -180,37 +149,101 @@ async function crawlDanawaCategory(category) {
   }
 }
 
-/* ========================= 칩셋별 최저가 매칭 ========================= */
-function findLowestPriceForPart(dbPart, crawledProducts, category) {
-  const coreId = extractCoreIdentifier(dbPart.name, category);
+/* ========================= 제품명 유사도 계산 ========================= */
+function calculateSimilarity(str1, str2) {
+  const s1 = str1.toLowerCase().replace(/\s+/g, "");
+  const s2 = str2.toLowerCase().replace(/\s+/g, "");
   
-  if (!coreId) {
-    console.log(`⚠️ [${category}] 코어 식별 실패: ${dbPart.name}`);
-    return null;
+  // 완전 일치
+  if (s1 === s2) return 1.0;
+  
+  // 한쪽이 다른쪽을 포함
+  if (s1.includes(s2) || s2.includes(s1)) return 0.9;
+  
+  // Levenshtein 거리 기반 유사도
+  const len1 = s1.length;
+  const len2 = s2.length;
+  const matrix = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(null));
+  
+  for (let i = 0; i <= len1; i++) matrix[0][i] = i;
+  for (let j = 0; j <= len2; j++) matrix[j][0] = j;
+  
+  for (let j = 1; j <= len2; j++) {
+    for (let i = 1; i <= len1; i++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1,
+        matrix[j - 1][i] + 1,
+        matrix[j - 1][i - 1] + cost
+      );
+    }
   }
+  
+  const distance = matrix[len2][len1];
+  const maxLen = Math.max(len1, len2);
+  return 1 - distance / maxLen;
+}
 
-  console.log(`   🔍 매칭 시도: "${dbPart.name}" → 코어식별: "${coreId}"`);
+/* ========================= 칩셋별/제품명별 최저가 매칭 ========================= */
+function findLowestPriceForPart(dbPart, crawledProducts, category) {
+  // GPU, CPU: 칩셋/모델 기준 (여러 제조사 중 최저가)
+  if (category === "gpu" || category === "cpu") {
+    const coreId = extractCoreIdentifier(dbPart.name, category);
+    
+    if (!coreId) {
+      console.log(`   ⚠️ 코어 식별 실패: ${dbPart.name}`);
+      return null;
+    }
 
-  // 동일한 칩셋/모델을 가진 제품들 필터링
-  const matchingProducts = crawledProducts.filter((p) => {
-    const productCoreId = extractCoreIdentifier(p.name, category);
-    return productCoreId === coreId;
-  });
+    console.log(`   🔍 [칩셋 매칭] "${dbPart.name}" → "${coreId}"`);
 
+    // 동일한 칩셋/모델을 가진 제품들 필터링
+    const matchingProducts = crawledProducts.filter((p) => {
+      const productCoreId = extractCoreIdentifier(p.name, category);
+      return productCoreId === coreId;
+    });
+
+    if (matchingProducts.length === 0) {
+      console.log(`   ⛔ 매칭 제품 없음`);
+      return null;
+    }
+
+    // 최저가 찾기
+    const sorted = matchingProducts.sort((a, b) => a.price - b.price);
+    const lowestPrice = sorted[0].price;
+    const lowestProduct = sorted[0].name;
+
+    console.log(`   ✅ 매칭 ${matchingProducts.length}개 중 최저가: ${lowestPrice.toLocaleString()}원`);
+    console.log(`      → ${lowestProduct}`);
+
+    return { price: lowestPrice, matchCount: matchingProducts.length };
+  }
+  
+  // 나머지 카테고리: 제품명 기준 (정확한 제품명 매칭)
+  console.log(`   🔍 [제품명 매칭] "${dbPart.name}"`);
+  
+  // 유사도 계산하여 가장 유사한 제품 찾기
+  const similarities = crawledProducts.map((p) => ({
+    product: p,
+    similarity: calculateSimilarity(dbPart.name, p.name)
+  }));
+  
+  // 유사도 80% 이상인 제품들만 필터링
+  const matchingProducts = similarities.filter((s) => s.similarity >= 0.8);
+  
   if (matchingProducts.length === 0) {
-    console.log(`   ⛔ 매칭 제품 없음`);
+    console.log(`   ⛔ 유사 제품 없음 (유사도 < 80%)`);
     return null;
   }
-
-  // 최저가 찾기
-  const sorted = matchingProducts.sort((a, b) => a.price - b.price);
-  const lowestPrice = sorted[0].price;
-  const lowestProduct = sorted[0].name;
-
-  console.log(`   ✅ 매칭 제품 ${matchingProducts.length}개 중 최저가: ${lowestPrice.toLocaleString()}원`);
-  console.log(`      → ${lowestProduct}`);
-
-  return { price: lowestPrice, matchCount: matchingProducts.length };
+  
+  // 가장 유사한 제품 선택
+  const bestMatch = matchingProducts.sort((a, b) => b.similarity - a.similarity)[0];
+  const { product, similarity } = bestMatch;
+  
+  console.log(`   ✅ 매칭 성공 (유사도 ${(similarity * 100).toFixed(1)}%): ${product.price.toLocaleString()}원`);
+  console.log(`      → ${product.name}`);
+  
+  return { price: product.price, matchCount: matchingProducts.length };
 }
 
 /* ========================= DB 업데이트 ========================= */
