@@ -57,32 +57,11 @@ function extractGpuChipset(name) {
   return null;
 }
 
-// CPU 모델명 추출 (Ryzen 7 7700X, i5-13400F 등)
-function extractCpuModel(name) {
-  const n = name.toUpperCase();
-  
-  // AMD Ryzen
-  const ryzenMatch = n.match(/\bRYZEN\s*[357579]\s*\d{3,4}[XGTE]?\b/);
-  if (ryzenMatch) {
-    return ryzenMatch[0].replace(/\s+/g, " ").trim();
-  }
-  
-  // Intel Core
-  const intelMatch = n.match(/\bI[3579]-\d{4,5}[KFTS]?\b/);
-  if (intelMatch) {
-    return intelMatch[0].replace(/\s+/g, " ").trim();
-  }
-  
-  return null;
-}
-
 // 칩셋/모델명 추출 (GPU, CPU만 사용)
 function extractCoreIdentifier(name, category) {
   switch (category) {
     case "gpu":
       return extractGpuChipset(name);
-    case "cpu":
-      return extractCpuModel(name);
     default:
       return null; // 나머지 카테고리는 제품명 매칭 사용
   }
@@ -187,7 +166,7 @@ function calculateSimilarity(str1, str2) {
 /* ========================= 칩셋별/제품명별 최저가 매칭 ========================= */
 function findLowestPriceForPart(dbPart, crawledProducts, category) {
   // GPU, CPU: 칩셋/모델 기준 (여러 제조사 중 최저가)
-  if (category === "gpu" || category === "cpu") {
+  if (category === "gpu") {
     const coreId = extractCoreIdentifier(dbPart.name, category);
     
     if (!coreId) {
