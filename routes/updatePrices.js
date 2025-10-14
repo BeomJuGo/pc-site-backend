@@ -1,4 +1,4 @@
-// routes/updatePrices.js - 8개 카테고리 지원 (CPU, GPU, Motherboard, Memory, PSU, Case, Cooler, Storage)
+// routes/updatePrices.js - 개선 버전 (정확도 대폭 향상)
 import express from "express";
 import fetch from "node-fetch";
 import { getDB } from "../db.js";
@@ -8,29 +8,41 @@ const router = express.Router();
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 
-/* ========================= 공통 유틸 ========================= */
+/* ========================= 블랙리스트 확장 ========================= */
+const K_BLACKLIST_COMMON = [
+  "중고","리퍼","리퍼비시","벌크","채굴","해시","마이닝","AS반품","전시","테스트","샘플",
+  "리뷰","후기","스펙","사양","가격비교","쿠폰","보증연장","해외구매","직구","병행수입",
+  "호환","호환성","테스트","교체","수리","튜닝","ARGB","LED","라이팅","RGB","조명",
+  "키트","KIT","번들","묶음","세트","구성품","액세서리","부품","파츠",
+  "매뉴얼","설명서","가이드","사은품","이벤트","프로모션"
+];
+
 const K_ACCESSORY_GPU = [
-  // 워터블록/쿨링/라디에이터/브래킷/백플레이트/팬 등
-  "워터블록","워터 블록","워터블럭","워터 블럭","waterblock","water block","waterblock",
+  "워터블록","워터 블록","워터블럭","워터 블럭","waterblock","water block",
   "수랭","워터","water","워터쿨","워터 쿨","쿨러","cooler","쿨링","cooling",
   "라디에이터","radiator","펌프","pump","리저버","reservoir",
   "백플레이트","backplate","브라켓","브래킷","bracket","holder","mount",
   "팬","fan","팬세트","팬 쿨러","방열판","히트싱크","heatsink","서멀","thermal","패드","pad",
   "라이저","riser","케이블","cable","어댑터","adapter","확장카드","extension",
+  "스탠드","거치대","지지대","홀더","클램프"
 ];
 
-const K_BLACKLIST_COMMON = [
-  "중고","리퍼","리퍼비시","벌크","채굴","해시","마이닝",
-  "리뷰","후기","스펙","사양","가격비교","쿠폰","보증연장",
-  "호환","호환성","테스트","교체","수리","튜닝","ARGB","LED","라이팅",
-];
+// 🆕 카테고리별 필수 키워드 (하나라도 있어야 함)
+const CATEGORY_MUST_INCLUDE = {
+  cpu: ["CPU", "프로세서", "PROCESSOR"],
+  gpu: ["그래픽카드", "VGA", "GPU", "비디오카드", "GRAPHICS"],
+  memory: ["메모리", "RAM", "DDR"],
+  motherboard: ["메인보드", "메보", "MOTHERBOARD", "M/B"],
+  psu: ["파워", "파워서플라이", "PSU", "POWER"],
+  case: ["케이스", "CASE", "PC케이스"],
+  cooler: ["쿨러", "COOLER", "CPU쿨러", "히트파이프"],
+  storage: ["SSD", "HDD", "저장장치", "하드", "스토리지"]
+};
 
-const GPU_CATEGORY_HINTS = ["그래픽카드", "비디오카드", "VGA", "GPU"];
-const GPU_TITLE_MUST = /(RTX|GTX|RX)\b/i;
-
+/* ========================= 유틸리티 ========================= */
 function norm(s = "") {
   return s
-    .replace(/[™®]/g, " ")
+    .replace(/[™®©]/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/[\u2013\u2014]/g, "-")
     .replace(/\s+/g, " ")
@@ -38,7 +50,9 @@ function norm(s = "") {
 }
 
 function cleanNameTail(name="") {
-  return norm(name).replace(/(review[:\s].*|specs\s*(and|&)\s*price.*|price\s*(and|&)\s*specs.*|full\s*specs.*|features\s*and\s*specs.*)$/i, "").trim();
+  return norm(name)
+    .replace(/(review[:\s].*|specs\s*(and|&)\s*price.*|price\s*(and|&)\s*specs.*|full\s*specs.*|features\s*and\s*specs.*)$/i, "")
+    .trim();
 }
 
 function containsAny(s="", list=[]) {
@@ -63,189 +77,394 @@ function madFilter(prices, k = 3) {
   return prices.filter(p => p >= lo && p <= hi);
 }
 
-/* ============== 카테고리별 토큰/쿼리/가격범위 ============== */
+/* ========================= 개선된 토큰 추출 ========================= */
+
+// 🆕 CPU 토큰 추출 (브랜드, 시리즈, 모델)
+function extractCpuTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 브랜드
+  const brand = (n.match(/\b(AMD|INTEL)\b/) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 시리즈 (Ryzen, Core 등)
+  const series = (n.match(/\b(RYZEN|CORE|THREADRIPPER|XEON)\b/) || [])[0];
+  if (series) tokens.push(series);
+  
+  // 세대/등급 (5 7600X, i5-13400F 등)
+  const model = (n.match(/\b(RYZEN\s*[357579]\s*\d{3,4}[XGTE]?|I[3579]-\d{4,5}[KFTS]?)\b/i) || [])[0];
+  if (model) tokens.push(model.replace(/\s+/g, ""));
+  
+  // 소켓
+  const socket = (n.match(/\b(AM4|AM5|LGA\s*1[27]00)\b/) || [])[0];
+  if (socket) tokens.push(socket);
+  
+  return tokens;
+}
+
+// 🆕 메모리 토큰 추출 (타입, 속도, 용량)
+function extractMemoryTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // DDR 타입
+  const ddr = (n.match(/\bDDR[345]\b/) || [])[0];
+  if (ddr) tokens.push(ddr);
+  
+  // 속도 (DDR5-5600, PC5-44800 등)
+  const speed = (n.match(/\b(?:DDR[345]-)?(\d{4,5})\b/) || [])[1];
+  if (speed) tokens.push(speed);
+  
+  // 용량 (32GB, 16GBx2 등)
+  const capacity = (n.match(/\b(\d{1,3})\s*GB\b/) || [])[1];
+  if (capacity) tokens.push(`${capacity}GB`);
+  
+  // CL (CL36, CL40 등)
+  const cl = (n.match(/\bCL\s*(\d{2})\b/) || [])[1];
+  if (cl) tokens.push(`CL${cl}`);
+  
+  return tokens;
+}
+
+// 🆕 메인보드 토큰 추출 (칩셋, 소켓, 폼팩터)
+function extractMotherboardTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 브랜드
+  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|ASROCK|BIOSTAR)\b/) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 칩셋 (B650, Z790, X670E 등)
+  const chipset = (n.match(/\b([ABXZ]\d{3}[E]?|H\d{3})\b/) || [])[0];
+  if (chipset) tokens.push(chipset);
+  
+  // 소켓
+  const socket = (n.match(/\b(AM4|AM5|LGA\s*1[27]00)\b/) || [])[0];
+  if (socket) tokens.push(socket);
+  
+  // 폼팩터
+  const form = (n.match(/\b(ATX|M-ATX|MINI-ITX|E-ATX)\b/) || [])[0];
+  if (form) tokens.push(form);
+  
+  return tokens;
+}
+
+// GPU 토큰 추출 (기존 유지, 약간 개선)
+function extractGpuTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 브랜드
+  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|GALAX|COLORFUL|INNO3D|ZOTAC|PNY|PALIT|SAPPHIRE|POWERCOLOR|XFX|ASROCK)\b/) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 시리즈
+  const series = (n.match(/\b(GEFORCE|RADEON)\b/) || [])[0];
+  if (series) tokens.push(series);
+  
+  // 모델 (RTX 4070 Ti, RX 7900 XT 등)
+  const model = (n.match(/\b(RTX|GTX|RX)\s*-?\s*\d{3,4}\s*(TI|SUPER|XT|XTX)?\b/) || [])[0];
+  if (model) tokens.push(model.replace(/\s+/g, " "));
+  
+  // VRAM
+  const vram = (n.match(/\b(\d{1,3})\s*GB\b/) || [])[1];
+  if (vram) tokens.push(`${vram}GB`);
+  
+  return tokens;
+}
+
+// 🆕 PSU 토큰 추출 (브랜드, 용량, 인증)
+function extractPsuTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 브랜드
+  const brand = (n.match(/\b(CORSAIR|SEASONIC|EVGA|THERMALTAKE|COOLER\s*MASTER|FSP|마이크로닉스|잘만)\b/i) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 용량 (750W, 850W 등)
+  const watt = (n.match(/\b(\d{3,4})\s*W\b/) || [])[1];
+  if (watt) tokens.push(`${watt}W`);
+  
+  // 80PLUS 인증 (Bronze, Gold, Platinum 등)
+  const cert = (n.match(/\b(BRONZE|SILVER|GOLD|PLATINUM|TITANIUM)\b/) || [])[0];
+  if (cert) tokens.push(cert);
+  
+  // 모듈러
+  const modular = (n.match(/\b(FULL\s*MODULAR|SEMI\s*MODULAR)\b/i) || [])[0];
+  if (modular) tokens.push(modular);
+  
+  return tokens;
+}
+
+// 🆕 케이스 토큰 추출 (브랜드, 크기, 폼팩터)
+function extractCaseTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 브랜드
+  const brand = (n.match(/\b(NZXT|LIAN\s*LI|CORSAIR|FRACTAL|PHANTEKS|COOLER\s*MASTER)\b/i) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 크기
+  const size = (n.match(/\b(미들타워|빅타워|미니타워|슬림케이스|MINI\s*TOWER|MID\s*TOWER|FULL\s*TOWER)\b/i) || [])[0];
+  if (size) tokens.push(size);
+  
+  // 폼팩터 지원
+  const form = (n.match(/\b(ATX|M-ATX|MINI-ITX|E-ATX)\b/) || [])[0];
+  if (form) tokens.push(form);
+  
+  return tokens;
+}
+
+// 🆕 쿨러 토큰 추출 (타입, 브랜드, 크기)
+function extractCoolerTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 타입
+  const type = (n.match(/\b(공냉|수냉|타워형|수직형|AIR|WATER|AIO)\b/i) || [])[0];
+  if (type) tokens.push(type);
+  
+  // 브랜드
+  const brand = (n.match(/\b(NOCTUA|BE\s*QUIET|COOLER\s*MASTER|DEEPCOOL|ARCTIC|NZXT|CORSAIR)\b/i) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 라디에이터 크기 (240mm, 360mm 등)
+  const rad = (n.match(/\b(120|240|280|360|420)\s*MM\b/i) || [])[0];
+  if (rad) tokens.push(rad);
+  
+  // 소켓 지원
+  const socket = (n.match(/\b(AM4|AM5|LGA\s*1[27]00)\b/) || [])[0];
+  if (socket) tokens.push(socket);
+  
+  return tokens;
+}
+
+// 🆕 스토리지 토큰 추출 (타입, 용량, 인터페이스)
+function extractStorageTokens(name) {
+  const n = cleanNameTail(name).toUpperCase();
+  const tokens = [];
+  
+  // 타입
+  const type = (n.match(/\b(SSD|HDD|NVME|SATA|M\.2)\b/) || [])[0];
+  if (type) tokens.push(type);
+  
+  // 브랜드
+  const brand = (n.match(/\b(SAMSUNG|CRUCIAL|WD|SEAGATE|KINGSTON|SK\s*HYNIX)\b/i) || [])[0];
+  if (brand) tokens.push(brand);
+  
+  // 용량 (1TB, 2TB, 500GB 등)
+  const capacity = (n.match(/\b(\d{1,4})\s*(TB|GB)\b/) || [])[0];
+  if (capacity) tokens.push(capacity);
+  
+  // 폼팩터 (2.5", 3.5", M.2 2280 등)
+  const form = (n.match(/\b(2\.5|3\.5|M\.2\s*\d{4})\b/) || [])[0];
+  if (form) tokens.push(form);
+  
+  return tokens;
+}
+
+// 🆕 통합 토큰 추출 함수
+function tokensByCategory(name, category) {
+  switch (category) {
+    case "cpu": return extractCpuTokens(name);
+    case "gpu": return extractGpuTokens(name);
+    case "memory": return extractMemoryTokens(name);
+    case "motherboard": return extractMotherboardTokens(name);
+    case "psu": return extractPsuTokens(name);
+    case "case": return extractCaseTokens(name);
+    case "cooler": return extractCoolerTokens(name);
+    case "storage": return extractStorageTokens(name);
+    default: return [];
+  }
+}
+
+/* ========================= 개선된 쿼리 생성 ========================= */
+// 🆕 핵심 키워드만 사용하여 검색 범위 확대
+function generateSmartQueries(name, category, tokens) {
+  const queries = [];
+  
+  // 1) 토큰 기반 쿼리 (핵심 키워드만)
+  if (tokens.length >= 2) {
+    queries.push(tokens.slice(0, 3).join(" "));  // 상위 3개 토큰
+  }
+  
+  // 2) 카테고리 힌트 추가
+  const categoryHints = {
+    cpu: ["CPU", "프로세서"],
+    gpu: ["그래픽카드", "GPU"],
+    memory: ["메모리", "RAM"],
+    motherboard: ["메인보드"],
+    psu: ["파워서플라이"],
+    case: ["PC케이스"],
+    cooler: ["CPU쿨러"],
+    storage: ["SSD"]
+  };
+  
+  const hint = categoryHints[category]?.[0] || "";
+  if (tokens.length >= 1 && hint) {
+    queries.push(`${tokens[0]} ${hint}`);
+  }
+  
+  // 3) 원본 이름 (폴백)
+  const cleaned = cleanNameTail(name);
+  if (cleaned.length < 50) {  // 너무 길면 제외
+    queries.push(cleaned);
+  }
+  
+  // 4) 브랜드 + 모델 조합
+  if (tokens.length >= 2) {
+    queries.push(`${tokens[0]} ${tokens[1]}`);
+  }
+  
+  return [...new Set(queries)].slice(0, 5);  // 최대 5개, 중복 제거
+}
+
+/* ========================= 가격 범위 ========================= */
 function priceBoundsByCategory(category) {
   switch (category) {
     case "gpu":         return { min: 60000,  max: 6000000 };
     case "cpu":         return { min: 30000,  max: 3000000 };
     case "motherboard": return { min: 25000,  max: 1800000 };
     case "memory":      return { min: 10000,  max: 1500000 };
-    case "psu":         return { min: 20000,  max: 500000 };   // 🆕 PSU
-    case "case":        return { min: 20000,  max: 500000 };   // 🆕 케이스
-    case "cooler":      return { min: 10000,  max: 300000 };   // 🆕 쿨러
-    case "storage":     return { min: 30000,  max: 2000000 };  // 🆕 스토리지
+    case "psu":         return { min: 20000,  max: 500000 };
+    case "case":        return { min: 20000,  max: 500000 };
+    case "cooler":      return { min: 10000,  max: 300000 };
+    case "storage":     return { min: 30000,  max: 2000000 };
     default:            return { min: 10000,  max: 3000000 };
   }
 }
 
-function extractGpuTokens(name) {
-  const n = cleanNameTail(name).toUpperCase();
-  const tokens = [];
-  const brand = (n.match(/\b(ASUS|MSI|GIGABYTE|GALAX|COLORFUL|INNO3D|ZOTAC|PNY|PALIT|SAPPHIRE|POWERCOLOR|XFX|ASROCK)\b/) || [])[0];
-  const series = (n.match(/\b(GEFORCE|RADEON)\b/) || [])[0];
-  const model = (n.match(/\b(RTX|GTX|RX)\s*-?\s*\d{3,4}\s*(TI|SUPER|XT|XTX)?\b/) || [])[0];
-  const vram  = (n.match(/\b(\d{1,3})\s*GB\b/) || [])[1];
-  if (brand) tokens.push(brand);
-  if (series) tokens.push(series);
-  if (model) tokens.push(model.replace(/\s+/g," "));
-  if (vram)  tokens.push(`${vram}GB`);
-  return tokens;
-}
-
-function tokensByCategory(name, category) {
-  if (category === "gpu") return extractGpuTokens(name);
-  return [];
-}
-
-function queryVariants(name, category) {
-  const base = cleanNameTail(name);
-  switch (category) {
-    case "gpu":
-      return [
-        `${base} 그래픽카드`,
-        `${base} GPU`,
-        `${base} 신품`,
-      ];
-    case "cpu":
-      return [`${base} CPU`, `${base} 정품`];
-    case "motherboard":
-      return [`${base} 메인보드`, `${base} 메보`];
-    case "memory":
-      return [`${base} 메모리`, `${base} RAM`];
-    case "psu":
-      return [`${base} 파워`, `${base} 파워서플라이`, `${base} PSU`]; // 🆕
-    case "case":
-      return [`${base} 케이스`, `${base} PC케이스`]; // 🆕
-    case "cooler":
-      return [`${base} 쿨러`, `${base} CPU쿨러`]; // 🆕
-    case "storage":
-      return [`${base} SSD`, `${base} 저장장치`]; // 🆕
-    default:
-      return [base];
+/* ========================= 네이버 API (개선) ========================= */
+// 🆕 여러 페이지 수집 (최대 100개)
+async function fetchNaverItemsMultiPage(query, maxResults = 100) {
+  const allItems = [];
+  const perPage = 100;  // 최대값
+  
+  try {
+    const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}&display=${perPage}`;
+    const res = await fetch(url, {
+      headers: {
+        "X-Naver-Client-Id": NAVER_CLIENT_ID,
+        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+      },
+    });
+    
+    if (!res.ok) {
+      console.error(`❌ 네이버 API 실패: ${res.status}`);
+      return [];
+    }
+    
+    const json = await res.json();
+    const items = (json.items || []).map(it => ({
+      title: it.title || "",
+      image: it.image || "",
+      lprice: it.lprice,
+      brand: it.brand || "",
+      maker: it.maker || "",
+      category1: it.category1 || "",
+      category2: it.category2 || "",
+      category3: it.category3 || "",
+      category4: it.category4 || "",
+    }));
+    
+    allItems.push(...items);
+    
+  } catch (err) {
+    console.error(`❌ 네이버 API 오류: ${err.message}`);
   }
+  
+  return allItems.slice(0, maxResults);
 }
 
-/* ===================== 네이버 쇼핑 호출 ===================== */
-async function fetchNaverItems(query) {
-  const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}&display=30`;
-  const res = await fetch(url, {
-    headers: {
-      "X-Naver-Client-Id": NAVER_CLIENT_ID,
-      "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
-    },
-  });
-  if (!res.ok) {
-    console.error(`❌ 네이버 API 실패: ${res.status} ${res.statusText}`);
-    return [];
-  }
-  const json = await res.json();
-  return (json.items || []).map(it => ({
-    title: it.title || "",
-    image: it.image || "",
-    lprice: it.lprice,
-    brand: it.brand || "",
-    maker: it.maker || "",
-    category1: it.category1 || "",
-    category2: it.category2 || "",
-    category3: it.category3 || "",
-    category4: it.category4 || "",
-  }));
-}
-
-/* ============== GPU 본품/액세서리 판별 & 스코어링 ============== */
-function isNaverGpuCategory(item) {
-  const cats = [item.category1, item.category2, item.category3, item.category4].map(norm);
-  return cats.some(c =>
-    GPU_CATEGORY_HINTS.some(h => c.toLowerCase().includes(h.toLowerCase()))
-  );
-}
-
-function isGpuAccessoryTitle(title) {
-  const t = norm(title).toLowerCase();
-  return K_ACCESSORY_GPU.some(w => t.includes(w.toLowerCase()));
-}
-
-function scoreGpuTitle(title, tokens) {
+/* ========================= 개선된 스코어링 ========================= */
+// 🆕 범용 스코어링 함수 (모든 카테고리 지원)
+function scoreTitle(title, tokens, category, originalName) {
   const t = norm(title);
   const up = t.toUpperCase();
-
-  // 액세서리/블랙리스트 즉시 제외
-  if (isGpuAccessoryTitle(t)) return -999;
-  if (containsAny(t, K_BLACKLIST_COMMON)) return -999;
-
-  // 반드시 포함해야 할 기본 패턴: RTX/GTX/RX 중 하나
-  if (!GPU_TITLE_MUST.test(up)) return -50;
-
-  // VRAM(XXGB)와 GDDR(또는 GDDR7/6) 힌트 중 하나라도 들어 있으면 가산
   let score = 0;
-  if (/\b\d{1,3}\s*GB\b/i.test(t)) score += 4;
-  if (/\bGDDR\s*\d\b/i.test(t) || /\bGDDR[567]\b/i.test(t)) score += 3;
-  if (/\bPCI[-\s]?E\b/i.test(t)) score += 1;
-
-  // 토큰 매칭 가중치
+  
+  // 1) 블랙리스트 즉시 제외
+  if (containsAny(t, K_BLACKLIST_COMMON)) return -999;
+  
+  // 2) GPU 액세서리 제외
+  if (category === "gpu" && containsAny(t, K_ACCESSORY_GPU)) return -999;
+  
+  // 3) 카테고리 필수 키워드 체크
+  const mustInclude = CATEGORY_MUST_INCLUDE[category] || [];
+  const hasCategoryKeyword = mustInclude.some(kw => up.includes(kw.toUpperCase()));
+  if (!hasCategoryKeyword) return -50;  // 카테고리 키워드 없으면 낮은 점수
+  
+  // 4) 토큰 매칭 점수
   for (const tok of tokens) {
     if (!tok) continue;
-    if (up.includes(tok.toUpperCase())) {
-      score += Math.max(2, Math.min(10, Math.floor(tok.length / 2)));
+    const tokUp = tok.toUpperCase();
+    if (up.includes(tokUp)) {
+      // 토큰 길이에 비례하여 가중치 (2~15점)
+      const weight = Math.max(2, Math.min(15, Math.floor(tok.length / 2)));
+      score += weight;
+      
+      // 정확히 일치하면 보너스
+      const exactMatch = new RegExp(`\\b${tokUp}\\b`).test(up);
+      if (exactMatch) score += 5;
     }
   }
-
-  // 리뷰/기사/비교 감점(이중 안전장치)
-  if (/\b(REVIEW|SPECS|PRICE|VERSUS|VS)\b/i.test(up)) score -= 3;
-
+  
+  // 5) 원본 이름과의 유사도 (선택적)
+  const nameTokens = cleanNameTail(originalName).toUpperCase().split(/\s+/);
+  const titleTokens = up.split(/\s+/);
+  const commonTokens = nameTokens.filter(nt => titleTokens.some(tt => tt.includes(nt) || nt.includes(tt)));
+  score += commonTokens.length * 2;
+  
+  // 6) 부정 키워드 감점
+  if (/\b(REVIEW|VERSUS|VS|비교|추천|순위)\b/i.test(t)) score -= 10;
+  
+  // 7) 정품/공식/신품 키워드 가산점
+  if (/\b(정품|공식|신품|새제품)\b/i.test(t)) score += 3;
+  
   return score;
 }
 
-/* ============== 스마트 가격/이미지 추출 파이프라인 ============== */
+/* ========================= 메인 가격 추출 함수 ========================= */
 async function fetchPriceImageSmart(name, category) {
-  const variants = queryVariants(name, category);
   const tokens = tokensByCategory(name, category);
+  const queries = generateSmartQueries(name, category, tokens);
   const { min, max } = priceBoundsByCategory(category);
-
+  
   console.log(`\n🔎 [${category}] 대상: ${name}`);
-  if (category === "gpu") console.log(`🧩 GPU 토큰: ${JSON.stringify(tokens)}`);
-
-  const pool = []; // {title, price, image, score}
-
-  for (const q of variants) {
-    console.log(`   ▶ 검색: ${q}`);
-    const items = await fetchNaverItems(q);
-
+  console.log(`   🧩 토큰: ${JSON.stringify(tokens)}`);
+  console.log(`   📝 쿼리: ${JSON.stringify(queries)}`);
+  
+  const pool = [];
+  
+  for (const q of queries) {
+    console.log(`   ▶ 검색: "${q}"`);
+    const items = await fetchNaverItemsMultiPage(q, 100);  // 🆕 최대 100개
+    console.log(`   📦 결과: ${items.length}개`);
+    
     for (const it of items) {
       const title = norm(it.title);
       const price = parseInt(it.lprice, 10);
+      
       if (!title || isNaN(price)) continue;
       if (price < min || price > max) continue;
-
-      // 카테고리/액세서리 필터 (GPU 전용 강화)
-      if (category === "gpu") {
-        // 1) 네이버 카테고리가 GPU 계열이 아닐 경우 PASS
-        const catOk = isNaverGpuCategory(it) || /그래픽\s*카드|GPU|비디오\s*카드|VGA/i.test(title);
-        if (!catOk) continue;
-        
-        // 2) 액세서리 키워드가 하나라도 등장하면 제외
-        if (isGpuAccessoryTitle(title)) continue;
-        
-        // 3) 본품 특징 점수화
-        const sc = scoreGpuTitle(title, tokens);
-        if (sc <= 0) continue;
-        
-        pool.push({ title, price, image: it.image, score: sc });
-      } else {
-        // 기존 카테고리 로직(간단 스코어)
-        let sc = 1;
-        if (containsAny(title, K_BLACKLIST_COMMON)) sc = -999;
-        if (sc > 0) pool.push({ title, price, image: it.image, score: sc });
-      }
+      
+      const sc = scoreTitle(title, tokens, category, name);
+      if (sc <= 0) continue;
+      
+      pool.push({ title, price, image: it.image, score: sc });
     }
   }
-
+  
   if (!pool.length) {
-    console.log("⛔ 후보 없음 (필터 후 0)");
+    console.log("   ⛔ 후보 없음 (필터 후 0개)");
     return null;
   }
-
-  // 타이틀 중복 제거
+  
+  // 타이틀 중복 제거 (최고 점수만 유지)
   const byTitle = new Map();
   for (const c of pool) {
     if (!byTitle.has(c.title) || byTitle.get(c.title).score < c.score) {
@@ -253,50 +472,48 @@ async function fetchPriceImageSmart(name, category) {
     }
   }
   const uniq = Array.from(byTitle.values());
-
-  // 스코어 상위 50%
-  const sorted = uniq.sort((a,b)=>b.score - a.score);
-  const top = sorted.slice(0, Math.max(3, Math.ceil(sorted.length/2)));
-
-  // MAD 아웃라이어 제거 후 중위가
-  const prices = top.map(x=>x.price);
+  
+  // 스코어 상위 70% (더 많은 샘플 확보)
+  const sorted = uniq.sort((a,b) => b.score - a.score);
+  const topCount = Math.max(5, Math.ceil(sorted.length * 0.7));  // 🆕 70%
+  const top = sorted.slice(0, topCount);
+  
+  // MAD 필터로 이상치 제거
+  const prices = top.map(x => x.price);
   const filtered = madFilter(prices, 3);
-  const used = filtered.length >= 2 ? filtered : prices;
+  const used = filtered.length >= 3 ? filtered : prices;  // 🆕 최소 3개
   const mid = median(used);
   const chosenImage = top[0]?.image || sorted[0]?.image || "";
-
-  // 디버깅
-  top.slice(0,8).forEach((c,i)=>{
-    console.log(`📦 후보${i+1}: score=${c.score}, price=${c.price}, title="${c.title}"`);
+  
+  // 디버깅 로그
+  console.log(`   📊 후보 분석:`);
+  top.slice(0, 10).forEach((c, i) => {
+    console.log(`      ${i+1}. score=${c.score}, price=${c.price.toLocaleString()}원 - "${c.title.substring(0, 60)}..."`);
   });
-  console.log(`🧮 가격결정: mid=${mid}, 표본=${used.length}/${top.length} (전체=${uniq.length})`);
-
+  console.log(`   🧮 가격 결정: ${mid?.toLocaleString()}원 (샘플: ${used.length}/${top.length}, 전체: ${uniq.length})`);
+  
   if (!mid) return null;
   return { price: mid, image: chosenImage };
 }
 
-/* ============================ 라우터 ============================ */
+/* ========================= 라우터 ========================= */
 router.post("/update-prices", async (req, res) => {
   const db = getDB();
   const col = db.collection("parts");
   const today = new Date().toISOString().slice(0, 10);
-
-  // 🆕 8개 카테고리 모두 포함
+  
   const parts = await col.find({
     category: { 
-      $in: [
-        "cpu", "gpu", "motherboard", "memory",      // 기존 4개
-        "psu", "case", "cooler", "storage"          // 신규 4개
-      ] 
+      $in: ["cpu", "gpu", "motherboard", "memory", "psu", "case", "cooler", "storage"]
     },
   }).toArray();
-
-  console.log(`\n📦 총 ${parts.length}개의 부품 가격 업데이트 시작`);
+  
+  console.log(`\n📦 총 ${parts.length}개 부품 가격 업데이트 시작`);
   console.log(`📋 카테고리: CPU, GPU, Motherboard, Memory, PSU, Case, Cooler, Storage\n`);
-
+  
   let successCount = 0;
   let failCount = 0;
-
+  
   for (const part of parts) {
     try {
       const result = await fetchPriceImageSmart(part.name, part.category);
@@ -305,21 +522,23 @@ router.post("/update-prices", async (req, res) => {
         failCount++;
         continue;
       }
+      
       const { price, image } = result;
       const already = (part.priceHistory || []).some(p => p.date === today);
-
+      
       const ops = { $set: { price, image } };
       if (!already) ops.$push = { priceHistory: { date: today, price } };
-
+      
       await col.updateOne({ _id: part._id }, ops);
       console.log(`✅ 완료: [${part.category}] ${part.name} → ${price.toLocaleString()}원`);
       successCount++;
+      
     } catch (e) {
       console.log(`❌ 예외: [${part.category}] ${part.name} | ${e.message}`);
       failCount++;
     }
   }
-
+  
   console.log(`\n📊 가격 업데이트 완료: 성공 ${successCount}개, 실패 ${failCount}개`);
   res.json({ 
     message: "✅ 가격 업데이트 완료",
