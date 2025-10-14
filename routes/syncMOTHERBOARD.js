@@ -1,4 +1,4 @@
-// routes/syncMOTHERBOARD.js - 타임아웃 개선 버전
+// routes/syncMOTHERBOARD.js - 가격 제외 버전 (updatePrices.js가 가격 전담)
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
@@ -67,12 +67,12 @@ function extractSocketInfo(spec = "") {
 /* ==================== Puppeteer 다나와 크롤링 (개선 버전) ==================== */
 async function crawlDanawaMotherboards(maxPages = 3) {
   console.log(`🔍 다나와 메인보드 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
 
   let browser;
   const products = [];
 
   try {
-    // Chromium 최적화 설정
     chromium.setGraphicsMode = false;
 
     browser = await puppeteer.launch({
@@ -94,7 +94,6 @@ async function crawlDanawaMotherboards(maxPages = 3) {
 
     const page = await browser.newPage();
     
-    // 불필요한 리소스 차단 (속도 향상)
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
@@ -114,15 +113,14 @@ async function crawlDanawaMotherboards(maxPages = 3) {
 
       try {
         if (pageNum === 1) {
-          // 첫 페이지 로딩 (재시도 로직 포함)
           let retries = 3;
           let loaded = false;
 
           while (retries > 0 && !loaded) {
             try {
               await page.goto(DANAWA_BASE_URL, {
-                waitUntil: 'domcontentloaded', // networkidle2 대신 사용
-                timeout: 60000, // 60초로 증가
+                waitUntil: 'domcontentloaded',
+                timeout: 60000,
               });
               loaded = true;
               console.log('✅ 페이지 로딩 완료');
@@ -134,27 +132,23 @@ async function crawlDanawaMotherboards(maxPages = 3) {
             }
           }
 
-          // 제품 리스트가 로드될 때까지 대기
           await page.waitForSelector('.main_prodlist .prod_item', {
             timeout: 30000,
           }).catch(() => {
             console.log('⚠️ 제품 리스트 로딩 지연');
           });
 
-          await sleep(3000); // 추가 대기
+          await sleep(3000);
 
         } else {
-          // 2페이지 이상: JavaScript 페이지 이동
           await page.evaluate((p) => {
             if (typeof movePage === "function") {
               movePage(p);
             }
           }, pageNum);
 
-          // 페이지 전환 대기
           await sleep(5000);
 
-          // 제품 리스트 재로딩 대기
           await page.waitForSelector('.main_prodlist .prod_item', {
             timeout: 20000,
           }).catch(() => {
@@ -162,7 +156,6 @@ async function crawlDanawaMotherboards(maxPages = 3) {
           });
         }
 
-        // 제품 리스트 추출
         const pageProducts = await page.evaluate(() => {
           const items = document.querySelectorAll('.main_prodlist .product_list .prod_item');
           const results = [];
@@ -174,10 +167,7 @@ async function crawlDanawaMotherboards(maxPages = 3) {
 
               if (!name) return;
 
-              const priceEl = item.querySelector('.price_sect strong');
-              const priceText = priceEl?.textContent?.trim() || '0';
-              const price = parseInt(priceText.replace(/[^\d]/g, ''), 10) || 0;
-
+              // 🆕 이미지만 수집 (가격 제외)
               const imgEl = item.querySelector('img');
               const image = imgEl?.src || imgEl?.dataset?.original || '';
 
@@ -187,7 +177,7 @@ async function crawlDanawaMotherboards(maxPages = 3) {
                 .replace(/\s+/g, ' ')
                 .replace(/더보기/g, '');
 
-              results.push({ name, price, image, spec: spec || '' });
+              results.push({ name, image, spec: spec || '' });
             } catch (e) {
               // 개별 아이템 파싱 실패는 무시
             }
@@ -205,7 +195,6 @@ async function crawlDanawaMotherboards(maxPages = 3) {
 
         products.push(...pageProducts);
 
-        // 다음 페이지 확인
         const hasNext = await page.evaluate(() => {
           const nextBtn = document.querySelector('.nav_next');
           return nextBtn && !nextBtn.classList.contains('disabled');
@@ -216,12 +205,11 @@ async function crawlDanawaMotherboards(maxPages = 3) {
           break;
         }
 
-        await sleep(2000); // 서버 부하 방지
+        await sleep(2000);
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
         
-        // 스크린샷 저장 (디버깅용)
         try {
           const screenshot = await page.screenshot({ encoding: 'base64' });
           console.log('📸 스크린샷 저장됨 (base64, 처음 100자):', screenshot.substring(0, 100));
@@ -229,7 +217,6 @@ async function crawlDanawaMotherboards(maxPages = 3) {
           console.log('⚠️ 스크린샷 저장 실패');
         }
 
-        // 첫 페이지 실패 시 중단, 그 외는 계속
         if (pageNum === 1) {
           break;
         }
@@ -243,7 +230,7 @@ async function crawlDanawaMotherboards(maxPages = 3) {
     }
   }
 
-  console.log(`🎉 총 ${products.length}개 제품 수집 완료`);
+  console.log(`🎉 총 ${products.length}개 제품 수집 완료 (제품명, 스펙, 이미지만)`);
   return products;
 }
 
@@ -280,33 +267,29 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
       }
     }
 
+    // 🆕 가격 제외 (updatePrices.js가 별도로 업데이트)
     const update = {
       category: "motherboard",
       info,
-      price: board.price,
       image: board.image,
       ...(ai ? { review, specSummary } : {}),
     };
 
-    const today = new Date().toISOString().slice(0, 10);
-
     if (old) {
-      const ops = { $set: update };
-      const hasToday = old.priceHistory?.some((p) => p.date === today);
-      if (board.price > 0 && !hasToday) {
-        ops.$push = { priceHistory: { date: today, price: board.price } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      // 🆕 가격 및 priceHistory 업데이트 제거
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
-      console.log(`🔁 업데이트: ${board.name} (${board.price.toLocaleString()}원)`);
+      console.log(`🔁 업데이트: ${board.name}`);
     } else {
+      // 🆕 신규 등록 시 price: 0으로 초기화
       await col.insertOne({
         name: board.name,
         ...update,
-        priceHistory: board.price > 0 ? [{ date: today, price: board.price }] : [],
+        price: 0,
+        priceHistory: [],
       });
       inserted++;
-      console.log(`🆕 삽입: ${board.name} (${board.price.toLocaleString()}원)`);
+      console.log(`🆕 삽입: ${board.name} (가격: updatePrices.js에서 설정 예정)`);
     }
 
     if (ai) await sleep(200);
@@ -325,6 +308,7 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
   console.log(
     `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
   );
+  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
 }
 
 /* ==================== 라우터 ==================== */
@@ -335,7 +319,7 @@ router.post("/sync-motherboards", async (req, res) => {
     const force = !!req?.body?.force;
 
     res.json({
-      message: `✅ 다나와 메인보드 동기화 시작 (pages=${maxPages}, ai=${ai})`,
+      message: `✅ 다나와 메인보드 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 제외)`,
     });
 
     setImmediate(async () => {
@@ -348,7 +332,8 @@ router.post("/sync-motherboards", async (req, res) => {
         }
 
         await saveToMongoDB(motherboards, { ai, force });
-        console.log("🎉 메인보드 동기화 완료");
+        console.log("🎉 메인보드 동기화 완료 (제품명, 스펙, 이미지)");
+        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
       }
