@@ -75,14 +75,17 @@ router.post("/", async (req, res) => {
 
     console.log(`📦 부품: CPU(${cpus.length}), GPU(${gpus.length}), Memory(${memories.length}), Board(${boards.length})`);
 
-    // 용도별 예산 배분
+    // 🆕 개선된 예산 배분 (더 유연함)
     const budgetRatios = {
-      "사무용": { cpu: 0.20, gpu: 0.10, memory: 0.12, board: 0.18, psu: 0.12, cooler: 0.08, storage: 0.12, case: 0.08 },
-      "게임용": { cpu: 0.25, gpu: 0.35, memory: 0.10, board: 0.12, psu: 0.08, cooler: 0.03, storage: 0.04, case: 0.03 },
-      "작업용": { cpu: 0.30, gpu: 0.25, memory: 0.15, board: 0.12, psu: 0.08, cooler: 0.03, storage: 0.04, case: 0.03 },
-      "가성비": { cpu: 0.25, gpu: 0.25, memory: 0.12, board: 0.15, psu: 0.10, cooler: 0.04, storage: 0.06, case: 0.03 },
+      "사무용": { cpu: 0.20, gpu: 0.15, memory: 0.12, board: 0.15, psu: 0.10, cooler: 0.06, storage: 0.12, case: 0.10 },
+      "게임용": { cpu: 0.20, gpu: 0.45, memory: 0.10, board: 0.10, psu: 0.08, cooler: 0.02, storage: 0.03, case: 0.02 },
+      "작업용": { cpu: 0.30, gpu: 0.30, memory: 0.15, board: 0.10, psu: 0.08, cooler: 0.02, storage: 0.03, case: 0.02 },
+      "가성비": { cpu: 0.22, gpu: 0.35, memory: 0.12, board: 0.12, psu: 0.09, cooler: 0.03, storage: 0.04, case: 0.03 },
     };
     const ratios = budgetRatios[purpose] || budgetRatios["가성비"];
+    
+    // 🆕 예산 여유 (부품 선택을 더 유연하게)
+    const budgetMultiplier = 1.3; // 각 부품은 할당 예산의 1.3배까지 허용
 
     // 🆕 단계별 부품 선택 (8중 루프 제거!)
     function selectBestPart(parts, maxPrice, scoreFn) {
@@ -117,7 +120,7 @@ router.post("/", async (req, res) => {
       // 1단계: CPU 선택
       const cpu = selectBestPart(
         cpus,
-        targetBudget * ratios.cpu,
+        targetBudget * ratios.cpu * budgetMultiplier, // 🆕 여유 적용
         getCpuScore
       );
       if (!cpu) continue;
@@ -125,7 +128,7 @@ router.post("/", async (req, res) => {
       // 2단계: GPU 선택
       const gpu = selectBestPart(
         gpus,
-        targetBudget * ratios.gpu,
+        targetBudget * ratios.gpu * budgetMultiplier, // 🆕 여유 적용
         getGpuScore
       );
       if (!gpu) continue;
@@ -137,7 +140,7 @@ router.post("/", async (req, res) => {
           const bSocket = extractBoardSocket(b);
           return !cpuSocket || !bSocket || bSocket === cpuSocket;
         }),
-        targetBudget * ratios.board,
+        targetBudget * ratios.board * budgetMultiplier, // 🆕 여유 적용
         () => 1000
       );
       if (!board) continue;
@@ -150,7 +153,7 @@ router.post("/", async (req, res) => {
           const capacity = extractMemoryCapacity(m);
           return (!boardDdr || !mDdr || mDdr === boardDdr) && capacity >= 8;
         }),
-        targetBudget * ratios.memory,
+        targetBudget * ratios.memory * budgetMultiplier, // 🆕 여유 적용
         () => extractMemoryCapacity
       );
       if (!memory) continue;
@@ -164,7 +167,7 @@ router.post("/", async (req, res) => {
           const psuWattage = extractTdp(p.name || p.info || "");
           return psuWattage >= totalTdp * 1.2;
         }),
-        targetBudget * ratios.psu,
+        targetBudget * ratios.psu * budgetMultiplier, // 🆕 여유 적용
         () => 1000
       );
       if (!psu) continue;
@@ -172,7 +175,7 @@ router.post("/", async (req, res) => {
       // 6단계: 쿨러 선택
       const cooler = selectBestPart(
         coolers,
-        targetBudget * ratios.cooler,
+        targetBudget * ratios.cooler * budgetMultiplier, // 🆕 여유 적용
         () => 1000
       );
       if (!cooler) continue;
@@ -180,7 +183,7 @@ router.post("/", async (req, res) => {
       // 7단계: 스토리지 선택
       const storage = selectBestPart(
         storages,
-        targetBudget * ratios.storage,
+        targetBudget * ratios.storage * budgetMultiplier, // 🆕 여유 적용
         () => 1000
       );
       if (!storage) continue;
@@ -188,7 +191,7 @@ router.post("/", async (req, res) => {
       // 8단계: 케이스 선택
       const caseItem = selectBestPart(
         cases,
-        targetBudget * ratios.case,
+        targetBudget * ratios.case * budgetMultiplier, // 🆕 여유 적용
         () => 1000
       );
       if (!caseItem) continue;
@@ -198,8 +201,8 @@ router.post("/", async (req, res) => {
         cpu.price + gpu.price + memory.price + board.price +
         psu.price + cooler.price + storage.price + caseItem.price;
 
-      // 예산 초과 시 스킵
-      if (totalPrice > budget) continue;
+      // 🆕 예산 초과 시 스킵 (10% 여유 허용)
+      if (totalPrice > budget * 1.1) continue;
 
       // 점수 계산
       const score = getCpuScore(cpu) * 0.4 + getGpuScore(gpu) * 0.6;
