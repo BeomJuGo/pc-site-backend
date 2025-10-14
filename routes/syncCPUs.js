@@ -1,4 +1,4 @@
-// routes/syncCPUs.js - 다나와 + cpubenchmark 통합 버전
+// routes/syncCPUs.js - 다나와 + cpubenchmark 통합 버전 (수정)
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
@@ -8,7 +8,7 @@ import { getDB } from "../db.js";
 const router = express.Router();
 
 const DANAWA_CPU_URL = "https://prod.danawa.com/list/?cate=112747";
-const CPUBENCHMARK_BASE = "https://www.cpubenchmark.net/multi_thread.html";
+const CPUBENCHMARK_BASE = "https://www.cpubenchmark.net/CPU_mega_page.html";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -25,6 +25,7 @@ function normalizeCpuName(name) {
     "스레드리퍼": "THREADRIPPER",
     "코어": "CORE",
     "코어I": "CORE I",
+    "코어i": "CORE I",
     "펜티엄": "PENTIUM",
     "셀러론": "CELERON",
     "애슬론": "ATHLON",
@@ -34,16 +35,16 @@ function normalizeCpuName(name) {
     normalized = normalized.replace(new RegExp(kor, "gi"), eng);
   }
   
-  // 2. 세대 표기 제거 (예: 5세대, 6세대, 13세대 등)
+  // 2. 세대 표기 제거
   normalized = normalized.replace(/(\d+)세대/g, "");
   
-  // 3. 코드네임 제거 (괄호 안의 내용)
+  // 3. 코드네임 제거
   normalized = normalized.replace(/\([^)]*\)/g, "");
   
   // 4. 특수문자 정리
   normalized = normalized
-    .replace(/[-_]/g, " ")      // 하이픈을 공백으로
-    .replace(/\s+/g, " ")       // 연속 공백 제거
+    .replace(/[-_]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
   
   // 5. AMD/Intel 구분자 추가
@@ -62,30 +63,22 @@ function normalizeCpuName(name) {
   return normalized;
 }
 
-/* ==================== CPU 이름 매칭 (유사도 기반) ==================== */
+/* ==================== CPU 이름 매칭 ==================== */
 function matchCpuNames(danawaName, benchmarkName) {
   const norm1 = normalizeCpuName(danawaName);
   const norm2 = normalizeCpuName(benchmarkName);
   
-  // 1. 정확히 일치
   if (norm1 === norm2) return true;
   
-  // 2. 핵심 토큰 추출 (숫자+문자 조합)
-  const extractTokens = (str) => {
-    // 예: "AMD RYZEN 5 7400F" → ["AMD", "RYZEN", "5", "7400F"]
-    return str.split(/\s+/).filter(t => t.length > 0);
-  };
-  
+  const extractTokens = (str) => str.split(/\s+/).filter(t => t.length > 0);
   const tokens1 = extractTokens(norm1);
   const tokens2 = extractTokens(norm2);
   
-  // 3. 핵심 토큰이 모두 포함되어 있는지 확인
-  const coreTokens1 = tokens1.filter(t => /\d/.test(t)); // 숫자 포함 토큰
+  const coreTokens1 = tokens1.filter(t => /\d/.test(t));
   const coreTokens2 = tokens2.filter(t => /\d/.test(t));
   
   if (coreTokens1.length === 0 || coreTokens2.length === 0) return false;
   
-  // 4. 모든 핵심 토큰이 다른 문자열에 포함되는지 확인
   const allMatch = coreTokens1.every(t => norm2.includes(t)) &&
                    coreTokens2.every(t => norm1.includes(t));
   
@@ -141,45 +134,24 @@ function extractCpuInfo(name = "", spec = "") {
   const combined = `${name} ${spec}`;
   const parts = [];
 
-  // 코어/스레드
   const coreMatch = combined.match(/(\d+)코어|(\d+)\s*CORE/i);
   const threadMatch = combined.match(/(\d+)스레드|(\d+)\s*THREAD/i);
   
-  if (coreMatch) {
-    const cores = coreMatch[1] || coreMatch[2];
-    parts.push(`${cores}코어`);
-  }
-  
-  if (threadMatch) {
-    const threads = threadMatch[1] || threadMatch[2];
-    parts.push(`${threads}스레드`);
-  }
+  if (coreMatch) parts.push(`${coreMatch[1] || coreMatch[2]}코어`);
+  if (threadMatch) parts.push(`${threadMatch[1] || threadMatch[2]}스레드`);
 
-  // 베이스/부스트 클럭
   const baseClockMatch = combined.match(/베이스[:\s]*(\d+\.?\d*)\s*GHz/i);
   const boostClockMatch = combined.match(/(?:부스트|최대)[:\s]*(\d+\.?\d*)\s*GHz/i);
   
-  if (baseClockMatch) {
-    parts.push(`베이스: ${baseClockMatch[1]}GHz`);
-  }
-  
-  if (boostClockMatch) {
-    parts.push(`부스트: ${boostClockMatch[1]}GHz`);
-  }
+  if (baseClockMatch) parts.push(`베이스: ${baseClockMatch[1]}GHz`);
+  if (boostClockMatch) parts.push(`부스트: ${boostClockMatch[1]}GHz`);
 
-  // 캐시
   const cacheMatch = combined.match(/(\d+)\s*MB\s*(?:캐시|CACHE)/i);
-  if (cacheMatch) {
-    parts.push(`캐시: ${cacheMatch[1]}MB`);
-  }
+  if (cacheMatch) parts.push(`캐시: ${cacheMatch[1]}MB`);
 
-  // TDP
   const tdpMatch = combined.match(/TDP[:\s]*(\d+)W/i);
-  if (tdpMatch) {
-    parts.push(`TDP: ${tdpMatch[1]}W`);
-  }
+  if (tdpMatch) parts.push(`TDP: ${tdpMatch[1]}W`);
 
-  // 소켓
   if (/AM5/i.test(combined)) parts.push("Socket: AM5");
   else if (/AM4/i.test(combined)) parts.push("Socket: AM4");
   else if (/LGA\s?1700/i.test(combined)) parts.push("Socket: LGA1700");
@@ -197,11 +169,11 @@ function extractManufacturer(name) {
 }
 
 /* ==================== cpubenchmark 크롤링 ==================== */
-async function crawlCpuBenchmark(maxPages = 5) {
-  console.log(`🔍 cpubenchmark.net 크롤링 시작 (${maxPages}페이지)`);
+async function crawlCpuBenchmark() {
+  console.log(`🔍 cpubenchmark.net 크롤링 시작`);
   
   let browser;
-  const benchmarks = new Map(); // CPU 이름 → 점수
+  const benchmarks = new Map();
 
   try {
     chromium.setGraphicsMode = false;
@@ -220,61 +192,58 @@ async function crawlCpuBenchmark(maxPages = 5) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     );
 
-    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      const url = pageNum === 1 
-        ? CPUBENCHMARK_BASE
-        : `https://www.cpubenchmark.net/multi_thread_page${pageNum}.html`;
-      
-      console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
+    console.log(`📄 메가 페이지 로딩 중...`);
 
-      try {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
-        });
+    try {
+      await page.goto(CPUBENCHMARK_BASE, {
+        waitUntil: "domcontentloaded",
+        timeout: 60000,
+      });
 
-        await sleep(1000);
+      await sleep(3000);
 
-        const items = await page.evaluate(() => {
-          const rows = [];
+      const items = await page.evaluate(() => {
+        const rows = [];
+        
+        let table = document.querySelector('#cputable');
+        if (!table) table = document.querySelector('table.chartlist');
+        if (!table) table = document.querySelector('table');
+        
+        if (!table) return rows;
+
+        const trs = table.querySelectorAll('tr');
+        
+        trs.forEach((tr) => {
+          const cells = tr.querySelectorAll('td');
           
-          // cpubenchmark 사이트의 표 구조 파싱
-          const table = document.querySelector('#cputable');
-          if (!table) return rows;
-
-          const trs = table.querySelectorAll('tbody tr');
-          
-          trs.forEach(tr => {
-            const nameEl = tr.querySelector('td.prdname');
-            const scoreEl = tr.querySelector('td.rsc');
+          if (cells.length >= 2) {
+            const nameEl = cells[0].querySelector('a') || cells[0];
+            const scoreEl = cells[cells.length - 1];
             
-            if (nameEl && scoreEl) {
-              const name = nameEl.textContent.trim();
-              const scoreText = scoreEl.textContent.trim().replace(/,/g, '');
-              const score = parseInt(scoreText, 10);
-              
-              if (name && !isNaN(score)) {
-                rows.push({ name, score });
-              }
+            const name = nameEl.textContent.trim();
+            const scoreText = scoreEl.textContent.trim().replace(/,/g, '');
+            const score = parseInt(scoreText, 10);
+            
+            if (name && !isNaN(score) && score > 0) {
+              rows.push({ name, score });
             }
-          });
-
-          return rows;
+          }
         });
 
-        items.forEach(item => {
-          benchmarks.set(item.name, item.score);
-        });
+        return rows;
+      });
 
-        console.log(`✅ 페이지 ${pageNum}: ${items.length}개 수집 완료`);
-        await sleep(1500);
+      items.forEach(item => {
+        benchmarks.set(item.name, item.score);
+      });
 
-      } catch (e) {
-        console.error(`❌ 페이지 ${pageNum} 실패:`, e.message);
-      }
+      console.log(`✅ ${items.length}개 벤치마크 수집 완료`);
+
+    } catch (e) {
+      console.error(`❌ cpubenchmark 크롤링 실패:`, e.message);
     }
   } catch (error) {
-    console.error("❌ cpubenchmark 크롤링 실패:", error.message);
+    console.error("❌ 브라우저 실행 실패:", error.message);
   } finally {
     if (browser) {
       await browser.close();
@@ -285,7 +254,7 @@ async function crawlCpuBenchmark(maxPages = 5) {
   return benchmarks;
 }
 
-/* ==================== 다나와 CPU 크롤링 ==================== */
+/* ==================== 다나와 CPU 크롤링 (수정) ==================== */
 async function crawlDanawaCpus(maxPages = 15) {
   console.log(`🔍 다나와 CPU 크롤링 시작 (최대 ${maxPages}페이지)`);
 
@@ -314,7 +283,6 @@ async function crawlDanawaCpus(maxPages = 15) {
 
     const page = await browser.newPage();
     
-    // 불필요한 리소스 차단
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
@@ -334,60 +302,110 @@ async function crawlDanawaCpus(maxPages = 15) {
 
       try {
         if (pageNum === 1) {
+          // 첫 페이지 로딩 (재시도 포함)
           let retries = 3;
           let loaded = false;
 
           while (retries > 0 && !loaded) {
             try {
-              console.log(`🔄 1페이지 로딩 시도 (남은 재시도: ${retries})`);
               await page.goto(DANAWA_CPU_URL, {
-                waitUntil: "domcontentloaded",
+                waitUntil: 'domcontentloaded',
                 timeout: 60000,
               });
               loaded = true;
-            } catch (err) {
+              console.log('✅ 페이지 로딩 완료');
+            } catch (e) {
               retries--;
-              if (retries === 0) throw err;
-              console.log("⏳ 재시도 대기 중...");
-              await sleep(3000);
+              console.log(`⚠️ 로딩 재시도 (남은 횟수: ${retries})`);
+              if (retries === 0) throw e;
+              await sleep(2000);
             }
           }
+
+          // 제품 리스트 로딩 대기
+          await page.waitForSelector('.main_prodlist .prod_item', {
+            timeout: 30000,
+          }).catch(() => {
+            console.log('⚠️ 제품 리스트 로딩 지연');
+          });
+
+          await sleep(3000);
+
         } else {
-          const nextBtnSelector = `a.num[page="${pageNum}"]`;
-          await page.waitForSelector(nextBtnSelector, { timeout: 10000 });
-          await page.click(nextBtnSelector);
-          await sleep(2000);
+          // 🆕 2페이지 이상: 다나와 JavaScript 함수 호출
+          await page.evaluate((p) => {
+            if (typeof movePage === "function") {
+              movePage(p);
+            }
+          }, pageNum);
+
+          // 페이지 전환 대기
+          await sleep(5000);
+
+          // 제품 리스트 재로딩 대기
+          await page.waitForSelector('.main_prodlist .prod_item', {
+            timeout: 20000,
+          }).catch(() => {
+            console.log('⚠️ 페이지 전환 후 리스트 로딩 지연');
+          });
         }
 
-        await page.waitForSelector("ul.product_list > li.prod_item", {
-          timeout: 10000,
-        });
+        // 제품 리스트 추출
+        const pageProducts = await page.evaluate(() => {
+          const items = document.querySelectorAll('.main_prodlist .product_list .prod_item');
+          const results = [];
 
-        const items = await page.evaluate(() => {
-          const liList = Array.from(
-            document.querySelectorAll("ul.product_list > li.prod_item")
-          );
-          return liList.map((li) => {
-            const nameEl = li.querySelector("p.prod_name a");
-            const imgEl = li.querySelector("a.thumb_link img");
-            const specEl = li.querySelector("div.spec_list");
+          items.forEach((item) => {
+            try {
+              const nameEl = item.querySelector('.prod_name a');
+              const name = nameEl?.textContent?.trim();
 
-            return {
-              name: nameEl?.textContent?.trim() || "",
-              image: imgEl?.src || "",
-              spec: specEl?.textContent?.trim() || "",
-            };
+              if (!name) return;
+
+              const imgEl = item.querySelector('img');
+              const image = imgEl?.src || imgEl?.dataset?.original || '';
+
+              const specEl = item.querySelector('.spec_list');
+              const spec = specEl?.textContent
+                ?.trim()
+                .replace(/\s+/g, ' ')
+                .replace(/더보기/g, '');
+
+              results.push({ name, image, spec: spec || '' });
+            } catch (e) {
+              // 개별 아이템 파싱 실패는 무시
+            }
           });
+
+          return results;
         });
 
-        products.push(...items.filter((p) => p.name));
-        console.log(`✅ 페이지 ${pageNum}: ${items.length}개 수집 완료`);
+        console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
+        
+        if (pageProducts.length === 0) {
+          console.log('⚠️ 페이지에서 제품을 찾지 못함 - 크롤링 중단');
+          break;
+        }
+
+        products.push(...pageProducts);
+
+        // 다음 페이지 확인
+        const hasNext = await page.evaluate(() => {
+          const nextBtn = document.querySelector('.nav_next');
+          return nextBtn && !nextBtn.classList.contains('disabled');
+        });
+
+        if (!hasNext && pageNum < maxPages) {
+          console.log(`⏹️ 마지막 페이지 도달 (페이지 ${pageNum})`);
+          break;
+        }
 
         await sleep(2000);
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
         
+        // 첫 페이지 실패 시 중단
         if (pageNum === 1) {
           break;
         }
@@ -407,12 +425,10 @@ async function crawlDanawaCpus(maxPages = 15) {
 
 /* ==================== 벤치마크 점수 매칭 ==================== */
 function findBenchmarkScore(cpuName, benchmarks) {
-  // 1. 정확히 일치하는 이름 찾기
   if (benchmarks.has(cpuName)) {
     return benchmarks.get(cpuName);
   }
 
-  // 2. 정규화된 이름으로 매칭
   const normalizedCpuName = normalizeCpuName(cpuName);
   
   for (const [benchName, score] of benchmarks.entries()) {
@@ -422,20 +438,19 @@ function findBenchmarkScore(cpuName, benchmarks) {
     }
   }
 
-  // 3. 부분 일치 (fallback)
   const tokens = normalizedCpuName.split(/\s+/).filter(t => /\d/.test(t));
   
   for (const [benchName, score] of benchmarks.entries()) {
     const normalizedBench = normalizeCpuName(benchName);
     const allTokensMatch = tokens.every(t => normalizedBench.includes(t));
     
-    if (allTokensMatch) {
+    if (allTokensMatch && tokens.length >= 2) {
       console.log(`⚠️ 부분 매칭: "${cpuName}" ↔ "${benchName}" (${score}점)`);
       return score;
     }
   }
 
-  console.log(`❌ 매칭 실패: "${cpuName}" (정규화: "${normalizedCpuName}")`);
+  console.log(`❌ 매칭 실패: "${cpuName}"`);
   return 0;
 }
 
@@ -456,7 +471,6 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     const old = byName.get(cpu.name);
     const info = extractCpuInfo(cpu.name, cpu.spec);
     
-    // 벤치마크 점수 매칭
     const benchScore = findBenchmarkScore(cpu.name, benchmarks);
     if (benchScore > 0) withScore++;
 
@@ -482,7 +496,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       info,
       image: cpu.image,
       manufacturer: extractManufacturer(cpu.name),
-      benchScore, // 🆕 벤치마크 점수
+      benchScore,
       ...(ai ? { review, specSummary } : {}),
     };
 
@@ -525,22 +539,18 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 router.post("/sync-cpus", async (req, res) => {
   try {
     const maxPages = parseInt(req.body?.maxPages) || 15;
-    const benchPages = parseInt(req.body?.benchPages) || 5;
     const ai = req.body?.ai !== false;
     const force = req.body?.force === true;
 
     res.json({
-      message: `✅ CPU 동기화 시작 (다나와: ${maxPages}p, 벤치마크: ${benchPages}p, AI: ${ai})`,
+      message: `✅ CPU 동기화 시작 (다나와: ${maxPages}p, AI: ${ai})`,
     });
 
     setImmediate(async () => {
       try {
         console.log("\n=== CPU 동기화 시작 ===");
         
-        // 1단계: cpubenchmark 점수 수집
-        const benchmarks = await crawlCpuBenchmark(benchPages);
-        
-        // 2단계: 다나와 CPU 크롤링
+        const benchmarks = await crawlCpuBenchmark();
         const cpus = await crawlDanawaCpus(maxPages);
 
         if (cpus.length === 0) {
@@ -548,10 +558,9 @@ router.post("/sync-cpus", async (req, res) => {
           return;
         }
 
-        // 3단계: 저장 (벤치마크 점수 매칭 포함)
         await saveToMongoDB(cpus, benchmarks, { ai, force });
         
-        console.log("🎉 CPU 동기화 완료 (제품명, 스펙, 이미지, 벤치마크)");
+        console.log("🎉 CPU 동기화 완료");
         console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
