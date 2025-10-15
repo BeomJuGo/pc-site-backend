@@ -8,7 +8,7 @@ import { getDB } from "../db.js";
 const router = express.Router();
 
 const DANAWA_CPU_URL = "https://prod.danawa.com/list/?cate=112747";
-const CPUBENCHMARK_BASE_URL = "https://www.cpubenchmark.net/multi_thread.html"; // 🆕 변경
+const CPUBENCHMARK_BASE_URL = "https://www.cpubenchmark.net/multithread"; // 🆕 수정
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -197,9 +197,7 @@ async function crawlCpuBenchmark(maxPages = 5) {
       console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
 
       try {
-        const url = pageNum === 1 
-          ? CPUBENCHMARK_BASE_URL 
-          : `https://www.cpubenchmark.net/multi_thread_page${pageNum}.html`;
+        const url = `${CPUBENCHMARK_BASE_URL}/page${pageNum}`;
 
         await page.goto(url, {
           waitUntil: "domcontentloaded",
