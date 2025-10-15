@@ -16,45 +16,50 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function normalizeCpuName(name) {
   let normalized = name.toUpperCase();
   
-  // 1. 한글 → 영문 변환
-  const koreanToEnglish = {
+  // 1. 세대 표기 제거 (가장 먼저!)
+  normalized = normalized.replace(/[-\s]*\d+세대[-\s]*/g, " ");
+  
+  // 2. 코드네임 제거
+  normalized = normalized.replace(/\([^)]*\)/g, "");
+  
+  // 3. 한글 → 영문 변환
+  const replacements = {
     "라이젠": "RYZEN",
-    "라이젠7": "RYZEN 7",
-    "라이젠5": "RYZEN 5",
-    "라이젠9": "RYZEN 9",
     "스레드리퍼": "THREADRIPPER",
+    "애슬론": "ATHLON",
+    "인텔": "INTEL",
     "코어": "CORE",
-    "코어I": "CORE I",
-    "코어i": "CORE I",
+    "울트라": "ULTRA",
     "펜티엄": "PENTIUM",
     "셀러론": "CELERON",
-    "애슬론": "ATHLON",
+    "제온": "XEON",
   };
   
-  for (const [kor, eng] of Object.entries(koreanToEnglish)) {
+  for (const [kor, eng] of Object.entries(replacements)) {
     normalized = normalized.replace(new RegExp(kor, "gi"), eng);
   }
   
-  // 2. 세대 표기 제거
-  normalized = normalized.replace(/(\d+)세대/g, "");
+  // 4. "시리즈2", "시리즈1" 등 제거
+  normalized = normalized.replace(/시리즈\d+/gi, "");
   
-  // 3. 코드네임 제거
-  normalized = normalized.replace(/\([^)]*\)/g, "");
+  // 5. 하이픈을 공백으로
+  normalized = normalized.replace(/[-_]/g, " ");
   
-  // 4. 특수문자 정리
-  normalized = normalized
-    .replace(/[-_]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  // 6. ⭐ 핵심: 숫자 앞뒤에 공백 추가
+  normalized = normalized.replace(/([A-Z])(\d)/g, "$1 $2");
+  normalized = normalized.replace(/(\d)([A-Z])/g, "$1 $2");
   
-  // 5. AMD/Intel 구분자 추가
+  // 7. 연속된 공백을 하나로
+  normalized = normalized.replace(/\s+/g, " ").trim();
+  
+  // 8. AMD/Intel 추가 (없으면)
   if (normalized.includes("RYZEN") || normalized.includes("THREADRIPPER") || normalized.includes("ATHLON")) {
     if (!normalized.startsWith("AMD")) {
       normalized = "AMD " + normalized;
     }
   }
   
-  if (normalized.includes("CORE I") || normalized.includes("PENTIUM") || normalized.includes("CELERON")) {
+  if (normalized.includes("CORE") || normalized.includes("PENTIUM") || normalized.includes("CELERON") || normalized.includes("XEON")) {
     if (!normalized.startsWith("INTEL")) {
       normalized = "INTEL " + normalized;
     }
