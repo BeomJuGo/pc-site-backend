@@ -8,7 +8,7 @@ import { getDB } from "../db.js";
 const router = express.Router();
 
 const DANAWA_CPU_URL = "https://prod.danawa.com/list/?cate=112747";
-const CPUBENCHMARK_BASE = "https://www.cpubenchmark.net/CPU_mega_page.html";
+const CPUBENCHMARK_BASE_URL = "https://www.cpubenchmark.net/multi_thread.html"; // 🆕 변경
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -168,9 +168,9 @@ function extractManufacturer(name) {
   return "";
 }
 
-/* ==================== cpubenchmark 크롤링 ==================== */
-async function crawlCpuBenchmark() {
-  console.log(`🔍 cpubenchmark.net 크롤링 시작`);
+/* ==================== cpubenchmark 크롤링 (수정) ==================== */
+async function crawlCpuBenchmark(maxPages = 5) {
+  console.log(`🔍 cpubenchmark.net 크롤링 시작 (${maxPages}페이지)`);
   
   let browser;
   const benchmarks = new Map();
@@ -192,56 +192,72 @@ async function crawlCpuBenchmark() {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     );
 
-    console.log(`📄 메가 페이지 로딩 중...`);
+    // 🆕 page1 ~ page5 크롤링
+    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
 
-    try {
-      await page.goto(CPUBENCHMARK_BASE, {
-        waitUntil: "domcontentloaded",
-        timeout: 60000,
-      });
+      try {
+        const url = pageNum === 1 
+          ? CPUBENCHMARK_BASE_URL 
+          : `https://www.cpubenchmark.net/multi_thread_page${pageNum}.html`;
 
-      await sleep(3000);
+        await page.goto(url, {
+          waitUntil: "domcontentloaded",
+          timeout: 60000,
+        });
 
-      const items = await page.evaluate(() => {
-        const rows = [];
-        
-        let table = document.querySelector('#cputable');
-        if (!table) table = document.querySelector('table.chartlist');
-        if (!table) table = document.querySelector('table');
-        
-        if (!table) return rows;
+        await sleep(3000);
 
-        const trs = table.querySelectorAll('tr');
-        
-        trs.forEach((tr) => {
-          const cells = tr.querySelectorAll('td');
+        const items = await page.evaluate(() => {
+          const rows = [];
           
-          if (cells.length >= 2) {
-            const nameEl = cells[0].querySelector('a') || cells[0];
-            const scoreEl = cells[cells.length - 1];
+          // 테이블 선택
+          let table = document.querySelector('#cputable');
+          if (!table) table = document.querySelector('table.chartlist');
+          if (!table) table = document.querySelector('table');
+          
+          if (!table) return rows;
+
+          const trs = table.querySelectorAll('tr');
+          
+          trs.forEach((tr) => {
+            const cells = tr.querySelectorAll('td');
             
-            const name = nameEl.textContent.trim();
-            const scoreText = scoreEl.textContent.trim().replace(/,/g, '');
-            const score = parseInt(scoreText, 10);
-            
-            if (name && !isNaN(score) && score > 0) {
-              rows.push({ name, score });
+            // 일반적으로 CPU 이름(첫번째 td), 점수(마지막 td)
+            if (cells.length >= 2) {
+              const nameEl = cells[0].querySelector('a') || cells[0];
+              const scoreEl = cells[cells.length - 1];
+              
+              const name = nameEl.textContent.trim();
+              const scoreText = scoreEl.textContent.trim().replace(/,/g, '');
+              const score = parseInt(scoreText, 10);
+              
+              if (name && !isNaN(score) && score > 0) {
+                rows.push({ name, score });
+              }
             }
+          });
+
+          return rows;
+        });
+
+        items.forEach(item => {
+          // 중복 방지: 더 높은 점수로 덮어쓰기
+          const existing = benchmarks.get(item.name);
+          if (!existing || existing < item.score) {
+            benchmarks.set(item.name, item.score);
           }
         });
 
-        return rows;
-      });
+        console.log(`✅ 페이지 ${pageNum}: ${items.length}개 수집 완료`);
 
-      items.forEach(item => {
-        benchmarks.set(item.name, item.score);
-      });
+        await sleep(2000); // 서버 부하 방지
 
-      console.log(`✅ ${items.length}개 벤치마크 수집 완료`);
-
-    } catch (e) {
-      console.error(`❌ cpubenchmark 크롤링 실패:`, e.message);
+      } catch (e) {
+        console.error(`❌ 페이지 ${pageNum} 크롤링 실패:`, e.message);
+      }
     }
+
   } catch (error) {
     console.error("❌ 브라우저 실행 실패:", error.message);
   } finally {
@@ -254,7 +270,7 @@ async function crawlCpuBenchmark() {
   return benchmarks;
 }
 
-/* ==================== 다나와 CPU 크롤링 (수정) ==================== */
+/* ==================== 다나와 CPU 크롤링 ==================== */
 async function crawlDanawaCpus(maxPages = 15) {
   console.log(`🔍 다나와 CPU 크롤링 시작 (최대 ${maxPages}페이지)`);
 
@@ -332,7 +348,7 @@ async function crawlDanawaCpus(maxPages = 15) {
           await sleep(3000);
 
         } else {
-          // 🆕 2페이지 이상: 다나와 JavaScript 함수 호출
+          // 2페이지 이상: 다나와 JavaScript 함수 호출
           await page.evaluate((p) => {
             if (typeof movePage === "function") {
               movePage(p);
@@ -539,18 +555,19 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 router.post("/sync-cpus", async (req, res) => {
   try {
     const maxPages = parseInt(req.body?.maxPages) || 15;
+    const benchPages = parseInt(req.body?.benchPages) || 5; // 🆕 추가
     const ai = req.body?.ai !== false;
     const force = req.body?.force === true;
 
     res.json({
-      message: `✅ CPU 동기화 시작 (다나와: ${maxPages}p, AI: ${ai})`,
+      message: `✅ CPU 동기화 시작 (다나와: ${maxPages}p, 벤치마크: ${benchPages}p, AI: ${ai})`,
     });
 
     setImmediate(async () => {
       try {
         console.log("\n=== CPU 동기화 시작 ===");
         
-        const benchmarks = await crawlCpuBenchmark();
+        const benchmarks = await crawlCpuBenchmark(benchPages);
         const cpus = await crawlDanawaCpus(maxPages);
 
         if (cpus.length === 0) {
