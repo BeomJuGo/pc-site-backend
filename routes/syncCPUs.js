@@ -192,12 +192,12 @@ async function crawlCpuBenchmark(maxPages = 5) {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     );
 
-    // 🆕 page1 ~ page5 크롤링
+    // ✅ page1 ~ page5 크롤링
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
 
       try {
-        const url = `${CPUBENCHMARK_BASE_URL}/page${pageNum}`;
+        const url = `https://www.cpubenchmark.net/multithread/page${pageNum}`;
 
         await page.goto(url, {
           waitUntil: "domcontentloaded",
@@ -206,33 +206,29 @@ async function crawlCpuBenchmark(maxPages = 5) {
 
         await sleep(3000);
 
+        // ✅ 올바른 셀렉터로 데이터 추출
         const items = await page.evaluate(() => {
           const rows = [];
           
-          // 테이블 선택
-          let table = document.querySelector('#cputable');
-          if (!table) table = document.querySelector('table.chartlist');
-          if (!table) table = document.querySelector('table');
+          // ✅ 정확한 셀렉터: ul li a[href*="cpu.php"]
+          const links = document.querySelectorAll('ul li a[href*="cpu.php"]');
           
-          if (!table) return rows;
-
-          const trs = table.querySelectorAll('tr');
-          
-          trs.forEach((tr) => {
-            const cells = tr.querySelectorAll('td');
-            
-            // 일반적으로 CPU 이름(첫번째 td), 점수(마지막 td)
-            if (cells.length >= 2) {
-              const nameEl = cells[0].querySelector('a') || cells[0];
-              const scoreEl = cells[cells.length - 1];
+          links.forEach((link) => {
+            try {
+              // ✅ <span class="prdname"> 에서 CPU 이름 추출
+              const nameEl = link.querySelector('.prdname');
+              const name = nameEl?.textContent?.trim();
               
-              const name = nameEl.textContent.trim();
-              const scoreText = scoreEl.textContent.trim().replace(/,/g, '');
+              // ✅ <span class="count"> 에서 점수 추출
+              const scoreEl = link.querySelector('.count');
+              const scoreText = scoreEl?.textContent?.trim().replace(/,/g, '');
               const score = parseInt(scoreText, 10);
               
               if (name && !isNaN(score) && score > 0) {
                 rows.push({ name, score });
               }
+            } catch (e) {
+              // 개별 항목 파싱 실패는 무시
             }
           });
 
@@ -267,7 +263,6 @@ async function crawlCpuBenchmark(maxPages = 5) {
   console.log(`🎉 총 ${benchmarks.size}개 벤치마크 점수 수집 완료`);
   return benchmarks;
 }
-
 /* ==================== 다나와 CPU 크롤링 ==================== */
 async function crawlDanawaCpus(maxPages = 15) {
   console.log(`🔍 다나와 CPU 크롤링 시작 (최대 ${maxPages}페이지)`);
