@@ -117,7 +117,7 @@ function parseCaseSpecs(name = "", specText = "") {
 }
 
 /* ==================== 다나와 크롤링 ==================== */
-async function crawlDanawa(maxPages = 3) {
+async function crawlDanawa(maxPages = 10) {
   console.log(`🔍 다나와 케이스 크롤링 시작 (최대 ${maxPages}페이지)`);
   console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
   
