@@ -97,30 +97,30 @@ async function crawlDanawaCategory(category) {
         await sleep(3000);
 
         const pageProducts = await page.evaluate(() => {
-          const items = [];
-          const rows = document.querySelectorAll(".product_list .prod_item");
+  const items = [];
+  const rows = document.querySelectorAll(".product_list .prod_item");
 
-          rows.forEach((row) => {
-            try {
-              const nameEl = row.querySelector(".prod_name a");
-              const priceEl = row.querySelector(".price_sect .price_innforeach a em");
+  rows.forEach((row) => {
+    try {
+      const nameEl = row.querySelector(".prod_name a");
+      const priceEl = row.querySelector(".price_sect a strong");  // ✅ 수정
 
-              if (nameEl && priceEl) {
-                const name = nameEl.textContent.trim();
-                const priceText = priceEl.textContent.replace(/[^0-9]/g, "");
-                const price = parseInt(priceText, 10);
+      if (nameEl && priceEl) {
+        const name = nameEl.textContent.trim();
+        const priceText = priceEl.textContent.replace(/[^0-9]/g, "");
+        const price = parseInt(priceText, 10);
 
-                if (name && price > 0) {
-                  items.push({ name, price });
-                }
-              }
-            } catch (err) {
-              // 개별 항목 파싱 실패 무시
-            }
-          });
+        if (name && price > 0) {
+          items.push({ name, price });
+        }
+      }
+    } catch (err) {
+      // 개별 항목 파싱 실패 무시
+    }
+  });
 
-          return items;
-        });
+  return items;
+});
 
         allProducts.push(...pageProducts);
         console.log(`   ✅ ${pageProducts.length}개 제품 수집 (누적: ${allProducts.length}개)`);
