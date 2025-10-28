@@ -145,7 +145,7 @@ function parseStorageSpecs(name = "", spec = "", type = "SSD") {
 }
 
 /* ==================== Puppeteer 다나와 크롤링 ==================== */
-async function crawlDanawaStorage(url, type = "SSD", maxPages = 3) {
+async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
   console.log(`🔍 다나와 ${type} 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   let browser;
