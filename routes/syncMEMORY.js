@@ -79,7 +79,7 @@ function extractMemoryInfo(spec = "") {
 }
 
 /* ==================== Puppeteer 다나와 크롤링 ==================== */
-async function crawlDanawaMemory(maxPages = 3) {
+async function crawlDanawaMemory(maxPages = 10) {
   console.log(`🔍 다나와 메모리 크롤링 시작 (최대 ${maxPages}페이지)`);
   console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
 
