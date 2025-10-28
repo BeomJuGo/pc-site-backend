@@ -86,7 +86,7 @@ async function crawlDanawaCategory(category) {
     });
 
     const allProducts = [];
-    const maxPages = 10; // ⭐ 10페이지까지 크롤링
+    const maxPages = 15; // ⭐ 10페이지까지 크롤링
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       const pageUrl = `${url}&page=${pageNum}`;
