@@ -269,7 +269,7 @@ async function crawlCpuBenchmark(maxPages = 5) {
   return benchmarks;
 }
 /* ==================== 다나와 CPU 크롤링 ==================== */
-async function crawlDanawaCpus(maxPages = 15) {
+async function crawlDanawaCpus(maxPages = 10) {
   console.log(`🔍 다나와 CPU 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   let browser;
