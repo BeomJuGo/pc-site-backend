@@ -87,7 +87,7 @@ function extractPSUInfo(name = "", spec = "") {
 }
 
 /* ==================== Puppeteer 다나와 크롤링 ==================== */
-async function crawlDanawaPSUs(maxPages = 3) {
+async function crawlDanawaPSUs(maxPages = 10) {
   console.log(`🔍 다나와 PSU 크롤링 시작 (최대 ${maxPages}페이지)`);
   console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
 
