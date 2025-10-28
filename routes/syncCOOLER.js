@@ -158,7 +158,7 @@ function parseCoolerSpecs(name = "", spec = "") {
 }
 
 /* ==================== Puppeteer 다나와 크롤링 ==================== */
-async function crawlDanawaCoolers(maxPages = 3) {
+async function crawlDanawaCoolers(maxPages = 10) {
   console.log(`🔍 다나와 쿨러 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   let browser;
