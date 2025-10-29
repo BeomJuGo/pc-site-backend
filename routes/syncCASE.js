@@ -42,7 +42,7 @@ async function fetchAiOneLiner({ name, spec }) {
       const raw = data?.choices?.[0]?.message?.content?.trim() || "";
       const cleaned = raw.replace(/```json\n?|```\n?/g, "").trim();
       const parsed = JSON.parse(cleaned);
-      
+
       return {
         review: parsed.review || "",
         specSummary: parsed.specSummary || spec,
@@ -52,7 +52,7 @@ async function fetchAiOneLiner({ name, spec }) {
       if (i < 2) await sleep(1000);
     }
   }
-  
+
   return { review: "", specSummary: "" };
 }
 
@@ -72,7 +72,7 @@ function parseCaseSpecs(name = "", specText = "") {
   if (/ATX/i.test(combined) && !/MINI|MICRO|M-?ATX/i.test(combined)) formFactors.push("ATX");
   if (/M-?ATX|MATX|MICRO\s*ATX/i.test(combined)) formFactors.push("mATX");
   if (/MINI-?ITX|ITX/i.test(combined)) formFactors.push("Mini-ITX");
-  
+
   if (formFactors.length === 0) {
     if (type === "빅타워") formFactors.push("E-ATX", "ATX", "mATX", "Mini-ITX");
     else if (type === "미들타워") formFactors.push("ATX", "mATX", "Mini-ITX");
@@ -120,7 +120,7 @@ function parseCaseSpecs(name = "", specText = "") {
 async function crawlDanawa(maxPages = 10) {
   console.log(`🔍 다나와 케이스 크롤링 시작 (최대 ${maxPages}페이지)`);
   console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
-  
+
   const cases = [];
   let browser;
 
@@ -133,7 +133,7 @@ async function crawlDanawa(maxPages = 10) {
     });
 
     const page = await browser.newPage();
-    
+
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const type = req.resourceType();
@@ -166,12 +166,20 @@ async function crawlDanawa(maxPages = 10) {
               const imgEl = row.querySelector(".thumb_image img");
               const specEl = row.querySelector(".spec_list");
 
+              // 가격 정보 추출
+              const priceEl = row.querySelector('.price_sect a strong');
+              let price = 0;
+              if (priceEl) {
+                const priceText = priceEl.textContent.replace(/[^0-9]/g, '');
+                price = parseInt(priceText, 10) || 0;
+              }
+
               const name = nameEl?.textContent?.trim() || "";
               const image = imgEl?.src || imgEl?.getAttribute("data-original") || "";
               const spec = specEl?.textContent?.trim() || "";
 
               if (name) {
-                items.push({ name, image, spec });
+                items.push({ name, image, spec, price });
               }
             } catch (e) {
               console.error("아이템 파싱 오류:", e);
@@ -197,7 +205,7 @@ async function crawlDanawa(maxPages = 10) {
     if (browser) await browser.close();
   }
 
-  console.log(`\n🎉 총 ${cases.length}개 케이스 크롤링 완료 (제품명, 스펙, 이미지만)`);
+  console.log(`\n🎉 총 ${cases.length}개 케이스 크롤링 완료 (제품명, 스펙, 이미지, 가격)`);
   return cases;
 }
 
@@ -241,23 +249,43 @@ async function syncCasesToDB(cases) {
         info: specs.info,
         image: caseItem.image,
         specs,
+        price: caseItem.price || 0, // 가격 정보 추가
         review: aiResult.review || "",
         specSummary: aiResult.specSummary || specs.info,
       };
 
       if (existing) {
-        await col.updateOne({ _id: existing._id }, { $set: update });
+        // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
+        const today = new Date().toISOString().slice(0, 10);
+        const ops = { $set: update };
+
+        if (caseItem.price > 0 && caseItem.price !== existing.price) {
+          const priceHistory = existing.priceHistory || [];
+          const alreadyExists = priceHistory.some(p => p.date === today);
+
+          if (!alreadyExists) {
+            ops.$push = { priceHistory: { date: today, price: caseItem.price } };
+          }
+        }
+
+        await col.updateOne({ _id: existing._id }, ops);
         updated++;
-        console.log(`🔁 업데이트: ${caseItem.name}`);
+        console.log(`🔁 업데이트: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
       } else {
+        // 신규 추가 시 가격 히스토리 초기화
+        const priceHistory = [];
+        if (caseItem.price > 0) {
+          const today = new Date().toISOString().slice(0, 10);
+          priceHistory.push({ date: today, price: caseItem.price });
+        }
+
         await col.insertOne({
           name: caseItem.name,
           ...update,
-          price: 0,
-          priceHistory: [],
+          priceHistory,
         });
         inserted++;
-        console.log(`✨ 신규 추가: ${caseItem.name} (가격: updatePrices.js에서 설정 예정)`);
+        console.log(`✨ 신규 추가: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
       }
     } catch (e) {
       console.error(`❌ DB 저장 실패 (${caseItem.name}):`, e.message);
@@ -266,14 +294,14 @@ async function syncCasesToDB(cases) {
 
   console.log(`\n📊 동기화 완료: 신규 ${inserted}개, 업데이트 ${updated}개`);
   console.log(`🤖 AI 요약: 성공 ${aiSuccess}개, 실패 ${aiFail}개`);
-  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
+  console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
 
 /* ==================== 라우터 ==================== */
 router.post("/sync-cases", async (req, res) => {
   try {
-    console.log("\n🚀 케이스 동기화 시작 (가격 제외)!");
-    
+    console.log("\n🚀 케이스 동기화 시작 (가격 포함)!");
+
     const maxPages = parseInt(req.query.maxPages) || 3;
     console.log(`📄 크롤링 페이지: ${maxPages}개`);
 
