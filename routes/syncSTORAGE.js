@@ -127,7 +127,7 @@ function parseStorageSpecs(name = "", spec = "", type = "SSD") {
 
   return {
     type,
-    interface: type === "SSD" 
+    interface: type === "SSD"
       ? (/NVMe/i.test(combined) ? "NVMe" : "SATA")
       : "SATA",
     formFactor: /M\.2/i.test(combined) ? "M.2" : "2.5\"",
@@ -172,7 +172,7 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
     });
 
     const page = await browser.newPage();
-    
+
     // 불필요한 리소스 차단 (속도 향상)
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -231,10 +231,19 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
             const imgEl = li.querySelector("a.thumb_link img");
             const specEl = li.querySelector("div.spec_list");
 
+            // 가격 정보 추출
+            const priceEl = li.querySelector('.price_sect a strong');
+            let price = 0;
+            if (priceEl) {
+              const priceText = priceEl.textContent.replace(/[^0-9]/g, '');
+              price = parseInt(priceText, 10) || 0;
+            }
+
             return {
               name: nameEl?.textContent?.trim() || "",
               image: imgEl?.src || "",
               spec: specEl?.textContent?.trim() || "",
+              price: price,
             };
           });
         });
@@ -246,7 +255,7 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
-        
+
         try {
           const screenshot = await page.screenshot({ encoding: 'base64' });
           console.log('📸 스크린샷 저장됨');
@@ -309,24 +318,42 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
       image: storage.image,
       manufacturer: extractManufacturer(storage.name),
       specs: storage.specs,
+      price: storage.price || 0, // 가격 정보 추가
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      // 🆕 가격 및 priceHistory 업데이트 제거
-      await col.updateOne({ _id: old._id }, { $set: update });
+      // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
+      const today = new Date().toISOString().slice(0, 10);
+      const ops = { $set: update };
+
+      if (storage.price > 0 && storage.price !== old.price) {
+        const priceHistory = old.priceHistory || [];
+        const alreadyExists = priceHistory.some(p => p.date === today);
+
+        if (!alreadyExists) {
+          ops.$push = { priceHistory: { date: today, price: storage.price } };
+        }
+      }
+
+      await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`🔁 업데이트: ${storage.name}`);
+      console.log(`🔁 업데이트: ${storage.name} (가격: ${storage.price.toLocaleString()}원)`);
     } else {
-      // 🆕 신규 등록 시 price: 0으로 초기화
+      // 신규 추가 시 가격 히스토리 초기화
+      const priceHistory = [];
+      if (storage.price > 0) {
+        const today = new Date().toISOString().slice(0, 10);
+        priceHistory.push({ date: today, price: storage.price });
+      }
+
       await col.insertOne({
         name: storage.name,
         ...update,
-        price: 0,
-        priceHistory: [],
+        priceHistory,
       });
       inserted++;
-      console.log(`🆕 신규 추가: ${storage.name} (가격: updatePrices.js에서 설정 예정)`);
+      console.log(`🆕 신규 추가: ${storage.name} (가격: ${storage.price.toLocaleString()}원)`);
     }
 
     if (ai) await sleep(200);
@@ -345,7 +372,7 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
   console.log(
     `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
   );
-  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
+  console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
 
 /* ==================== Express 라우터 ==================== */
@@ -356,13 +383,13 @@ router.post("/sync-storage", async (req, res) => {
     const force = req.body?.force === true;
 
     res.json({
-      message: `✅ 다나와 스토리지 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 제외)`,
+      message: `✅ 다나와 스토리지 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)`,
     });
 
     setImmediate(async () => {
       try {
         console.log("\n=== 스토리지 동기화 시작 ===");
-        
+
         // SSD 크롤링
         const ssdProducts = await crawlDanawaStorage(DANAWA_SSD_URL, "SSD", maxPages);
         const ssdData = ssdProducts.map(p => {
@@ -415,8 +442,8 @@ router.post("/sync-storage", async (req, res) => {
         }
 
         await saveToMongoDB(allStorage, { ai, force });
-        console.log("🎉 스토리지 동기화 완료 (제품명, 스펙, 이미지)");
-        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
+        console.log("🎉 스토리지 동기화 완료 (가격 정보 포함)");
+        console.log("💰 가격 정보가 함께 크롤링되어 저장되었습니다");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
       }
