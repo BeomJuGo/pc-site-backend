@@ -76,7 +76,7 @@ function extractCoolerInfo(name = "", spec = "") {
   // 쿨러 타입
   if (/수냉|AIO|일체형\s*수냉/i.test(combined)) {
     parts.push("수냉 쿨러");
-    
+
     // 라디에이터 크기
     const radMatch = combined.match(/(\d{3})mm|(\d{2,3})\s*(?:mm)?/i);
     if (radMatch) {
@@ -111,7 +111,7 @@ function extractCoolerInfo(name = "", spec = "") {
   if (/LGA\s?1700/i.test(combined)) sockets.push("LGA1700");
   if (/LGA\s?1200/i.test(combined)) sockets.push("LGA1200");
   if (/LGA\s?115[0-1x]/i.test(combined)) sockets.push("LGA115x");
-  
+
   if (sockets.length > 0) {
     parts.push(`소켓: ${sockets.join(", ")}`);
   }
@@ -127,10 +127,10 @@ function extractCoolerInfo(name = "", spec = "") {
 /* ==================== 쿨러 스펙 파싱 (호환성 체크용) ==================== */
 function parseCoolerSpecs(name = "", spec = "") {
   const combined = `${name} ${spec}`;
-  
+
   // 쿨러 타입
   const isWaterCooling = /수냉|AIO|일체형\s*수냉/i.test(combined);
-  
+
   // 소켓 지원
   const sockets = [];
   if (/AM5/i.test(combined)) sockets.push("AM5");
@@ -138,11 +138,11 @@ function parseCoolerSpecs(name = "", spec = "") {
   if (/LGA\s?1700/i.test(combined)) sockets.push("LGA1700");
   if (/LGA\s?1200/i.test(combined)) sockets.push("LGA1200");
   if (/LGA\s?115[0-1x]/i.test(combined)) sockets.push("LGA115x");
-  
+
   // TDP
   const tdpMatch = combined.match(/TDP[:\s]*(\d{2,3})W?/i);
   const tdpW = tdpMatch ? parseInt(tdpMatch[1]) : 0;
-  
+
   // 높이
   const heightMatch = combined.match(/높이[:\s]*(\d{2,3})mm?|(\d{2,3})\s*mm/i);
   const heightMm = heightMatch ? parseInt(heightMatch[1] || heightMatch[2]) : 0;
@@ -185,7 +185,7 @@ async function crawlDanawaCoolers(maxPages = 10) {
     });
 
     const page = await browser.newPage();
-    
+
     // 불필요한 리소스 차단 (속도 향상)
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -244,10 +244,19 @@ async function crawlDanawaCoolers(maxPages = 10) {
             const imgEl = li.querySelector("a.thumb_link img");
             const specEl = li.querySelector("div.spec_list");
 
+            // 가격 정보 추출
+            const priceEl = li.querySelector('.price_sect a strong');
+            let price = 0;
+            if (priceEl) {
+              const priceText = priceEl.textContent.replace(/[^0-9]/g, '');
+              price = parseInt(priceText, 10) || 0;
+            }
+
             return {
               name: nameEl?.textContent?.trim() || "",
               image: imgEl?.src || "",
               spec: specEl?.textContent?.trim() || "",
+              price: price,
             };
           });
         });
@@ -259,7 +268,7 @@ async function crawlDanawaCoolers(maxPages = 10) {
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
-        
+
         try {
           const screenshot = await page.screenshot({ encoding: 'base64' });
           console.log('📸 스크린샷 저장됨');
@@ -329,24 +338,42 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
         heightMm: specs.heightMm,
         specText: specs.specText
       },
+      price: cooler.price || 0, // 가격 정보 추가
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      // 🆕 가격 및 priceHistory 업데이트 제거
-      await col.updateOne({ _id: old._id }, { $set: update });
+      // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
+      const today = new Date().toISOString().slice(0, 10);
+      const ops = { $set: update };
+
+      if (cooler.price > 0 && cooler.price !== old.price) {
+        const priceHistory = old.priceHistory || [];
+        const alreadyExists = priceHistory.some(p => p.date === today);
+
+        if (!alreadyExists) {
+          ops.$push = { priceHistory: { date: today, price: cooler.price } };
+        }
+      }
+
+      await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`🔁 업데이트: ${cooler.name}`);
+      console.log(`🔁 업데이트: ${cooler.name} (가격: ${cooler.price.toLocaleString()}원)`);
     } else {
-      // 🆕 신규 등록 시 price: 0으로 초기화
+      // 신규 추가 시 가격 히스토리 초기화
+      const priceHistory = [];
+      if (cooler.price > 0) {
+        const today = new Date().toISOString().slice(0, 10);
+        priceHistory.push({ date: today, price: cooler.price });
+      }
+
       await col.insertOne({
         name: cooler.name,
         ...update,
-        price: 0,
-        priceHistory: [],
+        priceHistory,
       });
       inserted++;
-      console.log(`🆕 신규 추가: ${cooler.name} (가격: updatePrices.js에서 설정 예정)`);
+      console.log(`🆕 신규 추가: ${cooler.name} (가격: ${cooler.price.toLocaleString()}원)`);
     }
 
     if (ai) await sleep(200);
@@ -365,7 +392,7 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
   console.log(
     `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
   );
-  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
+  console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
 
 /* ==================== Express 라우터 ==================== */
@@ -390,8 +417,8 @@ router.post("/sync-cooler", async (req, res) => {
         }
 
         await saveToMongoDB(coolers, { ai, force });
-        console.log("🎉 쿨러 동기화 완료 (제품명, 스펙, 이미지)");
-        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
+        console.log("🎉 쿨러 동기화 완료 (가격 정보 포함)");
+        console.log("💰 가격 정보가 함께 크롤링되어 저장되었습니다");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
       }
