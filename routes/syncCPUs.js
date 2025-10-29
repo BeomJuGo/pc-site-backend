@@ -15,13 +15,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ==================== CPU 이름 정규화 (매칭용) ==================== */
 function normalizeCpuName(name) {
   let normalized = name.toUpperCase();
-  
+
   // 1. 세대 표기 제거 (가장 먼저!)
   normalized = normalized.replace(/[-\s]*\d+세대[-\s]*/g, " ");
-  
+
   // 2. 코드네임 제거
   normalized = normalized.replace(/\([^)]*\)/g, "");
-  
+
   // 3. 한글 → 영문 변환
   const replacements = {
     "라이젠": "RYZEN",
@@ -34,37 +34,37 @@ function normalizeCpuName(name) {
     "셀러론": "CELERON",
     "제온": "XEON",
   };
-  
+
   for (const [kor, eng] of Object.entries(replacements)) {
     normalized = normalized.replace(new RegExp(kor, "gi"), eng);
   }
-  
+
   // 4. "시리즈2", "시리즈1" 등 제거
   normalized = normalized.replace(/시리즈\d+/gi, "");
-  
+
   // 5. 하이픈을 공백으로
   normalized = normalized.replace(/[-_]/g, " ");
-  
+
   // 6. ⭐ 핵심: 숫자 앞뒤에 공백 추가
   normalized = normalized.replace(/([A-Z])(\d)/g, "$1 $2");
   normalized = normalized.replace(/(\d)([A-Z])/g, "$1 $2");
-  
+
   // 7. 연속된 공백을 하나로
   normalized = normalized.replace(/\s+/g, " ").trim();
-  
+
   // 8. AMD/Intel 추가 (없으면)
   if (normalized.includes("RYZEN") || normalized.includes("THREADRIPPER") || normalized.includes("ATHLON")) {
     if (!normalized.startsWith("AMD")) {
       normalized = "AMD " + normalized;
     }
   }
-  
+
   if (normalized.includes("CORE") || normalized.includes("PENTIUM") || normalized.includes("CELERON") || normalized.includes("XEON")) {
     if (!normalized.startsWith("INTEL")) {
       normalized = "INTEL " + normalized;
     }
   }
-  
+
   return normalized;
 }
 
@@ -72,21 +72,21 @@ function normalizeCpuName(name) {
 function matchCpuNames(danawaName, benchmarkName) {
   const norm1 = normalizeCpuName(danawaName);
   const norm2 = normalizeCpuName(benchmarkName);
-  
+
   if (norm1 === norm2) return true;
-  
+
   const extractTokens = (str) => str.split(/\s+/).filter(t => t.length > 0);
   const tokens1 = extractTokens(norm1);
   const tokens2 = extractTokens(norm2);
-  
+
   const coreTokens1 = tokens1.filter(t => /\d/.test(t));
   const coreTokens2 = tokens2.filter(t => /\d/.test(t));
-  
+
   if (coreTokens1.length === 0 || coreTokens2.length === 0) return false;
-  
+
   const allMatch = coreTokens1.every(t => norm2.includes(t)) &&
-                   coreTokens2.every(t => norm1.includes(t));
-  
+    coreTokens2.every(t => norm1.includes(t));
+
   return allMatch;
 }
 
@@ -141,13 +141,13 @@ function extractCpuInfo(name = "", spec = "") {
 
   const coreMatch = combined.match(/(\d+)코어|(\d+)\s*CORE/i);
   const threadMatch = combined.match(/(\d+)스레드|(\d+)\s*THREAD/i);
-  
+
   if (coreMatch) parts.push(`${coreMatch[1] || coreMatch[2]}코어`);
   if (threadMatch) parts.push(`${threadMatch[1] || threadMatch[2]}스레드`);
 
   const baseClockMatch = combined.match(/베이스[:\s]*(\d+\.?\d*)\s*GHz/i);
   const boostClockMatch = combined.match(/(?:부스트|최대)[:\s]*(\d+\.?\d*)\s*GHz/i);
-  
+
   if (baseClockMatch) parts.push(`베이스: ${baseClockMatch[1]}GHz`);
   if (boostClockMatch) parts.push(`부스트: ${boostClockMatch[1]}GHz`);
 
@@ -176,7 +176,7 @@ function extractManufacturer(name) {
 /* ==================== cpubenchmark 크롤링 (수정) ==================== */
 async function crawlCpuBenchmark(maxPages = 5) {
   console.log(`🔍 cpubenchmark.net 크롤링 시작 (${maxPages}페이지)`);
-  
+
   let browser;
   const benchmarks = new Map();
 
@@ -192,7 +192,7 @@ async function crawlCpuBenchmark(maxPages = 5) {
     });
 
     const page = await browser.newPage();
-    
+
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     );
@@ -214,21 +214,21 @@ async function crawlCpuBenchmark(maxPages = 5) {
         // ✅ 올바른 셀렉터로 데이터 추출
         const items = await page.evaluate(() => {
           const rows = [];
-          
+
           // ✅ 정확한 셀렉터: ul li a[href*="cpu.php"]
           const links = document.querySelectorAll('ul li a[href*="cpu.php"]');
-          
+
           links.forEach((link) => {
             try {
               // ✅ <span class="prdname"> 에서 CPU 이름 추출
               const nameEl = link.querySelector('.prdname');
               const name = nameEl?.textContent?.trim();
-              
+
               // ✅ <span class="count"> 에서 점수 추출
               const scoreEl = link.querySelector('.count');
               const scoreText = scoreEl?.textContent?.trim().replace(/,/g, '');
               const score = parseInt(scoreText, 10);
-              
+
               if (name && !isNaN(score) && score > 0) {
                 rows.push({ name, score });
               }
@@ -296,7 +296,7 @@ async function crawlDanawaCpus(maxPages = 15) {
     });
 
     const page = await browser.newPage();
-    
+
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
@@ -364,7 +364,7 @@ async function crawlDanawaCpus(maxPages = 15) {
           });
         }
 
-        // 제품 리스트 추출
+        // 제품 리스트 추출 (가격 정보 포함)
         const pageProducts = await page.evaluate(() => {
           const items = document.querySelectorAll('.main_prodlist .product_list .prod_item');
           const results = [];
@@ -385,7 +385,15 @@ async function crawlDanawaCpus(maxPages = 15) {
                 .replace(/\s+/g, ' ')
                 .replace(/더보기/g, '');
 
-              results.push({ name, image, spec: spec || '' });
+              // 가격 정보 추출
+              const priceEl = item.querySelector('.price_sect a strong');
+              let price = 0;
+              if (priceEl) {
+                const priceText = priceEl.textContent.replace(/[^0-9]/g, '');
+                price = parseInt(priceText, 10) || 0;
+              }
+
+              results.push({ name, image, spec: spec || '', price });
             } catch (e) {
               // 개별 아이템 파싱 실패는 무시
             }
@@ -395,7 +403,7 @@ async function crawlDanawaCpus(maxPages = 15) {
         });
 
         console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
-        
+
         if (pageProducts.length === 0) {
           console.log('⚠️ 페이지에서 제품을 찾지 못함 - 크롤링 중단');
           break;
@@ -418,7 +426,7 @@ async function crawlDanawaCpus(maxPages = 15) {
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
-        
+
         // 첫 페이지 실패 시 중단
         if (pageNum === 1) {
           break;
@@ -444,7 +452,7 @@ function findBenchmarkScore(cpuName, benchmarks) {
   }
 
   const normalizedCpuName = normalizeCpuName(cpuName);
-  
+
   for (const [benchName, score] of benchmarks.entries()) {
     if (matchCpuNames(cpuName, benchName)) {
       console.log(`✅ 매칭: "${cpuName}" ↔ "${benchName}" (${score}점)`);
@@ -453,11 +461,11 @@ function findBenchmarkScore(cpuName, benchmarks) {
   }
 
   const tokens = normalizedCpuName.split(/\s+/).filter(t => /\d/.test(t));
-  
+
   for (const [benchName, score] of benchmarks.entries()) {
     const normalizedBench = normalizeCpuName(benchName);
     const allTokensMatch = tokens.every(t => normalizedBench.includes(t));
-    
+
     if (allTokensMatch && tokens.length >= 2) {
       console.log(`⚠️ 부분 매칭: "${cpuName}" ↔ "${benchName}" (${score}점)`);
       return score;
@@ -484,7 +492,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
   for (const cpu of cpus) {
     const old = byName.get(cpu.name);
     const info = extractCpuInfo(cpu.name, cpu.spec);
-    
+
     const benchScore = findBenchmarkScore(cpu.name, benchmarks);
     if (benchScore > 0) withScore++;
 
@@ -511,22 +519,42 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       image: cpu.image,
       manufacturer: extractManufacturer(cpu.name),
       benchScore,
+      price: cpu.price || 0, // 가격 정보 추가
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      await col.updateOne({ _id: old._id }, { $set: update });
+      // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
+      const today = new Date().toISOString().slice(0, 10);
+      const ops = { $set: update };
+
+      if (cpu.price > 0 && cpu.price !== old.price) {
+        const priceHistory = old.priceHistory || [];
+        const alreadyExists = priceHistory.some(p => p.date === today);
+
+        if (!alreadyExists) {
+          ops.$push = { priceHistory: { date: today, price: cpu.price } };
+        }
+      }
+
+      await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`🔁 업데이트: ${cpu.name} (점수: ${benchScore})`);
+      console.log(`🔁 업데이트: ${cpu.name} (점수: ${benchScore}, 가격: ${cpu.price.toLocaleString()}원)`);
     } else {
+      // 신규 추가 시 가격 히스토리 초기화
+      const priceHistory = [];
+      if (cpu.price > 0) {
+        const today = new Date().toISOString().slice(0, 10);
+        priceHistory.push({ date: today, price: cpu.price });
+      }
+
       await col.insertOne({
         name: cpu.name,
         ...update,
-        price: 0,
-        priceHistory: [],
+        priceHistory,
       });
       inserted++;
-      console.log(`🆕 신규 추가: ${cpu.name} (점수: ${benchScore})`);
+      console.log(`🆕 신규 추가: ${cpu.name} (점수: ${benchScore}, 가격: ${cpu.price.toLocaleString()}원)`);
     }
 
     if (ai) await sleep(200);
@@ -546,7 +574,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
   );
   console.log(`📊 벤치마크 점수: ${withScore}/${cpus.length}개 매칭 완료`);
-  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
+  console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
 
 /* ==================== Express 라우터 ==================== */
@@ -558,13 +586,13 @@ router.post("/sync-cpus", async (req, res) => {
     const force = req.body?.force === true;
 
     res.json({
-      message: `✅ CPU 동기화 시작 (다나와: ${maxPages}p, 벤치마크: ${benchPages}p, AI: ${ai})`,
+      message: `✅ CPU 동기화 시작 (다나와: ${maxPages}p, 벤치마크: ${benchPages}p, AI: ${ai}, 가격 포함)`,
     });
 
     setImmediate(async () => {
       try {
         console.log("\n=== CPU 동기화 시작 ===");
-        
+
         const benchmarks = await crawlCpuBenchmark(benchPages);
         const cpus = await crawlDanawaCpus(maxPages);
 
@@ -574,9 +602,9 @@ router.post("/sync-cpus", async (req, res) => {
         }
 
         await saveToMongoDB(cpus, benchmarks, { ai, force });
-        
-        console.log("🎉 CPU 동기화 완료");
-        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
+
+        console.log("🎉 CPU 동기화 완료 (가격 정보 포함)");
+        console.log("💰 가격 정보가 함께 크롤링되어 저장되었습니다");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
       }
