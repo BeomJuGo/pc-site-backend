@@ -58,23 +58,23 @@ async function fetchAiOneLiner({ name, spec }) {
 /* ==================== 메모리 정보 추출 ==================== */
 function extractMemoryInfo(spec = "") {
   const parts = [];
-  
+
   // DDR 타입
   const ddrMatch = spec.match(/DDR[2-5]/i);
   if (ddrMatch) parts.push(`Type: ${ddrMatch[0].toUpperCase()}`);
-  
+
   // 속도
   const speedMatch = spec.match(/(\d{4,5})\s*MHz/i);
   if (speedMatch) parts.push(`Speed: ${speedMatch[1]} MHz`);
-  
+
   // 용량
   const capacityMatch = spec.match(/(\d+GB(?:\(\d+Gx\d+\))?)/i);
   if (capacityMatch) parts.push(`Capacity: ${capacityMatch[1]}`);
-  
+
   // 램타이밍
   const timingMatch = spec.match(/CL(\d+(?:-\d+)*)/i);
   if (timingMatch) parts.push(`CL: ${timingMatch[1]}`);
-  
+
   return parts.join(", ");
 }
 
@@ -107,7 +107,7 @@ async function crawlDanawaMemory(maxPages = 10) {
     });
 
     const page = await browser.newPage();
-    
+
     // 불필요한 리소스 차단
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -182,7 +182,6 @@ async function crawlDanawaMemory(maxPages = 10) {
 
               if (!name) return;
 
-              // 🆕 이미지만 수집 (가격 제외)
               const imgEl = item.querySelector('img');
               const image = imgEl?.src || imgEl?.dataset?.original || '';
 
@@ -192,7 +191,15 @@ async function crawlDanawaMemory(maxPages = 10) {
                 .replace(/\s+/g, ' ')
                 .replace(/더보기/g, '');
 
-              results.push({ name, image, spec: spec || '' });
+              // 가격 정보 추출
+              const priceEl = item.querySelector('.price_sect a strong');
+              let price = 0;
+              if (priceEl) {
+                const priceText = priceEl.textContent.replace(/[^0-9]/g, '');
+                price = parseInt(priceText, 10) || 0;
+              }
+
+              results.push({ name, image, spec: spec || '', price });
             } catch (e) {
               // 개별 아이템 파싱 실패는 무시
             }
@@ -202,7 +209,7 @@ async function crawlDanawaMemory(maxPages = 10) {
         });
 
         console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
-        
+
         if (pageProducts.length === 0) {
           console.log('⚠️ 페이지에서 제품을 찾지 못함 - 크롤링 중단');
           break;
@@ -224,7 +231,7 @@ async function crawlDanawaMemory(maxPages = 10) {
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
-        
+
         try {
           const screenshot = await page.screenshot({ encoding: 'base64' });
           console.log('📸 스크린샷 저장됨 (base64, 처음 100자):', screenshot.substring(0, 100));
@@ -282,29 +289,46 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
       }
     }
 
-    // 🆕 가격 제외 (updatePrices.js가 별도로 업데이트)
     const update = {
       category: "memory",
       info,
       image: memory.image,
+      price: memory.price || 0, // 가격 정보 추가
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      // 🆕 가격 및 priceHistory 업데이트 제거
-      await col.updateOne({ _id: old._id }, { $set: update });
+      // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
+      const today = new Date().toISOString().slice(0, 10);
+      const ops = { $set: update };
+
+      if (memory.price > 0 && memory.price !== old.price) {
+        const priceHistory = old.priceHistory || [];
+        const alreadyExists = priceHistory.some(p => p.date === today);
+
+        if (!alreadyExists) {
+          ops.$push = { priceHistory: { date: today, price: memory.price } };
+        }
+      }
+
+      await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`🔁 업데이트: ${memory.name}`);
+      console.log(`🔁 업데이트: ${memory.name} (가격: ${memory.price.toLocaleString()}원)`);
     } else {
-      // 🆕 신규 등록 시 price: 0으로 초기화 (updatePrices.js가 나중에 설정)
+      // 신규 추가 시 가격 히스토리 초기화
+      const priceHistory = [];
+      if (memory.price > 0) {
+        const today = new Date().toISOString().slice(0, 10);
+        priceHistory.push({ date: today, price: memory.price });
+      }
+
       await col.insertOne({
         name: memory.name,
         ...update,
-        price: 0,
-        priceHistory: [],
+        priceHistory,
       });
       inserted++;
-      console.log(`🆕 삽입: ${memory.name} (가격: updatePrices.js에서 설정 예정)`);
+      console.log(`🆕 삽입: ${memory.name} (가격: ${memory.price.toLocaleString()}원)`);
     }
 
     if (ai) await sleep(200);
@@ -323,7 +347,7 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
   console.log(
     `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
   );
-  console.log(`💡 가격은 updatePrices.js로 별도 업데이트 필요`);
+  console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
 
 /* ==================== 라우터 ==================== */
@@ -347,8 +371,8 @@ router.post("/sync-memory", async (req, res) => {
         }
 
         await saveToMongoDB(memories, { ai, force });
-        console.log("🎉 메모리 동기화 완료 (제품명, 스펙, 이미지)");
-        console.log("💡 이제 updatePrices.js를 실행하여 가격을 업데이트하세요");
+        console.log("🎉 메모리 동기화 완료 (가격 정보 포함)");
+        console.log("💰 가격 정보가 함께 크롤링되어 저장되었습니다");
       } catch (err) {
         console.error("❌ 동기화 실패:", err);
       }
