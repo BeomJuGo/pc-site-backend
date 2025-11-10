@@ -1,0 +1,15 @@
+name: Daily Price Update
+
+on:
+  schedule:
+    - cron: "19 19 * * *"  # 매일 오전 4시 19분 (KST 기준)
+  workflow_dispatch:       # 수동 실행도 가능하게 설정
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call Render API to update part prices
+        run: |
+          curl -X POST https://pc-site-backend.onrender.com/api/admin/update-prices

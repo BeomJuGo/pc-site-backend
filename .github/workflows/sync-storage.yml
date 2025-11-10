@@ -1,0 +1,46 @@
+name: Monthly Storage Sync
+
+on:
+  schedule:
+    - cron: "35 18 1 * *"  # 매달 1일 KST 03:35 → UTC 18:35 (전날)
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  sync-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: sync-storage
+      cancel-in-progress: false
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+      API_PATH: /api/sync-storage
+
+    steps:
+      - name: Call backend to sync Storage (with retries)
+        shell: bash
+        run: |
+          set -e
+          echo "POST $BACKEND_URL$API_PATH"
+
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL$API_PATH" \
+              -H "Content-Type: application/json") || true
+
+            echo "HTTP $http_code"
+            cat /tmp/resp.txt || true
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Success"
+              exit 0
+            fi
+
+            echo "⚠️ Failed (HTTP $http_code). Retrying in 20s..."
+            sleep 20
+          done
+
+          echo "❌ All retries failed"
+          exit 1

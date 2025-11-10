@@ -1,0 +1,55 @@
+name: Monthly Memory Sync
+
+on:
+  schedule:
+    # 매달 월요일 KST 03:15 실행 → UTC 18:15 (일요일)
+    - cron: "15 18 1 * *"
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  sync-memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: sync-memory
+      cancel-in-progress: false
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+      API_PATH: /api/sync-memory
+      PAGES: "2"
+      LIMIT: "60"
+
+    steps:
+      - name: Call backend to sync memory (with retries)
+        shell: bash
+        run: |
+          set -e
+          echo "POST $BACKEND_URL$API_PATH pages=$PAGES limit=$LIMIT"
+
+          # 필요시 관리자 토큰 사용
+          # AUTH_HEADER="Authorization: Bearer ${{ secrets.ADMIN_API_TOKEN }}"
+          AUTH_HEADER=""
+
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL$API_PATH" \
+              -H "Content-Type: application/json" \
+              -H "$AUTH_HEADER" \
+              -d "{\"pages\": ${PAGES}, \"limit\": ${LIMIT}}") || true
+
+            echo "HTTP $http_code"
+            cat /tmp/resp.txt || true
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Success"
+              exit 0
+            fi
+
+            echo "⚠️ Failed (HTTP $http_code). Retrying in 20s..."
+            sleep 20
+          done
+
+          echo "❌ All retries failed"
+          exit 1
