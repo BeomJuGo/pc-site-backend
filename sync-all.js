@@ -1,16 +1,22 @@
 import axios from 'axios';
 
-const BASE = 'http://localhost:10000/api';
+// 환경 변수로 BASE URL 설정 (GitHub Actions에서 사용)
+// 로컬 개발: http://localhost:10000
+// 프로덕션: https://pc-site-backend.onrender.com
+const BASE = process.env.API_BASE_URL || 'http://localhost:10000/api';
+
+// API_BASE_URL이 /api로 끝나지 않으면 자동으로 추가
+const apiBase = BASE.endsWith('/api') ? BASE : `${BASE}/api`;
 
 const endpoints = [
-  { name: 'CPU', url: `${BASE}/admin/sync-cpus`, body: { pages: 10, benchPages: 6, ai: true, force: false } },
-  { name: 'GPU', url: `${BASE}/admin/sync-gpus`, body: { pages: 10, ai: true, force: false } },
-  { name: 'Motherboard', url: `${BASE}/sync-motherboards`, body: { pages: 8, ai: true, force: false } },
-  { name: 'Memory', url: `${BASE}/sync-memory`, body: { pages: 8, ai: true, force: false } },
-  { name: 'PSU', url: `${BASE}/sync-psu`, body: { pages: 8, ai: true, force: false } },
-  { name: 'Case', url: `${BASE}/sync-case`, body: { pages: 8, ai: true, force: false } },
-  { name: 'Cooler', url: `${BASE}/sync-cooler`, body: { pages: 8, ai: true, force: false } },
-  { name: 'Storage', url: `${BASE}/sync-storage`, body: { pages: 8, ai: true, force: false } },
+  { name: 'CPU', url: `${apiBase}/admin/sync-cpus`, body: { pages: 10, benchPages: 6, ai: true, force: false } },
+  { name: 'GPU', url: `${apiBase}/admin/sync-gpus`, body: { pages: 10, ai: true, force: false } },
+  { name: 'Motherboard', url: `${apiBase}/sync-motherboards`, body: { pages: 8, ai: true, force: false } },
+  { name: 'Memory', url: `${apiBase}/sync-memory`, body: { pages: 8, limit: 60, ai: true, force: false } },
+  { name: 'PSU', url: `${apiBase}/sync-psu`, body: { pages: 8, ai: true, force: false } },
+  { name: 'Case', url: `${apiBase}/sync-case`, body: { pages: 8, ai: true, force: false } },
+  { name: 'Cooler', url: `${apiBase}/sync-cooler`, body: { pages: 8, ai: true, force: false } },
+  { name: 'Storage', url: `${apiBase}/sync-storage`, body: { pages: 8, ai: true, force: false } },
 ];
 
 async function post(name, url, body) {
@@ -47,6 +53,8 @@ async function main() {
   } else {
     console.log('🚀 8개 라우터 동기화 시작');
   }
+
+  console.log(`🌐 API Base URL: ${apiBase}`);
 
   const results = [];
   for (const ep of filteredEndpoints) {
