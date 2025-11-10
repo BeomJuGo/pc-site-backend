@@ -4,6 +4,7 @@ import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import fetch from "node-fetch";
 import { getDB } from "../db.js";
+import { launchBrowser } from "../utils/browser.js";
 
 const router = express.Router();
 
@@ -95,62 +96,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
   const products = [];
 
   try {
-    chromium.setGraphicsMode = false;
-
-    browser = await puppeteer.launch({
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-automation',
-        '--disable-extensions',
-        '--disable-plugins',
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--hide-scrollbars',
-        '--mute-audio',
-        '--no-default-browser-check',
-        '--no-pings',
-        '--password-store=basic',
-        '--use-mock-keychain',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--disable-hang-monitor',
-        '--disable-prompt-on-repost',
-        '--disable-logging',
-        '--disable-permissions-api',
-        '--disable-notifications',
-        '--disable-background-networking',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-client-side-phishing-detection',
-        '--disable-component-update',
-        '--disable-domain-reliability',
-        '--disable-features=site-per-process',
-        '--disable-site-isolation-trials',
-        '--single-process',
-        '--disable-web-security',
-        '--allow-running-insecure-content',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      defaultViewport: { width: 1920, height: 1080 },
-      headless: true,
-      ignoreHTTPSErrors: true,
-      timeout: 300000, // 타임아웃 대폭 증가
-      protocolTimeout: 300000, // 프로토콜 타임아웃 대폭 증가
-    });
+    browser = await launchBrowser();
 
     const page = await browser.newPage();
 

@@ -4,6 +4,7 @@ import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import fetch from "node-fetch";
 import { getDB } from "../db.js";
+import { launchBrowser } from "../utils/browser.js";
 
 const router = express.Router();
 // PassMark 임계값(이 미만이면 DB 저장 제외)
@@ -311,25 +312,7 @@ async function crawlCpuBenchmark(maxPages = 5) {
   const benchmarks = new Map();
 
   try {
-    chromium.setGraphicsMode = false;
-
-    browser = await puppeteer.launch({
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      args: [
-        '--disable-gpu',
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-setuid-sandbox',
-        '--no-first-run',
-        '--disable-extensions',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-        // single-process 제거 (안정성 향상)
-      ],
-      defaultViewport: { width: 1280, height: 720 },
-      headless: true,
-      ignoreHTTPSErrors: true,
-    });
+    browser = await launchBrowser();
 
     // 브라우저가 완전히 초기화될 때까지 대기
     await sleep(2000);
@@ -552,26 +535,7 @@ async function crawlDanawaCpus(maxPages = 10) {
   const products = [];
 
   try {
-    chromium.setGraphicsMode = false;
-
-    browser = await puppeteer.launch({
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      args: [
-        '--disable-gpu',
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-setuid-sandbox',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      defaultViewport: { width: 1280, height: 720 },
-      headless: true,
-      ignoreHTTPSErrors: true,
-    });
+    browser = await launchBrowser();
 
     const page = await browser.newPage();
 

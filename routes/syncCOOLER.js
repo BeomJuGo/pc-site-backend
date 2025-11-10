@@ -4,6 +4,7 @@ import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import fetch from "node-fetch";
 import { getDB } from "../db.js";
+import { launchBrowser } from "../utils/browser.js";
 
 const router = express.Router();
 
@@ -165,26 +166,7 @@ async function crawlDanawaCoolers(maxPages = 10) {
   const products = [];
 
   try {
-    chromium.setGraphicsMode = false;
-
-    browser = await puppeteer.launch({
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      args: [
-        '--disable-gpu',
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-setuid-sandbox',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      defaultViewport: { width: 1280, height: 720 },
-      headless: true,
-      ignoreHTTPSErrors: true,
-    });
+    browser = await launchBrowser();
 
     const page = await browser.newPage();
 

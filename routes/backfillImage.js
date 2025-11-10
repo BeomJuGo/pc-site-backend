@@ -3,6 +3,7 @@ import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import { getDB } from "../db.js";
+import { launchBrowser } from "../utils/browser.js";
 
 const router = express.Router();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -23,26 +24,7 @@ const CATEGORY_URLS = {
 async function searchImageFromDanawa(productName, category) {
   let browser;
   try {
-    chromium.setGraphicsMode = false;
-
-    browser = await puppeteer.launch({
-      executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      args: [
-        '--disable-gpu',
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-setuid-sandbox',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      defaultViewport: { width: 1280, height: 720 },
-      headless: true,
-      ignoreHTTPSErrors: true,
-    });
+    browser = await launchBrowser();
 
     const page = await browser.newPage();
     await page.setDefaultTimeout(30000);
