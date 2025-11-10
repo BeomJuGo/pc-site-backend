@@ -1,8 +1,9 @@
-name: Monthly Cooler Sync
+name: Daily Cooler Sync
 
 on:
   schedule:
-    - cron: "30 18 1 * *"  # 매달 1일 KST 03:30 → UTC 18:30 (전날)
+    # 매일 한국시간 오전 3시 30분 실행 → UTC 18:30 (전날)
+    - cron: "30 18 * * *"
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:
@@ -16,19 +17,21 @@ jobs:
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
       API_PATH: /api/sync-cooler
+      PAGES: "8"
 
     steps:
       - name: Call backend to sync Cooler (with retries)
         shell: bash
         run: |
           set -e
-          echo "POST $BACKEND_URL$API_PATH"
+          echo "POST $BACKEND_URL$API_PATH pages=$PAGES"
 
           for i in 1 2 3; do
             echo "Attempt $i..."
             http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
               -X POST "$BACKEND_URL$API_PATH" \
-              -H "Content-Type: application/json") || true
+              -H "Content-Type: application/json" \
+              -d "{\"pages\": ${PAGES}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"
             cat /tmp/resp.txt || true

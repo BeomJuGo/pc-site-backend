@@ -1,14 +1,51 @@
-name: Monthly CPU Sync
+name: Daily CPU Sync
 
 on:
   schedule:
-    - cron: "0 18 1 * *"  # 매일 오전 3시 (UTC 기준, 한국은 +9h로 12시 정오)
+    # 매일 한국시간 오전 3시 실행 → UTC 18:00 (전날)
+    - cron: "0 18 * * *"
   workflow_dispatch:  # 수동 실행 버튼도 활성화
 
 jobs:
   sync-cpus:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: sync-cpus
+      cancel-in-progress: false
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+      API_PATH: /api/admin/sync-cpus
+      PAGES: "10"
+      BENCH_PAGES: "6"
+
     steps:
-      - name: Call Render API to sync CPUs
+      - name: Call backend to sync CPUs (with retries)
+        shell: bash
         run: |
-          curl -X POST https://pc-site-backend.onrender.com/api/admin/sync-cpus
+          set -e
+          echo "POST $BACKEND_URL$API_PATH pages=$PAGES benchPages=$BENCH_PAGES"
+
+          # 3회 재시도 (간헐적 네트워크/서버 이슈 대비)
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL$API_PATH" \
+              -H "Content-Type: application/json" \
+              -d "{\"pages\": ${PAGES}, \"benchPages\": ${BENCH_PAGES}, \"ai\": true, \"force\": false}") || true
+
+            echo "HTTP $http_code"
+            cat /tmp/resp.txt || true
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Success"
+              exit 0
+            fi
+
+            echo "⚠️ Failed (HTTP $http_code). Retrying in 20s..."
+            sleep 20
+          done
+
+          echo "❌ All retries failed"
+          exit 1

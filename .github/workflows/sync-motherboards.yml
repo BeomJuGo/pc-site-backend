@@ -1,9 +1,9 @@
-name: Monthly Motherboard Sync
+name: Daily Motherboard Sync
 
 on:
   schedule:
-    # 매달 1일 KST 03:10 실행 → UTC로 18:10 (전날)
-    - cron: "10 18 1 * *"
+    # 매일 한국시간 오전 3시 10분 실행 → UTC 18:10 (전날)
+    - cron: "10 18 * * *"
   workflow_dispatch: # 수동 실행 버튼
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
       API_PATH: /api/sync-motherboards
-      PAGES: "3" # 몇 페이지까지 크롤링할지 (원하면 바꿔도 됨)
+      PAGES: "8" # 몇 페이지까지 크롤링할지
 
     steps:
       - name: Call backend to sync motherboards (with retries)
@@ -37,7 +37,7 @@ jobs:
               -X POST "$BACKEND_URL$API_PATH" \
               -H "Content-Type: application/json" \
               -H "$AUTH_HEADER" \
-              -d "{\"pages\": ${PAGES}}") || true
+              -d "{\"pages\": ${PAGES}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"
             cat /tmp/resp.txt || true

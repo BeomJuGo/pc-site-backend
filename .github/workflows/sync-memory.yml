@@ -1,9 +1,9 @@
-name: Monthly Memory Sync
+name: Daily Memory Sync
 
 on:
   schedule:
-    # 매달 월요일 KST 03:15 실행 → UTC 18:15 (일요일)
-    - cron: "15 18 1 * *"
+    # 매일 한국시간 오전 3시 15분 실행 → UTC 18:15 (전날)
+    - cron: "15 18 * * *"
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
       API_PATH: /api/sync-memory
-      PAGES: "2"
+      PAGES: "8"
       LIMIT: "60"
 
     steps:
@@ -37,7 +37,7 @@ jobs:
               -X POST "$BACKEND_URL$API_PATH" \
               -H "Content-Type: application/json" \
               -H "$AUTH_HEADER" \
-              -d "{\"pages\": ${PAGES}, \"limit\": ${LIMIT}}") || true
+              -d "{\"pages\": ${PAGES}, \"limit\": ${LIMIT}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"
             cat /tmp/resp.txt || true
