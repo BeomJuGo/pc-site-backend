@@ -2,8 +2,8 @@ name: Daily GPU Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 3시 5분 실행 → UTC 18:05 (전날)
-    - cron: "5 18 * * *"
+    # 매일 한국시간 오전 3시 20분 실행 → UTC 18:20 (전날)
+    - cron: "20 18 * * *"
   workflow_dispatch:  # 수동 실행 버튼도 활성화
 
 jobs:
