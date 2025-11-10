@@ -2,8 +2,8 @@ name: Daily Motherboard Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 3시 10분 실행 → UTC 18:10 (전날)
-    - cron: "10 18 * * *"
+    # 매일 한국시간 오전 3시 40분 실행 → UTC 18:40 (전날)
+    - cron: "40 18 * * *"
   workflow_dispatch: # 수동 실행 버튼
 
 jobs:

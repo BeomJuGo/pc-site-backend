@@ -14,6 +14,32 @@ const DANAWA_CPU_URL = "https://prod.danawa.com/list/?cate=112747";
 const CPUBENCHMARK_BASE_URL = "https://www.cpubenchmark.net/multithread"; // 🆕 수정
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const NAV_TIMEOUT = Number(process.env.PUPPETEER_NAV_TIMEOUT || 150000);
+
+async function navigateWithFallback(page, url) {
+  const strategies = [
+    { waitUntil: "networkidle0", timeout: NAV_TIMEOUT },
+    { waitUntil: "networkidle2", timeout: NAV_TIMEOUT },
+    { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT },
+    { waitUntil: "load", timeout: NAV_TIMEOUT },
+  ];
+
+  let lastError;
+  for (const option of strategies) {
+    try {
+      await page.goto(url, option);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.log(
+        `⚠️ waitUntil=${option.waitUntil} 로딩 실패, 다음 전략으로 재시도...`
+      );
+      await sleep(2000);
+    }
+  }
+
+  throw lastError || new Error("페이지 이동 실패");
+}
 
 /* ==================== CPU 이름 정규화 (매칭용) ==================== */
 function normalizeCpuName(name) {
@@ -325,6 +351,8 @@ async function crawlCpuBenchmark(maxPages = 5) {
       try {
         // 각 페이지마다 새 페이지 객체 생성 (세션 문제 방지)
         page = await browser.newPage();
+        page.setDefaultNavigationTimeout(NAV_TIMEOUT);
+        page.setDefaultTimeout(NAV_TIMEOUT);
 
         // 브라우저가 완전히 준비될 때까지 대기
         await page.setUserAgent(
@@ -351,27 +379,17 @@ async function crawlCpuBenchmark(maxPages = 5) {
 
         // 페이지 이동 시도
         try {
-          await page.goto(url, {
-            waitUntil: "networkidle0", // 모든 네트워크 요청 완료까지 대기
-            timeout: 90000,
-          }).catch(async () => {
-            // networkidle0 실패 시 load로 재시도
-            console.log(`⚠️ networkidle0 타임아웃, load로 재시도...`);
-            await page.goto(url, {
-              waitUntil: "load",
-              timeout: 60000,
-            });
-          });
+          await navigateWithFallback(page, url);
 
           // 페이지가 완전히 로드될 때까지 추가 대기
           try {
             await page.waitForFunction(() => {
               return document.readyState === 'complete';
-            }, { timeout: 30000 });
+            }, { timeout: NAV_TIMEOUT / 3 });
 
             // 특정 요소가 나타날 때까지 대기 (표 또는 리스트)
             await Promise.race([
-              page.waitForSelector('table#cputable, table.chart, table, ul li a[href*="cpu.php"]', { timeout: 15000 }).catch(() => null),
+              page.waitForSelector('table#cputable, table.chart, table, ul li a[href*="cpu.php"]', { timeout: NAV_TIMEOUT / 4 }).catch(() => null),
               sleep(5000) // 최소 5초 대기
             ]);
           } catch (waitError) {
@@ -540,8 +558,8 @@ async function crawlDanawaCpus(maxPages = 10) {
     const page = await browser.newPage();
 
     // 로케일/타임존 및 탐지 우회
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
+    await page.setDefaultTimeout(NAV_TIMEOUT);
+    await page.setDefaultNavigationTimeout(NAV_TIMEOUT);
     await page.emulateTimezone('Asia/Seoul');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
     await page.evaluateOnNewDocument(() => {
@@ -580,7 +598,7 @@ async function crawlDanawaCpus(maxPages = 10) {
             try {
               await page.goto(DANAWA_CPU_URL, {
                 waitUntil: 'domcontentloaded',
-                timeout: 60000,
+                timeout: NAV_TIMEOUT,
               });
               loaded = true;
               console.log('✅ 페이지 로딩 완료');
@@ -594,7 +612,7 @@ async function crawlDanawaCpus(maxPages = 10) {
 
           // 제품 리스트 로딩 대기
           await page.waitForSelector('.main_prodlist .prod_item', {
-            timeout: 30000,
+            timeout: NAV_TIMEOUT / 3,
           }).catch(() => {
             console.log('⚠️ 제품 리스트 로딩 지연');
           });
@@ -630,7 +648,7 @@ async function crawlDanawaCpus(maxPages = 10) {
                 await page.waitForFunction(() => {
                   const items = document.querySelectorAll('.main_prodlist .prod_item');
                   return items.length > 0;
-                }, { timeout: 30000 });
+                }, { timeout: NAV_TIMEOUT / 3 });
 
                 console.log(`✅ 페이지 ${pageNum} AJAX 로딩 완료`);
 
@@ -669,7 +687,7 @@ async function crawlDanawaCpus(maxPages = 10) {
                 await page.waitForFunction(() => {
                   const items = document.querySelectorAll('.main_prodlist .prod_item');
                   return items.length > 0;
-                }, { timeout: 30000 });
+                }, { timeout: NAV_TIMEOUT / 3 });
 
                 console.log(`✅ 페이지 ${pageNum} 함수 호출 로딩 완료`);
 

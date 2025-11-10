@@ -2,8 +2,8 @@ name: Daily Cooler Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 3시 30분 실행 → UTC 18:30 (전날)
-    - cron: "30 18 * * *"
+    # 매일 한국시간 오전 5시 00분 실행 → UTC 20:00 (전날)
+    - cron: "0 20 * * *"
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:

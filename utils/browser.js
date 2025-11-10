@@ -3,6 +3,10 @@ import chromium from "@sparticuz/chromium";
 import puppeteer from "puppeteer-core";
 import { existsSync } from "fs";
 
+const DEFAULT_PROTOCOL_TIMEOUT = Number(
+  process.env.PUPPETEER_PROTOCOL_TIMEOUT || 240000
+);
+
 /**
  * 환경에 맞는 Puppeteer 브라우저 설정 반환
  * 로컬 개발: Windows Chrome 경로 사용
@@ -11,7 +15,7 @@ import { existsSync } from "fs";
 export async function getBrowserConfig() {
   const isRender = process.env.RENDER === 'true' || process.env.RENDER_SERVICE_NAME || process.env.RENDER_EXTERNAL_URL;
   const isProduction = process.env.NODE_ENV === 'production';
-  
+
   // Render 환경이면 항상 chromium 사용
   if (isRender) {
     chromium.setGraphicsMode = false;
@@ -21,9 +25,10 @@ export async function getBrowserConfig() {
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
       ignoreHTTPSErrors: true,
+      protocolTimeout: DEFAULT_PROTOCOL_TIMEOUT,
     };
   }
-  
+
   // 로컬 개발 환경: Windows Chrome 경로 확인
   const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
   if (existsSync(chromePath)) {
@@ -44,9 +49,10 @@ export async function getBrowserConfig() {
       defaultViewport: { width: 1280, height: 720 },
       headless: true,
       ignoreHTTPSErrors: true,
+      protocolTimeout: DEFAULT_PROTOCOL_TIMEOUT,
     };
   }
-  
+
   // Chrome이 없으면 chromium 사용 (프로덕션 환경 또는 Chrome이 없는 경우)
   chromium.setGraphicsMode = false;
   return {
@@ -55,6 +61,7 @@ export async function getBrowserConfig() {
     executablePath: await chromium.executablePath(),
     headless: chromium.headless,
     ignoreHTTPSErrors: true,
+    protocolTimeout: DEFAULT_PROTOCOL_TIMEOUT,
   };
 }
 

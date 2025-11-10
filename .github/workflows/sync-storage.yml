@@ -2,8 +2,8 @@ name: Daily Storage Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 3시 35분 실행 → UTC 18:35 (전날)
-    - cron: "35 18 * * *"
+    # 매일 한국시간 오전 5시 20분 실행 → UTC 20:20 (전날)
+    - cron: "20 20 * * *"
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:

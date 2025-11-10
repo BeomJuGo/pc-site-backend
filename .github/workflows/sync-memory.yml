@@ -2,8 +2,8 @@ name: Daily Memory Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 3시 15분 실행 → UTC 18:15 (전날)
-    - cron: "15 18 * * *"
+    # 매일 한국시간 오전 4시 00분 실행 → UTC 19:00 (전날)
+    - cron: "0 19 * * *"
   workflow_dispatch:  # 수동 실행 버튼
 
 jobs:

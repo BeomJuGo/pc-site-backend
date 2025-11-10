@@ -12,6 +12,7 @@ const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const DANAWA_GPU_URL = "https://prod.danawa.com/list/?cate=112753";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const NAV_TIMEOUT = Number(process.env.PUPPETEER_NAV_TIMEOUT || 150000);
 // 3DMark 점수 부착 임계값(이 미만이면 benchmarkScore는 생략, 품목은 저장)
 const MIN_3DMARK_SCORE_TO_ATTACH = 6000;
 
@@ -138,8 +139,8 @@ async function crawlDanawaGpus(maxPages = 10) {
 
     const page = await browser.newPage();
 
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
+    await page.setDefaultTimeout(NAV_TIMEOUT);
+    await page.setDefaultNavigationTimeout(NAV_TIMEOUT);
     await page.emulateTimezone('Asia/Seoul');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
     await page.evaluateOnNewDocument(() => {
@@ -174,7 +175,7 @@ async function crawlDanawaGpus(maxPages = 10) {
           let loaded = false;
           while (retries > 0 && !loaded) {
             try {
-              await page.goto(DANAWA_GPU_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+              await page.goto(DANAWA_GPU_URL, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
               loaded = true;
               console.log('✅ 페이지 로딩 완료');
             } catch (e) {
@@ -185,7 +186,7 @@ async function crawlDanawaGpus(maxPages = 10) {
             }
           }
 
-          await page.waitForSelector('.main_prodlist .prod_item', { timeout: 30000 }).catch(() => {
+          await page.waitForSelector('.main_prodlist .prod_item', { timeout: NAV_TIMEOUT / 3 }).catch(() => {
             console.log('⚠️ 제품 리스트 로딩 지연');
           });
 
@@ -231,7 +232,7 @@ async function crawlDanawaGpus(maxPages = 10) {
             if (pageExists) {
               await page.click(pageSelector);
               await page.waitForTimeout(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: 30000 });
+              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: NAV_TIMEOUT / 3 });
             } else {
               // movePage/goPage/changePage 호출
               await page.evaluate((p) => {
@@ -241,7 +242,7 @@ async function crawlDanawaGpus(maxPages = 10) {
                 else throw new Error('페이지 이동 함수를 찾을 수 없음');
               }, pageNum);
               await page.waitForTimeout(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: 30000 });
+              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: NAV_TIMEOUT / 3 });
             }
           } catch (e) {
             console.log(`⚠️ 페이지 ${pageNum} 이동 실패: ${e.message}`);
