@@ -14,14 +14,14 @@ const DANAWA_CPU_URL = "https://prod.danawa.com/list/?cate=112747";
 const CPUBENCHMARK_BASE_URL = "https://www.cpubenchmark.net/multithread"; // 🆕 수정
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const NAV_TIMEOUT = Number(process.env.PUPPETEER_NAV_TIMEOUT || 150000);
+const NAV_TIMEOUT = Number(process.env.PUPPETEER_NAV_TIMEOUT || 45000); // 45초로 단축
 
 async function navigateWithFallback(page, url) {
+  // 더 빠른 전략부터 시도 (domcontentloaded 우선)
   const strategies = [
-    { waitUntil: "networkidle0", timeout: NAV_TIMEOUT },
-    { waitUntil: "networkidle2", timeout: NAV_TIMEOUT },
     { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT },
     { waitUntil: "load", timeout: NAV_TIMEOUT },
+    { waitUntil: "networkidle2", timeout: NAV_TIMEOUT },
   ];
 
   let lastError;
@@ -34,7 +34,7 @@ async function navigateWithFallback(page, url) {
       console.log(
         `⚠️ waitUntil=${option.waitUntil} 로딩 실패, 다음 전략으로 재시도...`
       );
-      await sleep(2000);
+      await sleep(1000); // 재시도 간격 단축
     }
   }
 
@@ -340,8 +340,8 @@ async function crawlCpuBenchmark(maxPages = 5) {
   try {
     browser = await launchBrowser();
 
-    // 브라우저가 완전히 초기화될 때까지 대기
-    await sleep(2000);
+    // 브라우저 초기화 대기 시간 단축
+    await sleep(1000);
 
     // ✅ page1 ~ page5 크롤링 (각 페이지마다 새 페이지 객체 생성)
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
@@ -354,9 +354,33 @@ async function crawlCpuBenchmark(maxPages = 5) {
         page.setDefaultNavigationTimeout(NAV_TIMEOUT);
         page.setDefaultTimeout(NAV_TIMEOUT);
 
+        // 리소스 차단 설정 (속도 향상)
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+          const resourceType = req.resourceType();
+          const url = req.url();
+
+          // 이미지, CSS, 폰트, 미디어 차단
+          if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+            return req.abort();
+          }
+
+          // 광고/분석 도메인 차단
+          const blockHosts = [
+            'google-analytics.com', 'googletagmanager.com', 'doubleclick.net',
+            'adnxs.com', 'googlesyndication.com', 'scorecardresearch.com',
+            'facebook.net', 'analytics.google.com'
+          ];
+          if (blockHosts.some(host => url.includes(host))) {
+            return req.abort();
+          }
+
+          return req.continue();
+        });
+
         // 브라우저가 완전히 준비될 때까지 대기
         await page.setUserAgent(
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         );
 
         // 페이지가 준비될 때까지 대기
@@ -364,8 +388,6 @@ async function crawlCpuBenchmark(maxPages = 5) {
           // 웹드라이버 탐지 방지
           Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
         });
-
-        await sleep(2000);
 
         // cpubenchmark.net URL: 모든 페이지를 multithread로 시도 (페이지 1도 포함)
         // 페이지 1은 리스트 페이지와 multithread 둘 다 시도
@@ -381,23 +403,15 @@ async function crawlCpuBenchmark(maxPages = 5) {
         try {
           await navigateWithFallback(page, url);
 
-          // 페이지가 완전히 로드될 때까지 추가 대기
+          // 최소한의 대기만 수행 (요소가 나타날 때까지 최대 10초 대기)
           try {
-            await page.waitForFunction(() => {
-              return document.readyState === 'complete';
-            }, { timeout: NAV_TIMEOUT / 3 });
-
-            // 특정 요소가 나타날 때까지 대기 (표 또는 리스트)
             await Promise.race([
-              page.waitForSelector('table#cputable, table.chart, table, ul li a[href*="cpu.php"]', { timeout: NAV_TIMEOUT / 4 }).catch(() => null),
-              sleep(5000) // 최소 5초 대기
+              page.waitForSelector('table#cputable, table.chart, table, ul li a[href*="cpu.php"]', { timeout: 10000 }).catch(() => null),
+              sleep(2000) // 최소 2초 대기
             ]);
           } catch (waitError) {
             console.log('⚠️ 요소 로딩 대기 실패, 계속 진행...');
           }
-
-          // 추가 안정화 대기 시간
-          await sleep(3000);
         } catch (gotoError) {
           console.error(`❌ 페이지 ${pageNum} 이동 실패:`, gotoError.message);
 
@@ -511,7 +525,7 @@ async function crawlCpuBenchmark(maxPages = 5) {
           }
         }
 
-        await sleep(2000); // 서버 부하 방지
+        await sleep(1000); // 서버 부하 방지 (대기 시간 단축)
 
       } catch (e) {
         console.error(`❌ 페이지 ${pageNum} 크롤링 실패:`, e.message);
