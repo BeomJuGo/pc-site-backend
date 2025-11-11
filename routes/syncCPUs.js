@@ -149,10 +149,10 @@ function matchCpuNames(danawaName, benchmarkName) {
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
     console.log("⚠️ OPENAI_API_KEY 미설정");
-    return { review: "", specSummary: "" };
+    return { review: "", info: "" };
   }
 
-  const prompt = `CPU "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<코어/스레드/클럭/캐시/TDP만 포함, 소켓 정보는 제외>"}`;
+  const prompt = `CPU "${name}"(스펙: ${spec})의 한줄평과 상세 스펙 설명을 JSON으로 작성: {"review":"<100자 이내>", "info":"<코어/스레드/클럭/캐시/TDP/소켓/지원 기능 등을 한 문단으로 요약>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -180,13 +180,13 @@ async function fetchAiOneLiner({ name, spec }) {
 
       return {
         review: parsed.review?.trim() || "",
-        specSummary: parsed.specSummary?.trim() || "",
+        info: parsed.info?.trim() || "",
       };
     } catch (e) {
       await sleep(800 * Math.pow(2, i));
     }
   }
-  return { review: "", specSummary: "" };
+  return { review: "", info: "" };
 }
 
 /* ==================== CPU 소켓 추출 (Intel 세대 기반 추론 포함) ==================== */
@@ -294,33 +294,6 @@ function extractCpuInfo(name = "", spec = "") {
   return parts.join(", ");
 }
 
-/* ==================== CPU 스펙 요약 (소켓 제외) ==================== */
-function extractCpuSpecSummary(name = "", spec = "") {
-  const combined = `${name} ${spec}`;
-  const parts = [];
-
-  const coreMatch = combined.match(/(\d+)코어|(\d+)\s*CORE/i);
-  const threadMatch = combined.match(/(\d+)스레드|(\d+)\s*THREAD/i);
-
-  if (coreMatch) parts.push(`${coreMatch[1] || coreMatch[2]}코어`);
-  if (threadMatch) parts.push(`${threadMatch[1] || threadMatch[2]}스레드`);
-
-  const baseClockMatch = combined.match(/베이스[:\s]*(\d+\.?\d*)\s*GHz/i);
-  const boostClockMatch = combined.match(/(?:부스트|최대)[:\s]*(\d+\.?\d*)\s*GHz/i);
-
-  if (baseClockMatch) parts.push(`베이스: ${baseClockMatch[1]}GHz`);
-  if (boostClockMatch) parts.push(`부스트: ${boostClockMatch[1]}GHz`);
-
-  const cacheMatch = combined.match(/(\d+)\s*MB\s*(?:캐시|CACHE)/i);
-  if (cacheMatch) parts.push(`캐시: ${cacheMatch[1]}MB`);
-
-  const tdpMatch = combined.match(/TDP[:\s]*(\d+)W/i);
-  if (tdpMatch) parts.push(`TDP: ${tdpMatch[1]}W`);
-
-  // 소켓 정보는 제외 (중복 방지)
-
-  return parts.join(", ");
-}
 
 /* ==================== 제조사 추출 ==================== */
 function extractManufacturer(name) {
@@ -1152,7 +1125,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 
   for (const cpu of cpus) {
     const old = byName.get(cpu.name);
-    const info = extractCpuInfo(cpu.name, cpu.spec);
+    const baseInfo = extractCpuInfo(cpu.name, cpu.spec);
 
     const benchScore = findBenchmarkScore(cpu.name, benchmarks);
     if (benchScore > 0) withScore++;
@@ -1163,39 +1136,38 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       continue;
     }
 
-    let review = "";
-    let specSummary = "";
+    let review = old?.review?.trim() ? old.review : "";
+    let info = old?.info?.trim() ? old.info : baseInfo;
 
     if (ai) {
-      // review나 specSummary가 비어있거나 force 모드면 항상 채우기
       const needsReview = !old?.review || old.review.trim() === "";
-      const needsSpecSummary = !old?.specSummary || old.specSummary.trim() === "";
+      const oldInfoTrimmed = old?.info?.trim() || "";
+      const needsInfo =
+        force ||
+        oldInfoTrimmed === "" ||
+        oldInfoTrimmed === baseInfo.trim();
 
-      if (needsReview || needsSpecSummary || force) {
-        console.log(`🤖 AI 한줄평 생성 중: ${cpu.name.slice(0, 40)}...`);
+      if (needsReview || needsInfo) {
+        console.log(`🤖 AI 한줄평/상세 스펙 생성 중: ${cpu.name.slice(0, 40)}...`);
         const aiRes = await fetchAiOneLiner({
           name: cpu.name,
           spec: cpu.spec,
         });
-        review = aiRes.review || old?.review || "";
-        specSummary = aiRes.specSummary || old?.specSummary || "";
-
         if (aiRes.review) {
-          console.log(`   ✅ AI 성공: "${aiRes.review.slice(0, 50)}..."`);
+          review = aiRes.review;
+          console.log(`   ✅ AI 한줄평: "${aiRes.review.slice(0, 50)}..."`);
         }
-      } else {
-        review = old.review || "";
-        specSummary = old.specSummary || "";
+        if (aiRes.info) {
+          info = aiRes.info;
+        }
       }
     } else {
-      // ai가 false여도 기존 데이터가 있으면 유지
-      review = old?.review || "";
-      specSummary = old?.specSummary || "";
+      review = old?.review || review;
+      info = old?.info || info;
     }
 
-    // Fallback 생성: AI 미사용/실패 또는 비어있는 경우 기본값 채움
-    if (!specSummary || specSummary.trim() === "") {
-      specSummary = extractCpuSpecSummary(cpu.name, cpu.spec); // 소켓 제외한 스펙 요약
+    if (!info || info.trim() === "") {
+      info = baseInfo;
     }
 
     if (!review || review.trim() === "") {
@@ -1230,14 +1202,12 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       update.benchScore = benchScore;
     }
 
-    // review와 specSummary는 항상 포함 (ai가 false여도 기존 값 유지)
     if (review) update.review = review;
-    if (specSummary) update.specSummary = specSummary;
 
     if (old) {
       // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
       const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update };
+      const ops = { $set: update, $unset: { specSummary: "" } };
 
       if (cpu.price > 0 && cpu.price !== old.price) {
         const priceHistory = old.priceHistory || [];
@@ -1271,6 +1241,12 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 
     if (ai) await sleep(200);
   }
+
+  // 모든 CPU 문서에서 legacy specSummary 필드 제거
+  await col.updateMany(
+    { category: "cpu", specSummary: { $exists: true } },
+    { $unset: { specSummary: "" } }
+  );
 
   const currentNames = new Set(cpus.map((c) => c.name));
   const toDelete = existing
