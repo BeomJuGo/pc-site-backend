@@ -601,7 +601,7 @@ router.post("/", async (req, res) => {
     // 용도별 가중치 및 예산 배분
     const weights = {
       "사무용": { cpu: 0.4, gpu: 0.2, cpuBudgetRatio: 0.25, gpuBudgetRatio: 0.15 },
-      "게임용": { cpu: 0.3, gpu: 0.6, cpuBudgetRatio: 0.20, gpuBudgetRatio: 0.40 },
+      "게임용": { cpu: 0.45, gpu: 0.6, cpuBudgetRatio: 0.30, gpuBudgetRatio: 0.40 },
       "작업용": { cpu: 0.5, gpu: 0.4, cpuBudgetRatio: 0.30, gpuBudgetRatio: 0.25 },
       "가성비": { cpu: 0.4, gpu: 0.5, cpuBudgetRatio: 0.25, gpuBudgetRatio: 0.30 },
     };
