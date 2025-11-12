@@ -808,11 +808,60 @@ async function crawlDanawaCpus(maxPages = 10) {
                 }
               }
 
+              // 상세 스펙 정보 추출 (여러 소스에서 수집)
+              let detailedSpec = '';
+
+              // 1. spec_list에서 기본 스펙
               const specEl = item.querySelector('.spec_list');
-              const spec = specEl?.textContent
+              const basicSpec = specEl?.textContent
                 ?.trim()
                 .replace(/\s+/g, ' ')
-                .replace(/더보기/g, '');
+                .replace(/더보기/g, '') || '';
+
+              // 2. prod_spec_set에서 상세 스펙 (다나와 상세 정보)
+              const specSetEl = item.querySelector('.prod_spec_set');
+              const specSetText = specSetEl?.textContent
+                ?.trim()
+                .replace(/\s+/g, ' ')
+                .replace(/더보기/g, '') || '';
+
+              // 3. prod_info에서 추가 정보
+              const infoEl = item.querySelector('.prod_info');
+              const infoText = infoEl?.textContent
+                ?.trim()
+                .replace(/\s+/g, ' ') || '';
+
+              // 4. spec_list 내부의 모든 텍스트 노드 수집
+              let allSpecText = '';
+              if (specEl) {
+                // spec_list 내부의 모든 텍스트 수집
+                const specItems = specEl.querySelectorAll('li, dd, dt, span, div');
+                const specParts = [];
+                specItems.forEach(el => {
+                  const text = el.textContent?.trim();
+                  if (text && text.length > 0 && !text.match(/^(더보기|접기)$/)) {
+                    specParts.push(text);
+                  }
+                });
+                if (specParts.length > 0) {
+                  allSpecText = specParts.join('/');
+                }
+              }
+
+              // 5. 상세 정보 조합 (우선순위: allSpecText > specSetText > basicSpec > infoText)
+              if (allSpecText) {
+                detailedSpec = allSpecText;
+              } else if (specSetText) {
+                detailedSpec = specSetText;
+              } else if (basicSpec) {
+                detailedSpec = basicSpec;
+              } else if (infoText) {
+                detailedSpec = infoText;
+              }
+
+              // 상세 페이지 링크 추출 (나중에 상세 페이지 크롤링용)
+              const detailLink = nameEl?.getAttribute('href') || '';
+              const prodCode = detailLink.match(/code=(\d+)/)?.[1] || '';
 
               // 가격 정보 추출
               const priceEl = item.querySelector('.price_sect a strong');
@@ -822,7 +871,14 @@ async function crawlDanawaCpus(maxPages = 10) {
                 price = parseInt(priceText, 10) || 0;
               }
 
-              results.push({ name, image, spec: spec || '', price });
+              results.push({
+                name,
+                image,
+                spec: detailedSpec || basicSpec || '',
+                price,
+                prodCode,
+                detailLink: detailLink ? (detailLink.startsWith('http') ? detailLink : `https://prod.danawa.com${detailLink}`) : ''
+              });
             } catch (e) {
               // 개별 아이템 파싱 실패는 무시
             }
@@ -1127,6 +1183,10 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     const old = byName.get(cpu.name);
     const baseInfo = extractCpuInfo(cpu.name, cpu.spec);
 
+    // 크롤링한 상세 스펙 정보 우선 사용 (다나와에서 가져온 상세 정보)
+    const crawledSpec = cpu.spec?.trim() || '';
+    const hasDetailedSpec = crawledSpec.length > baseInfo.length && crawledSpec.length > 20;
+
     const benchScore = findBenchmarkScore(cpu.name, benchmarks);
     if (benchScore > 0) withScore++;
 
@@ -1137,33 +1197,47 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     }
 
     let review = old?.review?.trim() ? old.review : "";
-    let info = old?.info?.trim() ? old.info : baseInfo;
+    // info 우선순위: 크롤링한 상세 스펙 > 기존 info > baseInfo
+    let info = hasDetailedSpec
+      ? crawledSpec
+      : (old?.info?.trim() || baseInfo);
 
     if (ai) {
       const needsReview = !old?.review || old.review.trim() === "";
       const oldInfoTrimmed = old?.info?.trim() || "";
+      // 크롤링한 상세 정보가 있고 기존 info와 다르면 업데이트 필요
       const needsInfo =
         force ||
         oldInfoTrimmed === "" ||
-        oldInfoTrimmed === baseInfo.trim();
+        (hasDetailedSpec && oldInfoTrimmed !== crawledSpec) ||
+        (!hasDetailedSpec && oldInfoTrimmed === baseInfo.trim());
 
       if (needsReview || needsInfo) {
         console.log(`🤖 AI 한줄평/상세 스펙 생성 중: ${cpu.name.slice(0, 40)}...`);
         const aiRes = await fetchAiOneLiner({
           name: cpu.name,
-          spec: cpu.spec,
+          spec: hasDetailedSpec ? crawledSpec : cpu.spec,
         });
         if (aiRes.review) {
           review = aiRes.review;
           console.log(`   ✅ AI 한줄평: "${aiRes.review.slice(0, 50)}..."`);
         }
-        if (aiRes.info) {
+        // AI가 생성한 info가 있고, 크롤링한 정보보다 더 상세하면 사용
+        if (aiRes.info && aiRes.info.trim().length > info.length) {
           info = aiRes.info;
+        } else if (hasDetailedSpec) {
+          // 크롤링한 상세 정보가 있으면 그것을 우선 사용
+          info = crawledSpec;
         }
       }
     } else {
       review = old?.review || review;
-      info = old?.info || info;
+      // AI를 사용하지 않아도 크롤링한 상세 정보는 사용
+      if (hasDetailedSpec) {
+        info = crawledSpec;
+      } else {
+        info = old?.info || info;
+      }
     }
 
     if (!info || info.trim() === "") {
