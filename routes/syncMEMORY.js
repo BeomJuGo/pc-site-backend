@@ -477,8 +477,16 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
 
   let inserted = 0;
   let updated = 0;
+  let skipped = 0;
 
   for (const memory of memories) {
+    // 가격이 0원인 품목은 저장하지 않음
+    if (!memory.price || memory.price === 0) {
+      skipped++;
+      console.log(`⏭️  건너뜀 (가격 0원): ${memory.name}`);
+      continue;
+    }
+
     const old = byName.get(memory.name);
     const info = extractMemoryInfo(memory.spec);
 
@@ -559,7 +567,7 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
   }
 
   console.log(
-    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
+    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개 (가격 0원)`
   );
   console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
