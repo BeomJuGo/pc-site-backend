@@ -1178,8 +1178,16 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
   let inserted = 0;
   let updated = 0;
   let withScore = 0;
+  let skipped = 0;
 
   for (const cpu of cpus) {
+    // 가격이 0원인 품목은 저장하지 않음
+    if (!cpu.price || cpu.price === 0) {
+      skipped++;
+      console.log(`⏭️  건너뜀 (가격 0원): ${cpu.name}`);
+      continue;
+    }
+
     const old = byName.get(cpu.name);
     const baseInfo = extractCpuInfo(cpu.name, cpu.spec);
 
@@ -1333,7 +1341,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
   }
 
   console.log(
-    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개`
+    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개 (가격 0원)`
   );
   console.log(`📊 벤치마크 점수: ${withScore}/${cpus.length}개 매칭 완료`);
   console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
