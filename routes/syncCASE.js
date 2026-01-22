@@ -332,9 +332,17 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
   let updated = 0;
   let aiSuccess = 0;
   let aiFail = 0;
+  let skipped = 0;
 
   for (const caseItem of cases) {
     try {
+      // 가격이 0원인 품목은 저장하지 않음
+      if (!caseItem.price || caseItem.price === 0) {
+        skipped++;
+        console.log(`⏭️  건너뜀 (가격 0원): ${caseItem.name}`);
+        continue;
+      }
+
       const manufacturer = caseItem.name.split(" ")[0] || "Unknown";
       const specs = parseCaseSpecs(caseItem.name, caseItem.spec);
 
@@ -421,7 +429,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
     }
   }
 
-  console.log(`\n📊 동기화 완료: 신규 ${inserted}개, 업데이트 ${updated}개`);
+  console.log(`\n📊 동기화 완료: 신규 ${inserted}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개 (가격 0원)`);
   console.log(`🤖 AI 요약: 성공 ${aiSuccess}개, 실패 ${aiFail}개`);
   console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
 }
