@@ -542,8 +542,15 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
   let skipped = 0;
 
   for (const storage of storages) {
-    // 가격 필터링: 1만원 이하 또는 100만원 이상인 품목은 저장하지 않음
+    // 가격이 0원인 품목은 저장하지 않음
     const price = storage.price || 0;
+    if (price === 0) {
+      skipped++;
+      console.log(`⏭️  건너뜀 (가격 0원): ${storage.name}`);
+      continue;
+    }
+    
+    // 가격 필터링: 1만원 이하 또는 100만원 이상인 품목은 저장하지 않음
     if (price > 0 && (price <= 10000 || price >= 1000000)) {
       skipped++;
       console.log(`⏭️  건너뜀 (가격 범위 초과): ${storage.name} (${price.toLocaleString()}원)`);
