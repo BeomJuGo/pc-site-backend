@@ -482,6 +482,12 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
   }
 
   for (const p of danawaProducts) {
+    // 가격이 0원인 품목은 저장하지 않음
+    if (!p.price || p.price === 0) {
+      console.log(`⏭️  건너뜀 (가격 0원): ${p.name}`);
+      continue;
+    }
+
     const old = existing.find((e) => e.name === p.name);
     const key = normalizeGpuKey(p.name);
     const score = key ? (scoreByKey.get(key) || 0) : 0;
