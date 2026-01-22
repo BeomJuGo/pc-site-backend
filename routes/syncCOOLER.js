@@ -92,9 +92,7 @@ function extractCoolerInfo(name = "", spec = "") {
 
   // TDP 지원
   const tdpMatch = combined.match(/TDP[:\s]*(\d{2,3})W?/i);
-  if (tdpMatch) {
-    parts.push(`TDP: ${tdpMatch[1]}W`);
-  }
+  if (tdpMatch) parts.push(`TDP: ${tdpMatch[1]}W`);
 
   // 높이
   const heightMatch = combined.match(/높이[:\s]*(\d{2,3})mm?|(\d{2,3})\s*mm/i);
@@ -488,6 +486,13 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
   let skipped = 0;
 
   for (const cooler of coolers) {
+    // 가격이 0원인 품목은 저장하지 않음
+    if (!cooler.price || cooler.price === 0) {
+      skipped++;
+      console.log(`⏭️  건너뜀 (가격 0원): ${cooler.name}`);
+      continue;
+    }
+
     const old = byName.get(cooler.name);
     const specs = parseCoolerSpecs(cooler.name, cooler.spec);
 
@@ -579,11 +584,11 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
   }
 
   console.log(
-    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개 (소켓 정보 없음)`
+    `\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개 (가격 0원 또는 소켓 정보 없음)`
   );
   console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
   if (skipped > 0) {
-    console.log(`⚠️  소켓 정보가 없는 ${skipped}개 항목은 저장하지 않았습니다 (케이스 쿨러, 서멀구리스, 방열판 등)`);
+    console.log(`⚠️  가격이 0원이거나 소켓 정보가 없는 ${skipped}개 항목은 저장하지 않았습니다`);
   }
 }
 
