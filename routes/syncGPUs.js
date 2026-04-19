@@ -3,7 +3,7 @@ import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { getDB } from "../db.js";
-import { launchBrowser } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
 
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -116,34 +116,8 @@ async function crawlDanawaGpus(maxPages = 10) {
 
   try {
     browser = await launchBrowser();
-
     const page = await browser.newPage();
-
-    await page.setDefaultTimeout(NAV_TIMEOUT);
-    await page.setDefaultNavigationTimeout(NAV_TIMEOUT);
-    await page.emulateTimezone('Asia/Seoul');
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
-    const blockHosts = [
-      'google-analytics.com', 'analytics.google.com', 'googletagmanager.com', 'google.com/ccm',
-      'ad.danawa.com', 'dsas.danawa.com', 'service-api.flarelane.com', 'doubleclick.net',
-      'adnxs.com', 'googlesyndication.com', 'scorecardresearch.com', 'facebook.net'
-    ];
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const url = req.url();
-      const resourceType = req.resourceType();
-      if (blockHosts.some(h => url.includes(h))) return req.abort();
-      if (resourceType === 'media' || resourceType === 'font') return req.abort();
-      return req.continue();
-    });
-
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    await setupPage(page, NAV_TIMEOUT);
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       console.log(`\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 처리 중...`);
@@ -195,22 +169,7 @@ async function crawlDanawaGpus(maxPages = 10) {
           });
         } else {
           try {
-            const pageSelector = `a.num[page="${pageNum}"]`;
-            const pageExists = await page.evaluate((selector) => !!document.querySelector(selector), pageSelector);
-            if (pageExists) {
-              await page.click(pageSelector);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: NAV_TIMEOUT / 3 });
-            } else {
-              await page.evaluate((p) => {
-                if (typeof movePage === 'function') movePage(p);
-                else if (typeof goPage === 'function') goPage(p);
-                else if (typeof changePage === 'function') changePage(p);
-                else throw new Error('페이지 이동 함수를 찾을 수 없음');
-              }, pageNum);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: NAV_TIMEOUT / 3 });
-            }
+            await navigateToDanawaPage(page, pageNum, '.main_prodlist .prod_item');
           } catch (e) {
             console.log(`\u26A0\uFE0F 페이지 ${pageNum} 이동 실패: ${e.message}`);
             continue;

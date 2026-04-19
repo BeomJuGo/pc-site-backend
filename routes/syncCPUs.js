@@ -1,9 +1,7 @@
 // routes/syncCPUs.js
 import express from "express";
-import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
 import { getDB } from "../db.js";
-import { launchBrowser } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
 
 const router = express.Router();
 const MIN_PASSMARK_SCORE_FOR_SAVE = 10000;
@@ -280,21 +278,8 @@ async function crawlDanawaCpus(maxPages = 10) {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
-    await page.setDefaultTimeout(NAV_TIMEOUT);
-    await page.setDefaultNavigationTimeout(NAV_TIMEOUT);
-    await page.emulateTimezone('Asia/Seoul');
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
-    await page.evaluateOnNewDocument(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
-    const blockHosts = ['google-analytics.com', 'analytics.google.com', 'googletagmanager.com', 'ad.danawa.com', 'dsas.danawa.com', 'service-api.flarelane.com', 'doubleclick.net', 'adnxs.com', 'googlesyndication.com', 'scorecardresearch.com', 'facebook.net'];
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const url = req.url();
-      const resourceType = req.resourceType();
-      if (blockHosts.some(h => url.includes(h))) return req.abort();
-      if (resourceType === 'media' || resourceType === 'font') return req.abort();
-      return req.continue();
-    });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await setupPage(page, NAV_TIMEOUT);
+
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       console.log(`📄 페이지 ${pageNum}/${maxPages} 체리 중...`);
       try {
@@ -314,31 +299,9 @@ async function crawlDanawaCpus(maxPages = 10) {
           await page.waitForSelector('.main_prodlist .prod_item', { timeout: NAV_TIMEOUT / 3 }).catch(() => {});
           await sleep(3000);
         } else {
-          try {
-            const pageSelector = `a.num[page="${pageNum}"]`;
-            const pageExists = await page.evaluate((selector) => document.querySelector(selector) !== null, pageSelector);
-            if (pageExists) {
-              await page.click(pageSelector);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: NAV_TIMEOUT / 3 });
-            } else {
-              throw new Error(`페이지 ${pageNum} 버튼을 찾을 수 없음`);
-            }
-          } catch (clickError) {
-            try {
-              await page.evaluate((p) => {
-                if (typeof movePage === "function") movePage(p);
-                else if (typeof goPage === "function") goPage(p);
-                else if (typeof changePage === "function") changePage(p);
-                else throw new Error('페이지 이동 함수를 찾을 수 없음');
-              }, pageNum);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: NAV_TIMEOUT / 3 });
-            } catch (functionError) {
-              throw new Error('모든 페이지 이동 방법 실패');
-            }
-          }
+          await navigateToDanawaPage(page, pageNum, '.main_prodlist .prod_item');
         }
+
         const pageProducts = await page.evaluate(() => {
           const items = document.querySelectorAll('.main_prodlist .product_list .prod_item');
           const results = [];
@@ -413,6 +376,7 @@ async function crawlDanawaCpus(maxPages = 10) {
           });
           return results;
         });
+
         console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
         if (pageProducts.length === 0) { console.log('⚠️ 페이지에서 제품을 찾지 못함 - 크롤링 중단'); break; }
         products.push(...pageProducts);
