@@ -15,13 +15,11 @@ import syncPSURouter from "./routes/syncPSU.js";
 import syncCaseRouter from "./routes/syncCASE.js";
 import syncCoolerRouter from "./routes/syncCOOLER.js";
 import syncStorageRouter from "./routes/syncSTORAGE.js";
-import backfillImageRouter from "./routes/backfillImage.js";
-import backfillBenchmarkRouter from "./routes/backfillBenchmark.js";
 
 const app = express();
 const allowedOrigins = config.allowedOrigins;
 
-// CORS (단일 미들웨어로 통합)
+// CORS
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -46,7 +44,7 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too Many Requests", message: "잌시 후 다시 시도해주세요." },
+  message: { error: "Too Many Requests", message: "잠시 후 다시 시도해주세요." },
 });
 
 const recommendLimiter = rateLimit({
@@ -109,8 +107,6 @@ app.use("/api/admin", requireAdminKey, syncPSURouter);
 app.use("/api/admin", requireAdminKey, syncCaseRouter);
 app.use("/api/admin", requireAdminKey, syncCoolerRouter);
 app.use("/api/admin", requireAdminKey, syncStorageRouter);
-app.use("/api/admin", requireAdminKey, backfillImageRouter);
-app.use("/api/admin", requireAdminKey, backfillBenchmarkRouter);
 
 // 네이버 가격 API
 app.get("/api/naver-price", async (req, res) => {
