@@ -1,7 +1,7 @@
 // routes/syncCOOLER.js
 import express from "express";
 import { getDB } from "../db.js";
-import { launchBrowser } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
 
 const router = express.Router();
 
@@ -11,11 +11,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("\u26A0\uFE0F OPENAI_API_KEY 미설정");
+    console.log("\u26A0\uFE0F OPENAI_API_KEY \ubbf8\uc124\uc815");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `쿨러 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<타입/소켓/TDP/높이>"}`;
+  const prompt = `\ucfe8\ub7ec "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ud0c0\uc785/\uc18c\ucf13/TDP/\ub192\uc774>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -29,7 +29,7 @@ async function fetchAiOneLiner({ name, spec }) {
           model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
+            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
             { role: "user", content: prompt },
           ],
         }),
@@ -54,8 +54,8 @@ async function fetchAiOneLiner({ name, spec }) {
 
 function extractManufacturer(name) {
   const brands = [
-    "써멀라이트", "Thermalright", "딥쿨", "Deepcool", "쿨러마스터", "Cooler Master",
-    "녹투아", "Noctua", "비쿱", "Be Quiet", "커세어", "Corsair",
+    "\uc368\uba40\ub77c\uc774\ud2b8", "Thermalright", "\ub525\ucfe8", "Deepcool", "\ucfe8\ub7ec\ub9c8\uc2a4\ud130", "Cooler Master",
+    "\ub179\ud22c\uc544", "Noctua", "\ube44\ucfe0\ud504", "Be Quiet", "\ucee4\uc138\uc5b4", "Corsair",
     "NZXT", "Arctic", "Zalman", "ID-COOLING", "Enermax", "Scythe"
   ];
   for (const brand of brands) {
@@ -68,24 +68,24 @@ function extractCoolerInfo(name = "", spec = "") {
   const combined = `${name} ${spec}`;
   const parts = [];
 
-  if (/수냉|AIO|일체형\s*수냉/i.test(combined)) {
-    parts.push("수냉 쿨러");
+  if (/\uc218\ub0c9|AIO|\uc77c\uccb4\ud615\s*\uc218\ub0c9/i.test(combined)) {
+    parts.push("\uc218\ub0c9 \ucfe8\ub7ec");
     const radMatch = combined.match(/(\d{3})mm|(\d{2,3})\s*(?:mm)?/i);
     if (radMatch) {
       const size = radMatch[1] || radMatch[2];
-      if (["120","240","280","360","420"].includes(size)) parts.push(`라디에이터: ${size}mm`);
+      if (["120","240","280","360","420"].includes(size)) parts.push(`\ub77c\ub514\uc5d0\uc774\ud130: ${size}mm`);
     }
   } else {
-    parts.push("공랭 쿨러");
+    parts.push("\uacf5\ub0c9 \ucfe8\ub7ec");
   }
 
   const tdpMatch = combined.match(/TDP[:\s]*(\d{2,3})W?/i);
   if (tdpMatch) parts.push(`TDP: ${tdpMatch[1]}W`);
 
-  const heightMatch = combined.match(/높이[:\s]*(\d{2,3})mm?|(\d{2,3})\s*mm/i);
+  const heightMatch = combined.match(/\ub192\uc774[:\s]*(\d{2,3})mm?|(\d{2,3})\s*mm/i);
   if (heightMatch) {
     const height = heightMatch[1] || heightMatch[2];
-    if (parseInt(height) > 50 && parseInt(height) < 200) parts.push(`높이: ${height}mm`);
+    if (parseInt(height) > 50 && parseInt(height) < 200) parts.push(`\ub192\uc774: ${height}mm`);
   }
 
   const sockets = [];
@@ -94,7 +94,7 @@ function extractCoolerInfo(name = "", spec = "") {
   if (/LGA\s?1700/i.test(combined)) sockets.push("LGA1700");
   if (/LGA\s?1200/i.test(combined)) sockets.push("LGA1200");
   if (/LGA\s?115[0-1x]/i.test(combined)) sockets.push("LGA115x");
-  if (sockets.length > 0) parts.push(`소켓: ${sockets.join(", ")}`);
+  if (sockets.length > 0) parts.push(`\uc18c\ucf13: ${sockets.join(", ")}`);
 
   if (/ARGB|RGB/i.test(combined)) parts.push("RGB");
 
@@ -103,7 +103,7 @@ function extractCoolerInfo(name = "", spec = "") {
 
 function parseCoolerSpecs(name = "", spec = "") {
   const combined = `${name} ${spec}`;
-  const isWaterCooling = /수냉|AIO|일체형\s*수냉/i.test(combined);
+  const isWaterCooling = /\uc218\ub0c9|AIO|\uc77c\uccb4\ud615\s*\uc218\ub0c9/i.test(combined);
 
   const sockets = [];
   if (/AM5/i.test(combined)) sockets.push("AM5");
@@ -115,11 +115,11 @@ function parseCoolerSpecs(name = "", spec = "") {
   const tdpMatch = combined.match(/TDP[:\s]*(\d{2,3})W?/i);
   const tdpW = tdpMatch ? parseInt(tdpMatch[1]) : 0;
 
-  const heightMatch = combined.match(/높이[:\s]*(\d{2,3})mm?|(\d{2,3})\s*mm/i);
+  const heightMatch = combined.match(/\ub192\uc774[:\s]*(\d{2,3})mm?|(\d{2,3})\s*mm/i);
   const heightMm = heightMatch ? parseInt(heightMatch[1] || heightMatch[2]) : 0;
 
   return {
-    type: isWaterCooling ? "수냉" : "공랭",
+    type: isWaterCooling ? "\uc218\ub0c9" : "\uacf5\ub0c9",
     sockets,
     tdpW,
     heightMm,
@@ -129,7 +129,7 @@ function parseCoolerSpecs(name = "", spec = "") {
 }
 
 async function crawlDanawaCoolers(maxPages = 10) {
-  console.log(`\uD83D\uDD0D 다나와 쿨러 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 \ucfe8\ub7ec \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   let browser;
   const products = [];
@@ -137,33 +137,10 @@ async function crawlDanawaCoolers(maxPages = 10) {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
-
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
-    await page.emulateTimezone('Asia/Seoul');
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
-    const blockHosts = [
-      'google-analytics.com','analytics.google.com','googletagmanager.com','google.com/ccm',
-      'ad.danawa.com','dsas.danawa.com','service-api.flarelane.com','doubleclick.net',
-      'adnxs.com','googlesyndication.com','scorecardresearch.com','facebook.net'
-    ];
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const url = req.url();
-      const resourceType = req.resourceType();
-      if (blockHosts.some(h => url.includes(h))) return req.abort();
-      if (resourceType === 'media' || resourceType === 'font') return req.abort();
-      return req.continue();
-    });
-
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await setupPage(page, 60000);
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      console.log(`\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 처리 중...`);
+      console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
 
       try {
         if (pageNum === 1) {
@@ -181,28 +158,11 @@ async function crawlDanawaCoolers(maxPages = 10) {
           }
         } else {
           try {
-            const pageSelector = `a.num[page="${pageNum}"]`;
-            const pageExists = await page.evaluate((selector) => document.querySelector(selector) !== null, pageSelector);
-
-            if (pageExists) {
-              await page.click(pageSelector);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('ul.product_list > li.prod_item').length > 0, { timeout: 30000 });
-            } else {
-              await page.evaluate((p) => {
-                if (typeof movePage === "function") movePage(p);
-                else if (typeof goPage === "function") goPage(p);
-                else if (typeof changePage === "function") changePage(p);
-                else throw new Error('페이지 이동 함수를 찾을 수 없음');
-              }, pageNum);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('ul.product_list > li.prod_item').length > 0, { timeout: 30000 });
-            }
+            await navigateToDanawaPage(page, pageNum, 'ul.product_list > li.prod_item');
           } catch (navError) {
-            console.log(`\u274C 페이지 ${pageNum} 이동 실패: ${navError.message}`);
+            console.log(`\u274C \ud398\uc774\uc9c0 ${pageNum} \uc774\ub3d9 \uc2e4\ud328: ${navError.message}`);
             continue;
           }
-
           await sleep(2000);
         }
 
@@ -263,20 +223,20 @@ async function crawlDanawaCoolers(maxPages = 10) {
         });
 
         products.push(...items.filter((p) => p.name));
-        console.log(`\u2705 페이지 ${pageNum}: ${items.length}개 수집 완료`);
+        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${items.length}\uac1c \uc218\uc9d1 \uc644\ub8cc`);
         await sleep(2000);
       } catch (e) {
-        console.error(`\u274C 페이지 ${pageNum} 처리 실패:`, e.message);
+        console.error(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328:`, e.message);
         if (pageNum === 1) break;
       }
     }
   } catch (error) {
-    console.error("\u274C 크롤링 실패:", error.message);
+    console.error("\u274C \ud06c\ub864\ub9c1 \uc2e4\ud328:", error.message);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\uD83C\uDF89 총 ${products.length}개 제품 수집 완료`);
+  console.log(`\uD83C\uDF89 \ucd1d ${products.length}\uac1c \uc81c\ud488 \uc218\uc9d1 \uc644\ub8cc`);
   return products;
 }
 
@@ -291,7 +251,7 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
   for (const cooler of coolers) {
     if (!cooler.price || cooler.price === 0) {
       skipped++;
-      console.log(`\u23ED\uFE0F  건너뜀 (가격 0원): ${cooler.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${cooler.name}`);
       continue;
     }
 
@@ -300,7 +260,7 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
 
     if (!specs.sockets || specs.sockets.length === 0) {
       skipped++;
-      console.log(`\u23ED\uFE0F  건너뜀 (소켓 정보 없음): ${cooler.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uc18c\ucf13 \uc815\ubcf4 \uc5c6\uc74c): ${cooler.name}`);
       continue;
     }
 
@@ -336,13 +296,13 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`\uD83D\uDD01 업데이트: ${cooler.name} (가격: ${cooler.price.toLocaleString()}원)`);
+      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${cooler.name} (\uac00\uaca9: ${cooler.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
       const priceHistory = cooler.price > 0 ? [{ date: today, price: cooler.price }] : [];
       await col.insertOne({ name: cooler.name, ...update, priceHistory });
       inserted++;
-      console.log(`\uD83C\uDD95 신규 추가: ${cooler.name} (가격: ${cooler.price.toLocaleString()}원)`);
+      console.log(`\uD83C\uDD95 \uc2e0\uaddc \ucd94\uac00: ${cooler.name} (\uac00\uaca9: ${cooler.price.toLocaleString()}\uc6d0)`);
     }
 
     if (ai) await sleep(200);
@@ -352,10 +312,10 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) {
     await col.deleteMany({ category: "cooler", name: { $in: toDelete } });
-    console.log(`\uD83D\uDDD1\uFE0F 삭제됨: ${toDelete.length}개`);
+    console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }
 
-  console.log(`\n\uD83D\uDCC8 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개`);
+  console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
 }
 
 router.post("/sync-cooler", async (req, res) => {
@@ -364,22 +324,22 @@ router.post("/sync-cooler", async (req, res) => {
     const ai = req.body?.ai !== false;
     const force = req.body?.force === true;
 
-    res.json({ message: `\u2705 다나와 쿨러 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
+    res.json({ message: `\u2705 \ub2e4\ub098\uc640 \ucfe8\ub7ec \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
 
     setImmediate(async () => {
       try {
-        console.log("\n=== 쿨러 동기화 시작 ===");
+        console.log("\n=== \ucfe8\ub7ec \ub3d9\uae30\ud654 \uc2dc\uc791 ===");
         const coolers = await crawlDanawaCoolers(maxPages);
-        if (coolers.length === 0) { console.log("\u26D4 크롤링된 데이터 없음"); return; }
+        if (coolers.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
         await saveToMongoDB(coolers, { ai, force });
-        console.log("\uD83C\uDF89 쿨러 동기화 완료");
+        console.log("\uD83C\uDF89 \ucfe8\ub7ec \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
-        console.error("\u274C 동기화 실패:", err);
+        console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
       }
     });
   } catch (err) {
-    console.error("\u274C sync-cooler 실패", err);
-    res.status(500).json({ error: "sync-cooler 실패" });
+    console.error("\u274C sync-cooler \uc2e4\ud328", err);
+    res.status(500).json({ error: "sync-cooler \uc2e4\ud328" });
   }
 });
 
