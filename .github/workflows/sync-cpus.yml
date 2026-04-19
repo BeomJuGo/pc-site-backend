@@ -2,9 +2,8 @@ name: Daily CPU Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 3시 실행 → UTC 18:00 (전날)
     - cron: "0 18 * * *"
-  workflow_dispatch:  # 수동 실행 버튼도 활성화
+  workflow_dispatch:
 
 jobs:
   sync-cpus:
@@ -27,12 +26,12 @@ jobs:
           set -e
           echo "POST $BACKEND_URL$API_PATH pages=$PAGES benchPages=$BENCH_PAGES"
 
-          # 3회 재시도 (간헐적 네트워크/서버 이슈 대비)
           for i in 1 2 3; do
             echo "Attempt $i..."
             http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
               -X POST "$BACKEND_URL$API_PATH" \
               -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
               -d "{\"pages\": ${PAGES}, \"benchPages\": ${BENCH_PAGES}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"

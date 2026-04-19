@@ -2,9 +2,8 @@ name: Daily Memory Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 4시 00분 실행 → UTC 19:00 (전날)
     - cron: "0 19 * * *"
-  workflow_dispatch:  # 수동 실행 버튼
+  workflow_dispatch:
 
 jobs:
   sync-memory:
@@ -16,7 +15,7 @@ jobs:
 
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
-      API_PATH: /api/sync-memory
+      API_PATH: /api/admin/sync-memory
       PAGES: "8"
       LIMIT: "60"
 
@@ -27,16 +26,12 @@ jobs:
           set -e
           echo "POST $BACKEND_URL$API_PATH pages=$PAGES limit=$LIMIT"
 
-          # 필요시 관리자 토큰 사용
-          # AUTH_HEADER="Authorization: Bearer ${{ secrets.ADMIN_API_TOKEN }}"
-          AUTH_HEADER=""
-
           for i in 1 2 3; do
             echo "Attempt $i..."
             http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
               -X POST "$BACKEND_URL$API_PATH" \
               -H "Content-Type: application/json" \
-              -H "$AUTH_HEADER" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
               -d "{\"pages\": ${PAGES}, \"limit\": ${LIMIT}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"

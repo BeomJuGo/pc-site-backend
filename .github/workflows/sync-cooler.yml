@@ -2,9 +2,8 @@ name: Daily Cooler Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 5시 00분 실행 → UTC 20:00 (전날)
     - cron: "0 20 * * *"
-  workflow_dispatch:  # 수동 실행 버튼
+  workflow_dispatch:
 
 jobs:
   sync-cooler:
@@ -16,7 +15,7 @@ jobs:
 
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
-      API_PATH: /api/sync-cooler
+      API_PATH: /api/admin/sync-cooler
       PAGES: "8"
 
     steps:
@@ -31,6 +30,7 @@ jobs:
             http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
               -X POST "$BACKEND_URL$API_PATH" \
               -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
               -d "{\"pages\": ${PAGES}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"

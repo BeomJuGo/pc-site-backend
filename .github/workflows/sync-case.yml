@@ -2,9 +2,8 @@ name: Daily Case Sync
 
 on:
   schedule:
-    # 매일 한국시간 오전 4시 40분 실행 → UTC 19:40 (전날)
     - cron: "40 19 * * *"
-  workflow_dispatch:  # 수동 실행 버튼
+  workflow_dispatch:
 
 jobs:
   sync-case:
@@ -16,7 +15,7 @@ jobs:
 
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
-      API_PATH: /api/sync-case
+      API_PATH: /api/admin/sync-case
       PAGES: "8"
 
     steps:
@@ -31,6 +30,7 @@ jobs:
             http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
               -X POST "$BACKEND_URL$API_PATH" \
               -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
               -d "{\"pages\": ${PAGES}, \"ai\": true, \"force\": false}") || true
 
             echo "HTTP $http_code"
