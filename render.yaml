@@ -2,8 +2,7 @@ services:
   - type: web
     name: pc-site-backend
     runtime: node
-    # package-lock.json을 커밋하면 npm ci로 변경 (빌드 캐시 활용 가능)
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: node --max-old-space-size=512 index.js
     envVars:
       - key: NODE_ENV
