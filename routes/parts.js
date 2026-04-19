@@ -4,6 +4,30 @@ import { getDB } from "../db.js";
 
 const router = express.Router();
 
+// 이름 fuzzy 매칭 헬퍼: 정확 매칭 → regex fallback (DB 레벨 처리)
+async function findPartByName(db, category, rawName) {
+  const decoded = decodeURIComponent(rawName);
+
+  // 1차: 정확한 이름 매칭 (인덱스 활용)
+  let part = await db.collection("parts").findOne({ category, name: decoded });
+  if (part) return part;
+
+  // 2차: 괄호 제거 후 접두사 매칭
+  const cleanName = decoded.split("(")[0].trim();
+  const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  part = await db.collection("parts").findOne({
+    category,
+    name: { $regex: `^${escaped}`, $options: "i" },
+  });
+  if (part) return part;
+
+  // 3차: 부분 포함 매칭
+  return db.collection("parts").findOne({
+    category,
+    name: { $regex: escaped, $options: "i" },
+  });
+}
+
 // /api/parts?category=cpu|gpu|motherboard|memory
 router.get("/", async (req, res) => {
   const { category } = req.query;
@@ -22,34 +46,7 @@ router.get("/:category/:name/history", async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
-    const decodedName = decodeURIComponent(name);
-    
-    // 정확한 이름 매칭 시도
-    let part = await db.collection("parts").findOne({
-      category,
-      name: decodedName,
-    });
-    
-    // 정확한 매칭이 실패하면 부분 매칭 시도 (괄호 제거 후 비교)
-    if (!part) {
-      const cleanDecodedName = decodedName.split("(")[0].trim();
-      const allParts = await db.collection("parts").find({ category }).toArray();
-      part = allParts.find(p => {
-        const cleanDbName = p.name.split("(")[0].trim();
-        return cleanDbName === cleanDecodedName;
-      });
-    }
-    
-    // 부분 매칭도 실패하면 이름이 포함된 것 찾기
-    if (!part) {
-      const allParts = await db.collection("parts").find({ category }).toArray();
-      part = allParts.find(p => {
-        const cleanDbName = p.name.split("(")[0].trim();
-        const cleanSearchName = decodedName.split("(")[0].trim();
-        return cleanDbName.includes(cleanSearchName) || cleanSearchName.includes(cleanDbName);
-      });
-    }
-    
+    const part = await findPartByName(db, category, name);
     if (!part) return res.status(404).json({ error: "부품을 찾을 수 없음" });
     res.json({ priceHistory: part.priceHistory || [] });
   } catch (err) {
@@ -62,34 +59,7 @@ router.get("/:category/:name", async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
-    const decodedName = decodeURIComponent(name);
-    
-    // 정확한 이름 매칭 시도
-    let part = await db.collection("parts").findOne({
-      category,
-      name: decodedName,
-    });
-    
-    // 정확한 매칭이 실패하면 부분 매칭 시도 (괄호 제거 후 비교)
-    if (!part) {
-      const cleanDecodedName = decodedName.split("(")[0].trim();
-      const allParts = await db.collection("parts").find({ category }).toArray();
-      part = allParts.find(p => {
-        const cleanDbName = p.name.split("(")[0].trim();
-        return cleanDbName === cleanDecodedName;
-      });
-    }
-    
-    // 부분 매칭도 실패하면 이름이 포함된 것 찾기
-    if (!part) {
-      const allParts = await db.collection("parts").find({ category }).toArray();
-      part = allParts.find(p => {
-        const cleanDbName = p.name.split("(")[0].trim();
-        const cleanSearchName = decodedName.split("(")[0].trim();
-        return cleanDbName.includes(cleanSearchName) || cleanSearchName.includes(cleanDbName);
-      });
-    }
-    
+    const part = await findPartByName(db, category, name);
     if (!part) return res.status(404).json({ error: "부품을 찾을 수 없음" });
     res.json(part);
   } catch (err) {
