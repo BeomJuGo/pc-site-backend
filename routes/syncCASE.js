@@ -1,8 +1,5 @@
-// routes/syncCASE.js - 가격 제외 버전 (updatePrices.js가 가격 전담)
+// routes/syncCASE.js
 import express from "express";
-import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
-import fetch from "node-fetch";
 import { getDB } from "../db.js";
 import { launchBrowser } from "../utils/browser.js";
 
@@ -12,10 +9,9 @@ const DANAWA_CASE_URL = "https://prod.danawa.com/list/?cate=112775";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* ==================== OpenAI 한줄평 생성 ==================== */
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("⚠️ OPENAI_API_KEY 미설정");
+    console.log("\u26A0\uFE0F OPENAI_API_KEY 미설정");
     return { review: "", specSummary: "" };
   }
 
@@ -30,7 +26,7 @@ async function fetchAiOneLiner({ name, spec }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-3.5-turbo",
+          model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
             { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
@@ -49,7 +45,7 @@ async function fetchAiOneLiner({ name, spec }) {
         specSummary: parsed.specSummary || spec,
       };
     } catch (e) {
-      console.log(`   ⚠️ OpenAI 재시도 ${i + 1}/3 실패:`, e.message);
+      console.log(`   \u26A0\uFE0F OpenAI 재시도 ${i + 1}/3 실패:`, e.message);
       if (i < 2) await sleep(1000);
     }
   }
@@ -57,7 +53,6 @@ async function fetchAiOneLiner({ name, spec }) {
   return { review: "", specSummary: "" };
 }
 
-/* ==================== 케이스 스펙 파싱 ==================== */
 function parseCaseSpecs(name = "", specText = "") {
   const combined = `${name} ${specText}`.toUpperCase();
 
@@ -117,10 +112,8 @@ function parseCaseSpecs(name = "", specText = "") {
   };
 }
 
-/* ==================== 다나와 크롤링 ==================== */
 async function crawlDanawa(maxPages = 10) {
-  console.log(`🔍 다나와 케이스 크롤링 시작 (최대 ${maxPages}페이지)`);
-  console.log(`💡 가격은 제외 (updatePrices.js가 별도로 업데이트)`);
+  console.log(`\uD83D\uDD0D 다나와 케이스 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   const cases = [];
   let browser;
@@ -130,7 +123,6 @@ async function crawlDanawa(maxPages = 10) {
 
     const page = await browser.newPage();
 
-    // 로케일/타임존 및 탐지 우회
     await page.setDefaultTimeout(60000);
     await page.setDefaultNavigationTimeout(60000);
     await page.emulateTimezone('Asia/Seoul');
@@ -139,7 +131,6 @@ async function crawlDanawa(maxPages = 10) {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
 
-    // 요청 차단 (광고/분석/폰트/미디어)
     const blockHosts = [
       'google-analytics.com','analytics.google.com','googletagmanager.com','google.com/ccm',
       'ad.danawa.com','dsas.danawa.com','service-api.flarelane.com','doubleclick.net',
@@ -156,14 +147,10 @@ async function crawlDanawa(maxPages = 10) {
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       const url = `${DANAWA_CASE_URL}&page=${pageNum}`;
-      console.log(`\n📄 페이지 ${pageNum}/${maxPages} 크롤링 중...`);
+      console.log(`\n\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 크롤링 중...`);
 
       try {
-        await page.goto(url, {
-          waitUntil: "domcontentloaded",
-          timeout: 60000,
-        });
-
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
         await sleep(2000);
 
         const pageItems = await page.evaluate(() => {
@@ -174,204 +161,100 @@ async function crawlDanawa(maxPages = 10) {
             try {
               const nameEl = row.querySelector(".prod_name a");
               const specEl = row.querySelector(".spec_list");
-
-              // 가격 정보 추출
               const priceEl = row.querySelector('.price_sect a strong');
               let price = 0;
-              if (priceEl) {
-                const priceText = priceEl.textContent.replace(/[^0-9]/g, '');
-                price = parseInt(priceText, 10) || 0;
-              }
+              if (priceEl) price = parseInt(priceEl.textContent.replace(/[^0-9]/g, ''), 10) || 0;
 
               const name = nameEl?.textContent?.trim() || "";
-              
-              // 이미지 추출 개선: 여러 선택자와 속성 확인
               let image = '';
-              
-              // 방법 1: thumb_link 내부 이미지
               const thumbLink = row.querySelector('.thumb_link') || row.querySelector('a.thumb_link');
               let imgEl = null;
-              
-              if (thumbLink) {
-                imgEl = thumbLink.querySelector('img') || thumbLink.querySelector('picture img');
-              }
-              
-              // 방법 2: 직접 이미지 요소 찾기
-              if (!imgEl) {
-                imgEl = row.querySelector('.thumb_image img') ||
-                        row.querySelector('img') ||
-                        row.querySelector('.prod_img img') ||
-                        row.querySelector('picture img') ||
-                        row.querySelector('.img_wrap img');
-              }
-              
+              if (thumbLink) imgEl = thumbLink.querySelector('img') || thumbLink.querySelector('picture img');
+              if (!imgEl) imgEl = row.querySelector('.thumb_image img') || row.querySelector('img') || row.querySelector('.prod_img img') || row.querySelector('picture img') || row.querySelector('.img_wrap img');
               if (imgEl) {
-                // 다양한 lazy loading 속성 확인 (우선순위 순)
-                const attrs = [
-                  'src', 'data-original', 'data-src', 'data-lazy-src', 
-                  'data-origin', 'data-url', 'data-img', 'data-image',
-                  'data-lazy', 'data-srcset', 'data-original-src'
-                ];
-                
+                const attrs = ['src','data-original','data-src','data-lazy-src','data-origin','data-url','data-img','data-image','data-lazy','data-srcset','data-original-src'];
                 for (const attr of attrs) {
                   const val = imgEl.getAttribute(attr) || imgEl[attr];
-                  if (val && typeof val === 'string' && val.trim() && !val.includes('noImg') && !val.includes('noData')) {
-                    image = val.trim();
-                    break;
-                  }
+                  if (val && typeof val === 'string' && val.trim() && !val.includes('noImg') && !val.includes('noData')) { image = val.trim(); break; }
                 }
-                
-                // srcset에서 추출
-                if (!image && imgEl.srcset) {
-                  const srcsetMatch = imgEl.srcset.match(/https?:\/\/[^\s,]+/);
-                  if (srcsetMatch) {
-                    image = srcsetMatch[0];
-                  }
-                }
-                
-                // 상대 경로를 절대 경로로 변환
+                if (!image && imgEl.srcset) { const m = imgEl.srcset.match(/https?:\/\/[^\s,]+/); if (m) image = m[0]; }
                 if (image) {
-                  if (image.startsWith('//')) {
-                    image = 'https:' + image;
-                  } else if (image.startsWith('/')) {
-                    image = 'https://img.danawa.com' + image;
-                  }
-                  // noImg 플레이스홀더는 빈 문자열로 처리
-                  if (image.includes('noImg') || image.includes('noData') || image.includes('placeholder')) {
-                    image = '';
-                  }
+                  if (image.startsWith('//')) image = 'https:' + image;
+                  else if (image.startsWith('/')) image = 'https://img.danawa.com' + image;
+                  if (image.includes('noImg') || image.includes('noData') || image.includes('placeholder')) image = '';
                 }
               }
-              
-              // 방법 3: 배경 이미지에서 추출
               if (!image) {
                 const bgEl = thumbLink || row.querySelector('.thumb_image') || row.querySelector('.prod_img');
                 if (bgEl) {
-                  const style = window.getComputedStyle(bgEl);
-                  const bgImage = style.backgroundImage || bgEl.style.backgroundImage;
-                  if (bgImage && bgImage !== 'none') {
-                    const urlMatch = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/);
-                    if (urlMatch && urlMatch[1]) {
-                      image = urlMatch[1];
-                      if (image.startsWith('//')) {
-                        image = 'https:' + image;
-                      } else if (image.startsWith('/')) {
-                        image = 'https://img.danawa.com' + image;
-                      }
-                    }
-                  }
+                  const bgImage = window.getComputedStyle(bgEl).backgroundImage || bgEl.style.backgroundImage;
+                  if (bgImage && bgImage !== 'none') { const m = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/); if (m?.[1]) { image = m[1]; if (image.startsWith('//')) image = 'https:' + image; else if (image.startsWith('/')) image = 'https://img.danawa.com' + image; } }
                 }
               }
-              
-              // 방법 4: 제품 링크에서 제품 ID 추출
               if (!image && nameEl) {
                 const prodHref = nameEl.getAttribute('href') || '';
                 const codeMatch = prodHref.match(/code=(\d+)/);
-                if (codeMatch) {
-                  const prodCode = codeMatch[1];
-                  const codeParts = prodCode.match(/(\d{2})(\d{2})(\d{2})/);
-                  if (codeParts) {
-                    const [_, a, b, c] = codeParts;
-                    image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`;
-                  }
-                }
+                if (codeMatch) { const prodCode = codeMatch[1]; const cp = prodCode.match(/(\d{2})(\d{2})(\d{2})/); if (cp) { const [_, a, b, c] = cp; image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`; } }
               }
-              
               if (!image && thumbLink) {
                 const href = thumbLink.getAttribute('href') || '';
                 const codeMatch = href.match(/code=(\d+)/);
-                if (codeMatch) {
-                  const prodCode = codeMatch[1];
-                  const codeParts = prodCode.match(/(\d{2})(\d{2})(\d{2})/);
-                  if (codeParts) {
-                    const [_, a, b, c] = codeParts;
-                    image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`;
-                  }
-                }
+                if (codeMatch) { const prodCode = codeMatch[1]; const cp = prodCode.match(/(\d{2})(\d{2})(\d{2})/); if (cp) { const [_, a, b, c] = cp; image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`; } }
               }
-              
               const spec = specEl?.textContent?.trim() || "";
-
-              if (name) {
-                items.push({ name, image, spec, price });
-              }
-            } catch (e) {
-              console.error("아이템 파싱 오류:", e);
-            }
+              if (name) items.push({ name, image, spec, price });
+            } catch (e) { console.error("아이템 파싱 오류:", e); }
           });
-
           return items;
         });
 
-        console.log(`   ✅ ${pageItems.length}개 케이스 발견`);
+        console.log(`   \u2705 ${pageItems.length}개 케이스 발견`);
         cases.push(...pageItems);
-
       } catch (e) {
-        console.error(`   ❌ 페이지 ${pageNum} 크롤링 실패:`, e.message);
+        console.error(`   \u274C 페이지 ${pageNum} 크롤링 실패:`, e.message);
       }
 
       await sleep(1500);
     }
-
   } catch (e) {
-    console.error("❌ 크롤링 오류:", e);
+    console.error("\u274C 크롤링 오류:", e);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\n🎉 총 ${cases.length}개 케이스 크롤링 완료 (제품명, 스펙, 이미지, 가격)`);
+  console.log(`\n\uD83C\uDF89 총 ${cases.length}개 케이스 크롤링 완료`);
   return cases;
 }
 
-/* ==================== DB 동기화 ==================== */
 async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
   const db = getDB();
   const col = db.collection("parts");
 
-  let inserted = 0;
-  let updated = 0;
-  let aiSuccess = 0;
-  let aiFail = 0;
-  let skipped = 0;
+  let inserted = 0, updated = 0, aiSuccess = 0, aiFail = 0, skipped = 0;
 
   for (const caseItem of cases) {
     try {
-      // 가격이 0원인 품목은 저장하지 않음
       if (!caseItem.price || caseItem.price === 0) {
         skipped++;
-        console.log(`⏭️  건너뜀 (가격 0원): ${caseItem.name}`);
+        console.log(`\u23ED\uFE0F  건너뜀 (가격 0원): ${caseItem.name}`);
         continue;
       }
 
       const manufacturer = caseItem.name.split(" ")[0] || "Unknown";
       const specs = parseCaseSpecs(caseItem.name, caseItem.spec);
 
-      const existing = await col.findOne({
-        category: "case",
-        name: caseItem.name,
-      });
+      const existing = await col.findOne({ category: "case", name: caseItem.name });
 
-      let review = "";
-      let specSummary = "";
+      let review = "", specSummary = "";
 
       if (ai) {
         if (!existing?.review || force) {
-          console.log(`\n🤖 AI 한줄평 생성 중: ${caseItem.name.slice(0, 40)}...`);
-          const aiResult = await fetchAiOneLiner({
-            name: caseItem.name,
-            spec: specs.info,
-          });
-
+          console.log(`\n\uD83E\uDD16 AI 한줄평 생성 중: ${caseItem.name.slice(0, 40)}...`);
+          const aiResult = await fetchAiOneLiner({ name: caseItem.name, spec: specs.info });
           review = aiResult.review || existing?.review || "";
           specSummary = aiResult.specSummary || existing?.specSummary || specs.info;
-
-          if (aiResult.review) {
-            aiSuccess++;
-            console.log(`   ✅ AI 성공: "${aiResult.review.slice(0, 50)}..."`);
-          } else {
-            aiFail++;
-            console.log(`   ⚠️ AI 실패 (기본값 사용)`);
-          }
+          if (aiResult.review) { aiSuccess++; console.log(`   \u2705 AI 성공: "${aiResult.review.slice(0, 50)}..."`); }
+          else { aiFail++; console.log(`   \u26A0\uFE0F AI 실패 (기본값 사용)`); }
         } else {
           review = existing.review;
           specSummary = existing.specSummary || specs.info;
@@ -382,86 +265,57 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
       }
 
       const update = {
-        category: "case",
-        manufacturer,
-        info: specs.info,
-        image: caseItem.image,
-        specs,
-        price: caseItem.price || 0, // 가격 정보 추가
+        category: "case", manufacturer, info: specs.info, image: caseItem.image, specs,
+        price: caseItem.price || 0,
         ...(ai ? { review, specSummary } : {}),
       };
 
       if (existing) {
-        // 가격 히스토리 업데이트 (새로운 가격이 있고 기존과 다를 때)
         const today = new Date().toISOString().slice(0, 10);
         const ops = { $set: update };
-
         if (caseItem.price > 0 && caseItem.price !== existing.price) {
           const priceHistory = existing.priceHistory || [];
-          const alreadyExists = priceHistory.some(p => p.date === today);
-
-          if (!alreadyExists) {
-            ops.$push = { priceHistory: { date: today, price: caseItem.price } };
-          }
+          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { date: today, price: caseItem.price } };
         }
-
         await col.updateOne({ _id: existing._id }, ops);
         updated++;
-        console.log(`🔁 업데이트: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
+        console.log(`\uD83D\uDD01 업데이트: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
       } else {
-        // 신규 추가 시 가격 히스토리 초기화
-        const priceHistory = [];
-        if (caseItem.price > 0) {
-          const today = new Date().toISOString().slice(0, 10);
-          priceHistory.push({ date: today, price: caseItem.price });
-        }
-
-        await col.insertOne({
-          name: caseItem.name,
-          ...update,
-          priceHistory,
-        });
+        const today = new Date().toISOString().slice(0, 10);
+        const priceHistory = caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [];
+        await col.insertOne({ name: caseItem.name, ...update, priceHistory });
         inserted++;
-        console.log(`✨ 신규 추가: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
+        console.log(`\u2728 신규 추가: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
       }
     } catch (e) {
-      console.error(`❌ DB 저장 실패 (${caseItem.name}):`, e.message);
+      console.error(`\u274C DB 저장 실패 (${caseItem.name}):`, e.message);
     }
   }
 
-  console.log(`\n📊 동기화 완료: 신규 ${inserted}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개 (가격 0원)`);
-  console.log(`🤖 AI 요약: 성공 ${aiSuccess}개, 실패 ${aiFail}개`);
-  console.log(`💰 가격 정보도 함께 크롤링하여 저장 완료`);
+  console.log(`\n\uD83D\uDCCA 동기화 완료: 신규 ${inserted}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개`);
+  console.log(`\uD83E\uDD16 AI 요약: 성공 ${aiSuccess}개, 실패 ${aiFail}개`);
 }
 
-/* ==================== 라우터 ==================== */
 router.post("/sync-case", async (req, res) => {
   try {
-    console.log("\n🚀 케이스 동기화 시작 (가격 포함)!");
-
     const maxPages = parseInt(req.body?.pages || req.body?.maxPages) || 10;
     const ai = req.body?.ai !== false;
     const force = !!req.body?.force;
-    console.log(`📄 크롤링 페이지: ${maxPages}개`);
 
-    // 즉시 응답 후 비동기 처리 (타임아웃 방지)
-    res.json({ message: `✅ 케이스 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
+    res.json({ message: `\u2705 케이스 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
 
     setImmediate(async () => {
       try {
         const cases = await crawlDanawa(maxPages);
-        if (cases.length === 0) {
-          console.log("⛔ 크롤링된 데이터 없음");
-          return;
-        }
+        if (cases.length === 0) { console.log("\u26D4 크롤링된 데이터 없음"); return; }
         await syncCasesToDB(cases, { ai, force });
-        console.log("🎉 케이스 동기화 완료 (가격 정보 포함)");
+        console.log("\uD83C\uDF89 케이스 동기화 완료");
       } catch (e) {
-        console.error("❌ 케이스 동기화 오류:", e);
+        console.error("\u274C 케이스 동기화 오류:", e);
       }
     });
   } catch (e) {
-    console.error("❌ 케이스 동기화 오류:", e);
+    console.error("\u274C 케이스 동기화 오류:", e);
     res.status(500).json({ message: "동기화 실패", error: e.message });
   }
 });
