@@ -1,7 +1,7 @@
 // routes/syncSTORAGE.js
 import express from "express";
 import { getDB } from "../db.js";
-import { launchBrowser } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
 
 const router = express.Router();
 
@@ -12,11 +12,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("\u26A0\uFE0F OPENAI_API_KEY 미설정");
+    console.log("\u26A0\uFE0F OPENAI_API_KEY \ubbf8\uc124\uc815");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `스토리지 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<타입/용량/인터페이스/속도>"}`;
+  const prompt = `\uc2a4\ud1a0\ub9ac\uc9c0 "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ud0c0\uc785/\uc6a9\ub7c9/\uc778\ud130\ud398\uc774\uc2a4/\uc18d\ub3c4>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -30,7 +30,7 @@ async function fetchAiOneLiner({ name, spec }) {
           model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
+            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
             { role: "user", content: prompt },
           ],
         }),
@@ -55,8 +55,8 @@ async function fetchAiOneLiner({ name, spec }) {
 
 function extractManufacturer(name) {
   const brands = [
-    "삼성전자", "Samsung", "Western Digital", "WD", "Seagate", "씨게이트",
-    "Crucial", "크루셔", "Kingston", "킹스턴", "SK하이닉스", "Toshiba",
+    "\uc0bc\uc131\uc804\uc790", "Samsung", "Western Digital", "WD", "Seagate", "\uc528\uac8c\uc774\ud2b8",
+    "Crucial", "\ud06c\ub8e8\uc154", "Kingston", "\ud0b9\uc2a4\ud134", "SK\ud558\uc774\ub2c9\uc2a4", "Toshiba",
     "Sabrent", "ADATA", "Corsair", "Intel", "Micron", "SanDisk"
   ];
   for (const brand of brands) {
@@ -157,7 +157,7 @@ function calculateStorageScore(name = "", spec = "", type = "SSD") {
 }
 
 async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
-  console.log(`\uD83D\uDD0D 다나와 ${type} 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 ${type} \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   let browser;
   const products = [];
@@ -165,33 +165,10 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
-
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
-    await page.emulateTimezone('Asia/Seoul');
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
-    const blockHosts = [
-      'google-analytics.com','analytics.google.com','googletagmanager.com','google.com/ccm',
-      'ad.danawa.com','dsas.danawa.com','service-api.flarelane.com','doubleclick.net',
-      'adnxs.com','googlesyndication.com','scorecardresearch.com','facebook.net'
-    ];
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const reqUrl = req.url();
-      const resourceType = req.resourceType();
-      if (blockHosts.some(h => reqUrl.includes(h))) return req.abort();
-      if (resourceType === 'media' || resourceType === 'font') return req.abort();
-      return req.continue();
-    });
-
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await setupPage(page, 60000);
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      console.log(`\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 처리 중...`);
+      console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
 
       try {
         if (pageNum === 1) {
@@ -206,7 +183,7 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
                 await page.waitForSelector(".main_prodlist .prod_item, ul.product_list > li.prod_item", { timeout: 20000 });
                 return true;
               } catch (e) {
-                console.log(`\u26A0\uFE0F 초기 네비게이션 실패: ${e.message}`);
+                console.log(`\u26A0\uFE0F \ucd08\uae30 \ub124\ube44\uac8c\uc774\uc158 \uc2e4\ud328: ${e.message}`);
                 if (!attempts) throw e;
               }
             }
@@ -220,28 +197,11 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
           }
         } else {
           try {
-            const pageSelector = `a.num[page="${pageNum}"]`;
-            const pageExists = await page.evaluate((selector) => document.querySelector(selector) !== null, pageSelector);
-
-            if (pageExists) {
-              await page.click(pageSelector);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('ul.product_list > li.prod_item').length > 0, { timeout: 30000 });
-            } else {
-              await page.evaluate((p) => {
-                if (typeof movePage === "function") movePage(p);
-                else if (typeof goPage === "function") goPage(p);
-                else if (typeof changePage === "function") changePage(p);
-                else throw new Error('페이지 이동 함수를 찾을 수 없음');
-              }, pageNum);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('ul.product_list > li.prod_item').length > 0, { timeout: 30000 });
-            }
+            await navigateToDanawaPage(page, pageNum, 'ul.product_list > li.prod_item');
           } catch (navError) {
-            console.log(`\u274C 페이지 ${pageNum} 이동 실패: ${navError.message}`);
+            console.log(`\u274C \ud398\uc774\uc9c0 ${pageNum} \uc774\ub3d9 \uc2e4\ud328: ${navError.message}`);
             continue;
           }
-
           await sleep(2000);
         }
 
@@ -300,20 +260,20 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
         });
 
         products.push(...items.filter((p) => p.name));
-        console.log(`\u2705 페이지 ${pageNum}: ${items.length}개 수집 완료`);
+        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${items.length}\uac1c \uc218\uc9d1 \uc644\ub8cc`);
         await sleep(2000);
       } catch (e) {
-        console.error(`\u274C 페이지 ${pageNum} 처리 실패:`, e.message);
+        console.error(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328:`, e.message);
         if (pageNum === 1) break;
       }
     }
   } catch (error) {
-    console.error("\u274C 크롤링 실패:", error.message);
+    console.error("\u274C \ud06c\ub864\ub9c1 \uc2e4\ud328:", error.message);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\uD83C\uDF89 총 ${products.length}개 제품 수집 완료`);
+  console.log(`\uD83C\uDF89 \ucd1d ${products.length}\uac1c \uc81c\ud488 \uc218\uc9d1 \uc644\ub8cc`);
   return products;
 }
 
@@ -327,8 +287,8 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
 
   for (const storage of storages) {
     const price = storage.price || 0;
-    if (price === 0) { skipped++; console.log(`\u23ED\uFE0F  건너뜀 (가격 0원): ${storage.name}`); continue; }
-    if (price > 0 && (price <= 10000 || price >= 1000000)) { skipped++; console.log(`\u23ED\uFE0F  건너뜀 (가격 범위 초과): ${storage.name} (${price.toLocaleString()}원)`); continue; }
+    if (price === 0) { skipped++; console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${storage.name}`); continue; }
+    if (price > 0 && (price <= 10000 || price >= 1000000)) { skipped++; console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \ubc94\uc704 \ucd08\uacfc): ${storage.name} (${price.toLocaleString()}\uc6d0)`); continue; }
 
     const old = byName.get(storage.name);
     const storageScore = calculateStorageScore(storage.name, storage.spec, storage.specs?.type || "SSD");
@@ -365,13 +325,13 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`\uD83D\uDD01 업데이트: ${storage.name} (가격: ${(storage.price ?? 0).toLocaleString()}원)`);
+      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${storage.name} (\uac00\uaca9: ${(storage.price ?? 0).toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
       const priceHistory = storage.price > 0 ? [{ date: today, price: storage.price }] : [];
       await col.insertOne({ name: storage.name, ...update, priceHistory });
       inserted++;
-      console.log(`\uD83C\uDD95 신규 추가: ${storage.name} (가격: ${(storage.price ?? 0).toLocaleString()}원)`);
+      console.log(`\uD83C\uDD95 \uc2e0\uaddc \ucd94\uac00: ${storage.name} (\uac00\uaca9: ${(storage.price ?? 0).toLocaleString()}\uc6d0)`);
     }
 
     if (ai) await sleep(200);
@@ -381,10 +341,10 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) {
     await col.deleteMany({ category: "storage", name: { $in: toDelete } });
-    console.log(`\uD83D\uDDD1\uFE0F 삭제됨: ${toDelete.length}개`);
+    console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }
 
-  console.log(`\n\uD83D\uDCC8 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개`);
+  console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
 }
 
 router.post("/sync-storage", async (req, res) => {
@@ -393,11 +353,11 @@ router.post("/sync-storage", async (req, res) => {
     const ai = req.body?.ai !== false;
     const force = req.body?.force === true;
 
-    res.json({ message: `\u2705 다나와 스토리지 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
+    res.json({ message: `\u2705 \ub2e4\ub098\uc640 \uc2a4\ud1a0\ub9ac\uc9c0 \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
 
     setImmediate(async () => {
       try {
-        console.log("\n=== 스토리지 동기화 시작 ===");
+        console.log("\n=== \uc2a4\ud1a0\ub9ac\uc9c0 \ub3d9\uae30\ud654 \uc2dc\uc791 ===");
 
         const ssdProducts = await crawlDanawaStorage(DANAWA_SSD_URL, "SSD", maxPages);
         const ssdData = ssdProducts.map(p => {
@@ -412,17 +372,17 @@ router.post("/sync-storage", async (req, res) => {
         });
 
         const allStorage = [...ssdData, ...hddData];
-        if (allStorage.length === 0) { console.log("\u26D4 크롤링된 데이터 없음"); return; }
+        if (allStorage.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
 
         await saveToMongoDB(allStorage, { ai, force });
-        console.log("\uD83C\uDF89 스토리지 동기화 완료");
+        console.log("\uD83C\uDF89 \uc2a4\ud1a0\ub9ac\uc9c0 \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
-        console.error("\u274C 동기화 실패:", err);
+        console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
       }
     });
   } catch (err) {
-    console.error("\u274C sync-storage 실패", err);
-    res.status(500).json({ error: "sync-storage 실패" });
+    console.error("\u274C sync-storage \uc2e4\ud328", err);
+    res.status(500).json({ error: "sync-storage \uc2e4\ud328" });
   }
 });
 

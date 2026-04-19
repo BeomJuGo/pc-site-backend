@@ -1,7 +1,7 @@
 // routes/syncCASE.js
 import express from "express";
 import { getDB } from "../db.js";
-import { launchBrowser } from "../utils/browser.js";
+import { launchBrowser, setupPage } from "../utils/browser.js";
 
 const router = express.Router();
 
@@ -11,11 +11,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("\u26A0\uFE0F OPENAI_API_KEY 미설정");
+    console.log("\u26A0\uFE0F OPENAI_API_KEY \ubbf8\uc124\uc815");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `케이스 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<타입/폼팩터/크기/확장성>"}`;
+  const prompt = `\ucf00\uc774\uc2a4 "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ud0c0\uc785/\ud3fc\ud329\ud130/\ud06c\uae30/\ud655\uc7a5\uc131>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -29,7 +29,7 @@ async function fetchAiOneLiner({ name, spec }) {
           model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
+            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
             { role: "user", content: prompt },
           ],
         }),
@@ -45,7 +45,7 @@ async function fetchAiOneLiner({ name, spec }) {
         specSummary: parsed.specSummary || spec,
       };
     } catch (e) {
-      console.log(`   \u26A0\uFE0F OpenAI 재시도 ${i + 1}/3 실패:`, e.message);
+      console.log(`   \u26A0\uFE0F OpenAI \uc7ac\uc2dc\ub3c4 ${i + 1}/3 \uc2e4\ud328:`, e.message);
       if (i < 2) await sleep(1000);
     }
   }
@@ -56,12 +56,12 @@ async function fetchAiOneLiner({ name, spec }) {
 function parseCaseSpecs(name = "", specText = "") {
   const combined = `${name} ${specText}`.toUpperCase();
 
-  let type = "미들타워";
-  if (/빅타워|FULL\s*TOWER/i.test(combined)) type = "빅타워";
-  else if (/미들타워|MID\s*TOWER/i.test(combined)) type = "미들타워";
-  else if (/미니타워|MINI\s*TOWER/i.test(combined)) type = "미니타워";
-  else if (/큐브|CUBE/i.test(combined)) type = "큐브";
-  else if (/슬림|SLIM/i.test(combined)) type = "슬림";
+  let type = "\ubbf8\ub4e4\ud0c0\uc6cc";
+  if (/\ube57\ud0c0\uc6cc|FULL\s*TOWER/i.test(combined)) type = "\ube57\ud0c0\uc6cc";
+  else if (/\ubbf8\ub4e4\ud0c0\uc6cc|MID\s*TOWER/i.test(combined)) type = "\ubbf8\ub4e4\ud0c0\uc6cc";
+  else if (/\ubbf8\ub2c8\ud0c0\uc6cc|MINI\s*TOWER/i.test(combined)) type = "\ubbf8\ub2c8\ud0c0\uc6cc";
+  else if (/\ud050\ubeê|CUBE/i.test(combined)) type = "\ud050\ube";
+  else if (/\uc승\ub9bc|SLIM/i.test(combined)) type = "\uc2ac\ub9bc";
 
   const formFactors = [];
   if (/E-?ATX/i.test(combined) && !/MINI|MICRO/i.test(combined)) formFactors.push("E-ATX");
@@ -70,28 +70,28 @@ function parseCaseSpecs(name = "", specText = "") {
   if (/MINI-?ITX|ITX/i.test(combined)) formFactors.push("Mini-ITX");
 
   if (formFactors.length === 0) {
-    if (type === "빅타워") formFactors.push("E-ATX", "ATX", "mATX", "Mini-ITX");
-    else if (type === "미들타워") formFactors.push("ATX", "mATX", "Mini-ITX");
-    else if (type === "미니타워") formFactors.push("mATX", "Mini-ITX");
-    else if (type === "큐브") formFactors.push("Mini-ITX");
+    if (type === "\ube57\ud0c0\uc6cc") formFactors.push("E-ATX", "ATX", "mATX", "Mini-ITX");
+    else if (type === "\ubbf8\ub4e4\ud0c0\uc6cc") formFactors.push("ATX", "mATX", "Mini-ITX");
+    else if (type === "\ubbf8\ub2c8\ud0c0\uc6cc") formFactors.push("mATX", "Mini-ITX");
+    else if (type === "\ud050\ube") formFactors.push("Mini-ITX");
     else formFactors.push("ATX", "mATX");
   }
 
-  const gpuMatch = combined.match(/GPU[:\s]*(\d+)\s*MM|그래픽카드[:\s]*(\d+)\s*MM|VGA[:\s]*(\d+)\s*MM/i);
+  const gpuMatch = combined.match(/GPU[:\s]*(\d+)\s*MM|\uadf8\ub798\ud53d\uce74\ub4dc[:\s]*(\d+)\s*MM|VGA[:\s]*(\d+)\s*MM/i);
   const maxGpuLength = gpuMatch ? parseInt(gpuMatch[1] || gpuMatch[2] || gpuMatch[3]) : 350;
 
-  const coolerMatch = combined.match(/CPU\s*쿨러[:\s]*(\d+)\s*MM|쿨러[:\s]*(\d+)\s*MM/i);
+  const coolerMatch = combined.match(/CPU\s*\ucfe8\ub7ec[:\s]*(\d+)\s*MM|\ucfe8\ub7ec[:\s]*(\d+)\s*MM/i);
   const maxCpuCoolerHeight = coolerMatch ? parseInt(coolerMatch[1] || coolerMatch[2]) : 165;
 
-  const psuMatch = combined.match(/파워[:\s]*(\d+)\s*MM|PSU[:\s]*(\d+)\s*MM/i);
+  const psuMatch = combined.match(/\ud30c\uc6cc[:\s]*(\d+)\s*MM|PSU[:\s]*(\d+)\s*MM/i);
   const maxPsuLength = psuMatch ? parseInt(psuMatch[1] || psuMatch[2]) : 180;
 
-  const slotMatch = combined.match(/(\d+)\s*슬롯/i);
+  const slotMatch = combined.match(/(\d+)\s*\uc2ac\ub86f/i);
   const expansionSlots = slotMatch ? parseInt(slotMatch[1]) : 7;
 
-  let sidePanels = "일반";
-  if (/강화유리|TEMPERED\s*GLASS/i.test(combined)) sidePanels = "강화유리";
-  else if (/아크릴/i.test(combined)) sidePanels = "아크릴";
+  let sidePanels = "\uc77c\ubc18";
+  if (/\uac15\ud654\uc720\ub9ac|TEMPERED\s*GLASS/i.test(combined)) sidePanels = "\uac15\ud654\uc720\ub9ac";
+  else if (/\uc544\ud06c\ub9b4/i.test(combined)) sidePanels = "\uc544\ud06c\ub9b4";
 
   const usb3Match = combined.match(/USB\s*3\.\d+[:\s]*(\d+)/i);
   const usbCMatch = /USB[-\s]*C|TYPE[-\s]*C/i.test(combined);
@@ -113,41 +113,19 @@ function parseCaseSpecs(name = "", specText = "") {
 }
 
 async function crawlDanawa(maxPages = 10) {
-  console.log(`\uD83D\uDD0D 다나와 케이스 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 \ucf00\uc774\uc2a4 \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   const cases = [];
   let browser;
 
   try {
     browser = await launchBrowser();
-
     const page = await browser.newPage();
-
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
-    await page.emulateTimezone('Asia/Seoul');
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
-    const blockHosts = [
-      'google-analytics.com','analytics.google.com','googletagmanager.com','google.com/ccm',
-      'ad.danawa.com','dsas.danawa.com','service-api.flarelane.com','doubleclick.net',
-      'adnxs.com','googlesyndication.com','scorecardresearch.com','facebook.net'
-    ];
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const url = req.url();
-      const type = req.resourceType();
-      if (blockHosts.some(h => url.includes(h))) return req.abort();
-      if (type === 'media' || type === 'font') return req.abort();
-      return req.continue();
-    });
+    await setupPage(page, 60000);
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       const url = `${DANAWA_CASE_URL}&page=${pageNum}`;
-      console.log(`\n\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 크롤링 중...`);
+      console.log(`\n\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ud06c\ub864\ub9c1 \uc911...`);
 
       try {
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
@@ -203,26 +181,26 @@ async function crawlDanawa(maxPages = 10) {
               }
               const spec = specEl?.textContent?.trim() || "";
               if (name) items.push({ name, image, spec, price });
-            } catch (e) { console.error("아이템 파싱 오류:", e); }
+            } catch (e) { console.error("\uc544\uc774\ud15c \ud30c\uc2f1 \uc624\ub958:", e); }
           });
           return items;
         });
 
-        console.log(`   \u2705 ${pageItems.length}개 케이스 발견`);
+        console.log(`   \u2705 ${pageItems.length}\uac1c \ucf00\uc774\uc2a4 \ubc1c\uacac`);
         cases.push(...pageItems);
       } catch (e) {
-        console.error(`   \u274C 페이지 ${pageNum} 크롤링 실패:`, e.message);
+        console.error(`   \u274C \ud398\uc774\uc9c0 ${pageNum} \ud06c\ub864\ub9c1 \uc2e4\ud328:`, e.message);
       }
 
       await sleep(1500);
     }
   } catch (e) {
-    console.error("\u274C 크롤링 오류:", e);
+    console.error("\u274C \ud06c\ub864\ub9c1 \uc624\ub958:", e);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\n\uD83C\uDF89 총 ${cases.length}개 케이스 크롤링 완료`);
+  console.log(`\n\uD83C\uDF89 \ucd1d ${cases.length}\uac1c \ucf00\uc774\uc2a4 \ud06c\ub864\ub9c1 \uc644\ub8cc`);
   return cases;
 }
 
@@ -236,7 +214,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
     try {
       if (!caseItem.price || caseItem.price === 0) {
         skipped++;
-        console.log(`\u23ED\uFE0F  건너뜀 (가격 0원): ${caseItem.name}`);
+        console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${caseItem.name}`);
         continue;
       }
 
@@ -249,12 +227,12 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
 
       if (ai) {
         if (!existing?.review || force) {
-          console.log(`\n\uD83E\uDD16 AI 한줄평 생성 중: ${caseItem.name.slice(0, 40)}...`);
+          console.log(`\n\uD83E\uDD16 AI \ud55c\uc904\ud3c9 \uc0dd\uc131 \uc911: ${caseItem.name.slice(0, 40)}...`);
           const aiResult = await fetchAiOneLiner({ name: caseItem.name, spec: specs.info });
           review = aiResult.review || existing?.review || "";
           specSummary = aiResult.specSummary || existing?.specSummary || specs.info;
-          if (aiResult.review) { aiSuccess++; console.log(`   \u2705 AI 성공: "${aiResult.review.slice(0, 50)}..."`); }
-          else { aiFail++; console.log(`   \u26A0\uFE0F AI 실패 (기본값 사용)`); }
+          if (aiResult.review) { aiSuccess++; console.log(`   \u2705 AI \uc131\uacf5: "${aiResult.review.slice(0, 50)}..."`); }
+          else { aiFail++; console.log(`   \u26A0\uFE0F AI \uc2e4\ud328 (\uae30\ubcf8\uac12 \uc0ac\uc6a9)`); }
         } else {
           review = existing.review;
           specSummary = existing.specSummary || specs.info;
@@ -279,21 +257,21 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
         }
         await col.updateOne({ _id: existing._id }, ops);
         updated++;
-        console.log(`\uD83D\uDD01 업데이트: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
+        console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       } else {
         const today = new Date().toISOString().slice(0, 10);
         const priceHistory = caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [];
         await col.insertOne({ name: caseItem.name, ...update, priceHistory });
         inserted++;
-        console.log(`\u2728 신규 추가: ${caseItem.name} (가격: ${caseItem.price.toLocaleString()}원)`);
+        console.log(`\u2728 \uc2e0\uaddc \ucd94\uac00: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       }
     } catch (e) {
-      console.error(`\u274C DB 저장 실패 (${caseItem.name}):`, e.message);
+      console.error(`\u274C DB \uc800\uc7a5 \uc2e4\ud328 (${caseItem.name}):`, e.message);
     }
   }
 
-  console.log(`\n\uD83D\uDCCA 동기화 완료: 신규 ${inserted}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개`);
-  console.log(`\uD83E\uDD16 AI 요약: 성공 ${aiSuccess}개, 실패 ${aiFail}개`);
+  console.log(`\n\uD83D\uDCCA \ub3d9\uae30\ud654 \uc644\ub8cc: \uc2e0\uaddc ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
+  console.log(`\uD83E\uDD16 AI \uc694\uc57d: \uc131\uacf5 ${aiSuccess}\uac1c, \uc2e4\ud328 ${aiFail}\uac1c`);
 }
 
 router.post("/sync-case", async (req, res) => {
@@ -302,21 +280,21 @@ router.post("/sync-case", async (req, res) => {
     const ai = req.body?.ai !== false;
     const force = !!req.body?.force;
 
-    res.json({ message: `\u2705 케이스 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
+    res.json({ message: `\u2705 \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
 
     setImmediate(async () => {
       try {
         const cases = await crawlDanawa(maxPages);
-        if (cases.length === 0) { console.log("\u26D4 크롤링된 데이터 없음"); return; }
+        if (cases.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
         await syncCasesToDB(cases, { ai, force });
-        console.log("\uD83C\uDF89 케이스 동기화 완료");
+        console.log("\uD83C\uDF89 \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (e) {
-        console.error("\u274C 케이스 동기화 오류:", e);
+        console.error("\u274C \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc624\ub958:", e);
       }
     });
   } catch (e) {
-    console.error("\u274C 케이스 동기화 오류:", e);
-    res.status(500).json({ message: "동기화 실패", error: e.message });
+    console.error("\u274C \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc624\ub958:", e);
+    res.status(500).json({ message: "\ub3d9\uae30\ud654 \uc2e4\ud328", error: e.message });
   }
 });
 

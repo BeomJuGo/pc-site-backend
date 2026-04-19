@@ -1,7 +1,7 @@
 // routes/syncPSU.js
 import express from "express";
 import { getDB } from "../db.js";
-import { launchBrowser } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
 
 const router = express.Router();
 
@@ -11,11 +11,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("\u26A0\uFE0F OPENAI_API_KEY 미설정");
+    console.log("\u26A0\uFE0F OPENAI_API_KEY \ubbf8\uc124\uc815");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `파워서플라이 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<출력/효율/모듈러/폼팩터>"}`;
+  const prompt = `\ud30c\uc6cc\uc11c\ud50c\ub77c\uc774 "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ucd9c\ub825/\ud6a8\uc728/\ubaa8\ub4c8\ub7ec/\ud3fc\ud329\ud130>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -29,7 +29,7 @@ async function fetchAiOneLiner({ name, spec }) {
           model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
+            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
             { role: "user", content: prompt },
           ],
         }),
@@ -66,9 +66,9 @@ function extractPSUInfo(name = "", spec = "") {
   else if (/80PLUS\s*BRONZE|BRONZE/i.test(combined)) parts.push("80Plus Bronze");
   else if (/80PLUS/i.test(combined)) parts.push("80Plus");
 
-  if (/풀모듈러|FULL\s*MODULAR/i.test(combined)) parts.push("풀모듈러");
-  else if (/세미모듈러|SEMI\s*MODULAR/i.test(combined)) parts.push("세미모듈러");
-  else parts.push("논모듈러");
+  if (/\ud480\ubaa8\ub4c8\ub7ec|FULL\s*MODULAR/i.test(combined)) parts.push("\ud480\ubaa8\ub4c8\ub7ec");
+  else if (/\uc138\ubbf8\ubaa8\ub4c8\ub7ec|SEMI\s*MODULAR/i.test(combined)) parts.push("\uc138\ubbf8\ubaa8\ub4c8\ub7ec");
+  else parts.push("\ub17c\ubaa8\ub4c8\ub7ec");
 
   if (/SFX-L/i.test(combined)) parts.push("SFX-L");
   else if (/SFX/i.test(combined)) parts.push("SFX");
@@ -79,7 +79,7 @@ function extractPSUInfo(name = "", spec = "") {
 }
 
 async function crawlDanawaPSUs(maxPages = 10) {
-  console.log(`\uD83D\uDD0D 다나와 PSU 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 PSU \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   let browser;
   const products = [];
@@ -87,36 +87,12 @@ async function crawlDanawaPSUs(maxPages = 10) {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
-
-    await page.setDefaultTimeout(60000);
-    await page.setDefaultNavigationTimeout(60000);
-    await page.emulateTimezone('Asia/Seoul');
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7' });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
-    const blockHosts = [
-      'google-analytics.com','analytics.google.com','googletagmanager.com','google.com/ccm',
-      'ad.danawa.com','dsas.danawa.com','service-api.flarelane.com','doubleclick.net',
-      'adnxs.com','googlesyndication.com','scorecardresearch.com','facebook.net'
-    ];
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const url = req.url();
-      const type = req.resourceType();
-      if (blockHosts.some(h => url.includes(h))) return req.abort();
-      if (type === 'media' || type === 'font') return req.abort();
-      return req.continue();
-    });
-
-    page.on('pageerror', (error) => console.log('\u26A0\uFE0F 페이지 에러:', error.message));
-    page.on('requestfailed', (request) => console.log('\u26A0\uFE0F 요청 실패:', request.url(), request.failure()?.errorText));
-
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await setupPage(page, 60000);
+    page.on('pageerror', (error) => console.log('\u26A0\uFE0F \ud398\uc774\uc9c0 \uc5d0\ub7ec:', error.message));
+    page.on('requestfailed', (request) => console.log('\u26A0\uFE0F \uc694\uccad \uc2e4\ud328:', request.url(), request.failure()?.errorText));
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      console.log(`\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 처리 중...`);
+      console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
 
       try {
         if (pageNum === 1) {
@@ -139,7 +115,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
                     await page.waitForSelector('.main_prodlist, .product_list', { timeout: 20000 });
                     return true;
                   } catch (e) {
-                    console.log('\u26A0\uFE0F 초기 네비게이션 실패:', e.message);
+                    console.log('\u26A0\uFE0F \ucd08\uae30 \ub124\ube44\uac8c\uc774\uc158 \uc2e4\ud328:', e.message);
                     if (!attempts) throw e;
                   }
                 }
@@ -158,13 +134,13 @@ async function crawlDanawaPSUs(maxPages = 10) {
 
               if (hasContent) {
                 loaded = true;
-                console.log('\u2705 페이지 로딩 완료');
+                console.log('\u2705 \ud398\uc774\uc9c0 \ub85c\ub529 \uc644\ub8cc');
               } else {
-                throw new Error('페이지 콘텐츠 로딩 실패');
+                throw new Error('\ud398\uc774\uc9c0 \ucf58\ud150\uce20 \ub85c\ub529 \uc2e4\ud328');
               }
             } catch (e) {
               retries--;
-              console.log(`\u26A0\uFE0F 로딩 재시도 (남은 횟수: ${retries}): ${e.message}`);
+              console.log(`\u26A0\uFE0F \ub85c\ub529 \uc7ac\uc2dc\ub3c4 (\ub0a8\uc740 \ud69f\uc218: ${retries}): ${e.message}`);
               if (retries === 0) throw e;
               await sleep(5000);
             }
@@ -175,29 +151,9 @@ async function crawlDanawaPSUs(maxPages = 10) {
 
         } else {
           try {
-            const pageSelector = `a.num[page="${pageNum}"]`;
-            const pageExists = await page.evaluate((selector) => document.querySelector(selector) !== null, pageSelector);
-
-            if (pageExists) {
-              await page.click(pageSelector);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: 30000 });
-            } else {
-              await page.evaluate((p) => {
-                if (typeof movePage === "function") movePage(p);
-                else if (typeof goPage === "function") goPage(p);
-                else if (typeof changePage === "function") changePage(p);
-                else {
-                  const pageBtn = document.querySelector(`a.num[page="${p}"]`);
-                  if (pageBtn) { pageBtn.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true })); }
-                  else throw new Error('페이지 이동 실패');
-                }
-              }, pageNum);
-              await sleep(5000);
-              await page.waitForFunction(() => document.querySelectorAll('.main_prodlist .prod_item').length > 0, { timeout: 30000 });
-            }
+            await navigateToDanawaPage(page, pageNum, '.main_prodlist .prod_item');
           } catch (navError) {
-            console.log(`\u274C 페이지 ${pageNum} 이동 실패: ${navError.message}`);
+            console.log(`\u274C \ud398\uc774\uc9c0 ${pageNum} \uc774\ub3d9 \uc2e4\ud328: ${navError.message}`);
             continue;
           }
         }
@@ -248,7 +204,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
               }
 
               const specEl = item.querySelector('.spec_list');
-              const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/더보기/g, '');
+              const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/\ub354\ubcf4\uae30/g, '');
               const priceEl = item.querySelector('.price_sect a strong');
               let price = 0;
               if (priceEl) price = parseInt(priceEl.textContent.replace(/[^0-9]/g, ''), 10) || 0;
@@ -259,8 +215,8 @@ async function crawlDanawaPSUs(maxPages = 10) {
           return results;
         });
 
-        console.log(`\u2705 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
-        if (pageProducts.length === 0) { console.log('\u26A0\uFE0F 페이지에서 제품을 찾지 못함'); break; }
+        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${pageProducts.length}\uac1c \uc218\uc9d1`);
+        if (pageProducts.length === 0) { console.log('\u26A0\uFE0F \ud398\uc774\uc9c0\uc5d0\uc11c \uc81c\ud488\uc744 \ucc3e\uc9c0 \ubabb\ud568'); break; }
 
         products.push(...pageProducts);
 
@@ -268,21 +224,21 @@ async function crawlDanawaPSUs(maxPages = 10) {
           const nextBtn = document.querySelector('.nav_next');
           return nextBtn && !nextBtn.classList.contains('disabled');
         });
-        if (!hasNext && pageNum < maxPages) { console.log(`\u23F9\uFE0F 마지막 페이지 도달 (페이지 ${pageNum})`); break; }
+        if (!hasNext && pageNum < maxPages) { console.log(`\u23F9\uFE0F \ub9c8\uc9c0\ub9c9 \ud398\uc774\uc9c0 \ub3c4\ub2ec (\ud398\uc774\uc9c0 ${pageNum})`); break; }
 
         await sleep(2000);
       } catch (e) {
-        console.error(`\u274C 페이지 ${pageNum} 처리 실패:`, e.message);
+        console.error(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328:`, e.message);
         if (pageNum === 1) break;
       }
     }
   } catch (error) {
-    console.error("\u274C 크롤링 실패:", error.message);
+    console.error("\u274C \ud06c\ub864\ub9c1 \uc2e4\ud328:", error.message);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\uD83C\uDF89 총 ${products.length}개 제품 수집 완료`);
+  console.log(`\uD83C\uDF89 \ucd1d ${products.length}\uac1c \uc81c\ud488 \uc218\uc9d1 \uc644\ub8cc`);
   return products;
 }
 
@@ -297,7 +253,7 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
   for (const psu of psus) {
     if (!psu.price || psu.price === 0) {
       skipped++;
-      console.log(`\u23ED\uFE0F  건너뜀 (가격 0원): ${psu.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${psu.name}`);
       continue;
     }
 
@@ -330,13 +286,13 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
-      console.log(`\uD83D\uDD01 업데이트: ${psu.name} (가격: ${psu.price.toLocaleString()}원)`);
+      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
       const priceHistory = psu.price > 0 ? [{ date: today, price: psu.price }] : [];
       await col.insertOne({ name: psu.name, ...update, priceHistory });
       inserted++;
-      console.log(`\uD83C\uDD95 삽입: ${psu.name} (가격: ${psu.price.toLocaleString()}원)`);
+      console.log(`\uD83C\uDD95 \uc0bd\uc785: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
     }
 
     if (ai) await sleep(200);
@@ -346,10 +302,10 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) {
     await col.deleteMany({ category: "psu", name: { $in: toDelete } });
-    console.log(`\uD83D\uDDD1\uFE0F 삭제됨: ${toDelete.length}개`);
+    console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }
 
-  console.log(`\n\uD83D\uDCC8 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개`);
+  console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
 }
 
 router.post("/sync-psu", async (req, res) => {
@@ -358,21 +314,21 @@ router.post("/sync-psu", async (req, res) => {
     const ai = req?.body?.ai !== false;
     const force = !!req?.body?.force;
 
-    res.json({ message: `\u2705 다나와 PSU 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
+    res.json({ message: `\u2705 \ub2e4\ub098\uc640 PSU \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
 
     setImmediate(async () => {
       try {
         const psus = await crawlDanawaPSUs(maxPages);
-        if (psus.length === 0) { console.log("\u26D4 크롤링된 데이터 없음"); return; }
+        if (psus.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
         await saveToMongoDB(psus, { ai, force });
-        console.log("\uD83C\uDF89 PSU 동기화 완료");
+        console.log("\uD83C\uDF89 PSU \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
-        console.error("\u274C 동기화 실패:", err);
+        console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
       }
     });
   } catch (err) {
-    console.error("\u274C sync-psu 실패", err);
-    res.status(500).json({ error: "sync-psu 실패" });
+    console.error("\u274C sync-psu \uc2e4\ud328", err);
+    res.status(500).json({ error: "sync-psu \uc2e4\ud328" });
   }
 });
 
