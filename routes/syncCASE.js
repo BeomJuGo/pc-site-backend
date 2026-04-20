@@ -1,13 +1,13 @@
 // routes/syncCASE.js
 import express from "express";
 import { getDB } from "../db.js";
-import { launchBrowser, setupPage } from "../utils/browser.js";
+import { launchBrowser, setupPage, sleep } from "../utils/browser.js";
+import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
 
 const DANAWA_CASE_URL = "https://prod.danawa.com/list/?cate=112775";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
@@ -166,7 +166,7 @@ async function crawlDanawa(maxPages = 10) {
                 const bgEl = thumbLink || row.querySelector('.thumb_image') || row.querySelector('.prod_img');
                 if (bgEl) {
                   const bgImage = window.getComputedStyle(bgEl).backgroundImage || bgEl.style.backgroundImage;
-                  if (bgImage && bgImage !== 'none') { const m = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/); if (m?.[1]) { image = m[1]; if (image.startsWith('//')) image = 'https:' + image; else if (image.startsWith('/')) image = 'https://img.danawa.com' + image; } }
+                  if (bgImage && bgImage !== 'none') { const m = bgImage.match(/url\(['"']?([^'"]+)['"']?\)/); if (m?.[1]) { image = m[1]; if (image.startsWith('//')) image = 'https:' + image; else if (image.startsWith('/')) image = 'https://img.danawa.com' + image; } }
                 }
               }
               if (!image && nameEl) {
@@ -287,6 +287,7 @@ router.post("/sync-case", async (req, res) => {
         const cases = await crawlDanawa(maxPages);
         if (cases.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
         await syncCasesToDB(cases, { ai, force });
+        invalidatePartsCache();
         console.log("\uD83C\uDF89 \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (e) {
         console.error("\u274C \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc624\ub958:", e);
