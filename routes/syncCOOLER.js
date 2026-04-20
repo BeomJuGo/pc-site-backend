@@ -292,7 +292,7 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
       const ops = { $set: update };
       if (cooler.price > 0 && cooler.price !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { date: today, price: cooler.price } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: cooler.price }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;

@@ -11,11 +11,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("⚠️ OPENAI_API_KEY 미설정");
+    console.log("\u26a0\ufe0f OPENAI_API_KEY \ubbf8\uc124\uc815");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `케이스 "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<타입/폼팩터/크기/확장성>"}`;
+  const prompt = `\ucf00\uc774\uc2a4 "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ud0c0\uc785/\ud3fc\ud329\ud130/\ud06c\uae30/\ud655\uc7a5\uc131>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -29,7 +29,7 @@ async function fetchAiOneLiner({ name, spec }) {
           model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
+            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
             { role: "user", content: prompt },
           ],
         }),
@@ -45,7 +45,7 @@ async function fetchAiOneLiner({ name, spec }) {
         specSummary: parsed.specSummary || spec,
       };
     } catch (e) {
-      console.log(`   ⚠️ OpenAI 재시도 ${i + 1}/3 실패:`, e.message);
+      console.log(`   \u26a0\ufe0f OpenAI \uc7ac\uc2dc\ub3c4 ${i + 1}/3 \uc2e4\ud328:`, e.message);
       if (i < 2) await sleep(1000);
     }
   }
@@ -56,12 +56,12 @@ async function fetchAiOneLiner({ name, spec }) {
 function parseCaseSpecs(name = "", specText = "") {
   const combined = `${name} ${specText}`.toUpperCase();
 
-  let type = "미들타워";
-  if (/빗타워|FULL\s*TOWER/i.test(combined)) type = "빗타워";
-  else if (/미들타워|MID\s*TOWER/i.test(combined)) type = "미들타워";
-  else if (/미니타워|MINI\s*TOWER/i.test(combined)) type = "미니타워";
-  else if (/큐브|CUBE/i.test(combined)) type = "큐브";
-  else if (/슬림|SLIM/i.test(combined)) type = "슬림";
+  let type = "\ubbf8\ub4e4\ud0c0\uc6cc";
+  if (/\ube57\ud0c0\uc6cc|FULL\s*TOWER/i.test(combined)) type = "\ube57\ud0c0\uc6cc";
+  else if (/\ubbf8\ub4e4\ud0c0\uc6cc|MID\s*TOWER/i.test(combined)) type = "\ubbf8\ub4e4\ud0c0\uc6cc";
+  else if (/\ubbf8\ub2c8\ud0c0\uc6cc|MINI\s*TOWER/i.test(combined)) type = "\ubbf8\ub2c8\ud0c0\uc6cc";
+  else if (/\ud050\ube0c|CUBE/i.test(combined)) type = "\ud050\ube0c";
+  else if (/\uc2ac\ub9bc|SLIM/i.test(combined)) type = "\uc2ac\ub9bc";
 
   const formFactors = [];
   if (/E-?ATX/i.test(combined) && !/MINI|MICRO/i.test(combined)) formFactors.push("E-ATX");
@@ -70,10 +70,10 @@ function parseCaseSpecs(name = "", specText = "") {
   if (/MINI-?ITX|ITX/i.test(combined)) formFactors.push("Mini-ITX");
 
   if (formFactors.length === 0) {
-    if (type === "빗타워") formFactors.push("E-ATX", "ATX", "mATX", "Mini-ITX");
-    else if (type === "미들타워") formFactors.push("ATX", "mATX", "Mini-ITX");
-    else if (type === "미니타워") formFactors.push("mATX", "Mini-ITX");
-    else if (type === "큐브") formFactors.push("Mini-ITX");
+    if (type === "\ube57\ud0c0\uc6cc") formFactors.push("E-ATX", "ATX", "mATX", "Mini-ITX");
+    else if (type === "\ubbf8\ub4e4\ud0c0\uc6cc") formFactors.push("ATX", "mATX", "Mini-ITX");
+    else if (type === "\ubbf8\ub2c8\ud0c0\uc6cc") formFactors.push("mATX", "Mini-ITX");
+    else if (type === "\ud050\ube0c") formFactors.push("Mini-ITX");
     else formFactors.push("ATX", "mATX");
   }
 
@@ -214,7 +214,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
     try {
       if (!caseItem.price || caseItem.price === 0) {
         skipped++;
-        console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${caseItem.name}`);
+        console.log(`\u23ed\ufe0f  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${caseItem.name}`);
         continue;
       }
 
@@ -232,7 +232,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
           review = aiResult.review || existing?.review || "";
           specSummary = aiResult.specSummary || existing?.specSummary || specs.info;
           if (aiResult.review) { aiSuccess++; console.log(`   \u2705 AI \uc131\uacf5: "${aiResult.review.slice(0, 50)}..."`); }
-          else { aiFail++; console.log(`   \u26A0\uFE0F AI \uc2e4\ud328 (\uae30\ubcf8\uac12 \uc0ac\uc6a9)`); }
+          else { aiFail++; console.log(`   \u26a0\ufe0f AI \uc2e4\ud328 (\uae30\ubcf8\uac12 \uc0ac\uc6a9)`); }
         } else {
           review = existing.review;
           specSummary = existing.specSummary || specs.info;
@@ -253,7 +253,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
         const ops = { $set: update };
         if (caseItem.price > 0 && caseItem.price !== existing.price) {
           const priceHistory = existing.priceHistory || [];
-          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { date: today, price: caseItem.price } };
+          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: caseItem.price }], $slice: -90 } };
         }
         await col.updateOne({ _id: existing._id }, ops);
         updated++;
