@@ -16,6 +16,7 @@
     "@sparticuz/chromium": "^119.0.2",
     "express-rate-limit": "^7.0.0",
     "helmet": "^8.0.0",
-    "compression": "^1.7.4"
+    "compression": "^1.7.4",
+    "nodemailer": "^6.9.0"
   }
 }
