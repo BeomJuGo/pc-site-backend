@@ -2,6 +2,7 @@
 import express from "express";
 import { getDB } from "../db.js";
 import config from "../config.js";
+import { loadParts, extractBoardFormFactor, isCaseCompatible } from "../utils/recommend-helpers.js";
 
 const OPENAI_API_KEY = config.openaiApiKey;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -238,7 +239,7 @@ async function generateBuildEvaluation(build, purpose, budget) {
     `전력 소비: ${compatibility.power || ""}`,
   ].join(", ");
 
-  const prompt = `${build.label} 견적 (열 ${build.totalPrice?.toLocaleString() || 0}원)에 대한 전문가 평가를 작성해주세요.\n\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n총 견적: ${build.totalPrice?.toLocaleString() || 0}원\n\n부품 구성:\n${partsList}\n\n호환성: ${compatibilityInfo}\n\n다음 형식으로 JSON 응답해주세요:\n{\n  "evaluation": "<200자 이내의 전체 견적 평가>",\n  "strengths": ["<장줠1>", "<장줠2>", "<장줠3>"],\n  "recommendations": ["<추천사항1>", "<추천사항2>"]\n}`;
+  const prompt = `${build.label} 견적 (열 ${build.totalPrice?.toLocaleString() || 0}원)에 대한 전문가 평가를 작성해주세요.\n\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n총 견적: ${build.totalPrice?.toLocaleString() || 0}원\n\n부품 구성:\n${partsList}\n\n호환성: ${compatibilityInfo}\n\n다음 형식으로 JSON 응답해주세요:\n{\n  "evaluation": "<200자 이내의 전체 견적 평가>",\n  "strengths": ["<장점1>", "<장점2>", "<장점3>"],\n  "recommendations": ["<추천사항1>", "<추천사항2>"]\n}`;
 
   const timeout = (ms) => new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`AI 평가 타임아웃 (${ms}ms 초과)`)), ms)
@@ -337,19 +338,7 @@ router.post("/", async (req, res) => {
       return res.status(500).json({ error: "DATABASE_ERROR", message: "데이터베이스 연결에 실패했습니다." });
     }
 
-    const col = db.collection("parts");
-    const projection = { name: 1, price: 1, image: 1, benchmarkScore: 1, specSummary: 1, info: 1, category: 1, manufacturer: 1, specs: 1 };
-
-    const [cpus, gpus, memories, boards, psus, coolers, storages, cases] = await Promise.all([
-      col.find({ category: "cpu", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "gpu", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "memory", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "motherboard", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "psu", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "cooler", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "storage", price: { $gt: 0 } }, { projection }).toArray(),
-      col.find({ category: "case", price: { $gt: 0 } }, { projection }).toArray(),
-    ]);
+    const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
 
     console.log(`📦 부품: CPU(${cpus.length}), GPU(${gpus.length}), Memory(${memories.length}), Board(${boards.length})`);
 
@@ -465,6 +454,7 @@ router.post("/", async (req, res) => {
         });
         if (compatibleBoards.length === 0) { filterStats.noBoard++; continue; }
         const board = compatibleBoards.sort((a, b) => Math.abs(a.price - boardBudget) - Math.abs(b.price - boardBudget))[0];
+        const boardFormFactor = extractBoardFormFactor(board);
 
         let memoryCapacityReq = purpose === "작업용" ? 32 : 16;
         let compatibleMemories = memories.filter(m => {
@@ -526,7 +516,10 @@ router.post("/", async (req, res) => {
 
         const remainingAfterStorage = remainingAfterCooler - storage.price;
         const adjustedCaseBudget = Math.max(remainingAfterStorage, 30000);
-        const compatibleCases = cases.filter(c => c.price <= adjustedCaseBudget && c.price >= 30000);
+        const compatibleCases = cases.filter(c => {
+          if (!isCaseCompatible(c, boardFormFactor)) return false;
+          return c.price <= adjustedCaseBudget && c.price >= 30000;
+        });
         if (compatibleCases.length === 0) { filterStats.noCase++; continue; }
         const idealCasePrice = Math.min(adjustedCaseBudget * 0.8, caseBudget);
         const caseItem = compatibleCases.sort((a, b) => Math.abs(a.price - idealCasePrice) - Math.abs(b.price - idealCasePrice))[0];
@@ -536,7 +529,7 @@ router.post("/", async (req, res) => {
 
         filterStats.success++;
         const score = getCpuScore(cpu) * weight.cpu + getGpuScore(gpu) * weight.gpu;
-        results.push({ cpu, gpu, memory, board, psu, cooler, storage, case: caseItem, totalPrice, score, cpuSocket, boardDdr: extractDdrType(board.info || board.specSummary || ""), totalTdp });
+        results.push({ cpu, gpu, memory, board, psu, cooler, storage, case: caseItem, totalPrice, score, cpuSocket, boardDdr: extractDdrType(board.info || board.specSummary || ""), totalTdp, boardFormFactor });
       }
       if (results.length >= 50) break;
     }
@@ -601,7 +594,7 @@ router.post("/", async (req, res) => {
             socket: `${b.cpuSocket} ↔ ${extractBoardSocket(b.board)}`,
             ddr: `${b.boardDdr} ↔ ${extractDdrType(b.memory.name)}`,
             power: `${b.totalTdp}W → ${extractTdp(b.psu.name)}W`,
-            formFactor: "ATX",
+            formFactor: `${b.boardFormFactor} ↔ ${b.case.specs?.formFactor?.join("/") || "ATX"}`,
           },
         };
         const aiEvaluation = await generateBuildEvaluation(buildData, purpose, budget);
