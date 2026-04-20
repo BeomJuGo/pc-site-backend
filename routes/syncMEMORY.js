@@ -139,7 +139,6 @@ async function crawlDanawaMemory(maxPages = 10) {
               const nameEl = item.querySelector('.prod_name a');
               const name = nameEl?.textContent?.trim();
               if (!name) return;
-
               let image = '';
               const thumbLink = item.querySelector('.thumb_link') || item.querySelector('a.thumb_link');
               let imgEl = null;
@@ -175,13 +174,11 @@ async function crawlDanawaMemory(maxPages = 10) {
                 const codeMatch = href.match(/code=(\d+)/);
                 if (codeMatch) { const prodCode = codeMatch[1]; const cp = prodCode.match(/(\d{2})(\d{2})(\d{2})/); if (cp) { const [_, a, b, c] = cp; image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`; } }
               }
-
               const specEl = item.querySelector('.spec_list');
               const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/\ub354\ubcf4\uae30/g, '');
               const priceEl = item.querySelector('.price_sect a strong');
               let price = 0;
               if (priceEl) price = parseInt(priceEl.textContent.replace(/[^0-9]/g, ''), 10) || 0;
-
               results.push({ name, image, spec: spec || '', price });
             } catch (e) {}
           });
@@ -190,15 +187,12 @@ async function crawlDanawaMemory(maxPages = 10) {
 
         console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${pageProducts.length}\uac1c \uc218\uc9d1`);
         if (pageProducts.length === 0) { console.log('\u26A0\uFE0F \ud398\uc774\uc9c0\uc5d0\uc11c \uc81c\ud488\uc744 \ucc3e\uc9c0 \ubabb\ud568'); break; }
-
         products.push(...pageProducts);
-
         const hasNext = await page.evaluate(() => {
           const nextBtn = document.querySelector('.nav_next');
           return nextBtn && !nextBtn.classList.contains('disabled');
         });
         if (!hasNext && pageNum < maxPages) { console.log(`\u23F9\uFE0F \ub9c8\uc9c0\ub9c9 \ud398\uc774\uc9c0 \ub3c4\ub2ec (\ud398\uc774\uc9c0 ${pageNum})`); break; }
-
         await sleep(2000);
       } catch (e) {
         console.error(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328:`, e.message);
@@ -257,7 +251,7 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
       const ops = { $set: update };
       if (memory.price > 0 && memory.price !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { date: today, price: memory.price } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: memory.price }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
