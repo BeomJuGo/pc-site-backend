@@ -3,12 +3,12 @@ import express from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { getDB } from "../db.js";
-import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
+import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const DANAWA_GPU_URL = "https://prod.danawa.com/list/?cate=112753";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const NAV_TIMEOUT = Number(process.env.PUPPETEER_NAV_TIMEOUT || 150000);
 const MIN_3DMARK_SCORE_TO_ATTACH = 6000;
 
@@ -91,25 +91,25 @@ async function fetchGPUs() {
     if (!name || !score) return;
     if (!isValidTimeSpyScore(score)) return;
     if (!isValidGPUName(simplified))
-      return console.log("\u26d4 제외 (형식 불일치):", name);
+      return console.log("\u26d4 \uc81c\uc678 (\ud615\uc2dd \ubd88\uc77c\uce58):", name);
     if (isUnwantedGPU(name))
-      return console.log("\u26d4 제외 (비주류):", name);
+      return console.log("\u26d4 \uc81c\uc678 (\ube44\uc8fc\ub958):", name);
 
     const base = simplified.toLowerCase();
     if (nameSet.has(base))
-      return console.log("\u26d4 제외 (중복):", name);
+      return console.log("\u26d4 \uc81c\uc678 (\uc911\ubcf5):", name);
     nameSet.add(base);
 
-    console.log(`\u2705 GPU 크롤링: "${name}" → 점수: ${score}`);
+    console.log(`\u2705 GPU \ud06c\ub864\ub9c1: "${name}" \u2192 \uc810\uc218: ${score}`);
     gpuList.push({ name, score, key: normalizeGpuKey(name) });
   });
 
-  console.log("\u2705 크롤링 완료, 유효 GPU 수:", gpuList.length);
+  console.log("\u2705 \ud06c\ub864\ub9c1 \uc644\ub8cc, \uc720\ud6a8 GPU \uc218:", gpuList.length);
   return gpuList;
 }
 
 async function crawlDanawaGpus(maxPages = 10) {
-  console.log(`\uD83D\uDD0D 다나와 GPU 크롤링 시작 (최대 ${maxPages}페이지)`);
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 GPU \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   let browser;
   const products = [];
@@ -120,7 +120,7 @@ async function crawlDanawaGpus(maxPages = 10) {
     await setupPage(page, NAV_TIMEOUT);
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      console.log(`\uD83D\uDCC4 페이지 ${pageNum}/${maxPages} 처리 중...`);
+      console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
 
       try {
         if (pageNum === 1) {
@@ -130,17 +130,17 @@ async function crawlDanawaGpus(maxPages = 10) {
             try {
               await page.goto(DANAWA_GPU_URL, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
               loaded = true;
-              console.log('\u2705 페이지 로딩 완료');
+              console.log('\u2705 \ud398\uc774\uc9c0 \ub85c\ub529 \uc644\ub8cc');
             } catch (e) {
               retries--;
-              console.log(`\u26A0\uFE0F 로딩 재시도 (남은 횟수: ${retries})`);
+              console.log(`\u26A0\uFE0F \ub85c\ub529 \uc7ac\uc2dc\ub3c4 (\ub0a8\uc740 \ud69f\uc218: ${retries})`);
               if (retries === 0) throw e;
               await sleep(2000);
             }
           }
 
           await page.waitForSelector('.main_prodlist .prod_item', { timeout: NAV_TIMEOUT / 3 }).catch(() => {
-            console.log('\u26A0\uFE0F 제품 리스트 로딩 지연');
+            console.log('\u26A0\uFE0F \uc81c\ud488 \ub9ac\uc2a4\ud2b8 \ub85c\ub529 \uc9c0\uc5f0');
           });
 
           await page.evaluate(() => {
@@ -171,7 +171,7 @@ async function crawlDanawaGpus(maxPages = 10) {
           try {
             await navigateToDanawaPage(page, pageNum, '.main_prodlist .prod_item');
           } catch (e) {
-            console.log(`\u26A0\uFE0F 페이지 ${pageNum} 이동 실패: ${e.message}`);
+            console.log(`\u26A0\uFE0F \ud398\uc774\uc9c0 ${pageNum} \uc774\ub3d9 \uc2e4\ud328: ${e.message}`);
             continue;
           }
         }
@@ -223,7 +223,7 @@ async function crawlDanawaGpus(maxPages = 10) {
                 if (codeMatch) { const prodCode = codeMatch[1]; const codeParts = prodCode.match(/(\d{2})(\d{2})(\d{2})/); if (codeParts) { const [_, a, b, c] = codeParts; image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`; } }
               }
               const specEl = item.querySelector('.spec_list');
-              const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/더보기/g, '') || '';
+              const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/\ub354\ubcf4\uae30/g, '') || '';
               const priceEl = item.querySelector('.price_sect a strong');
               let price = 0;
               if (priceEl) { price = parseInt(priceEl.textContent.replace(/[^0-9]/g, ''), 10) || 0; }
@@ -233,39 +233,39 @@ async function crawlDanawaGpus(maxPages = 10) {
           return results;
         });
 
-        console.log(`\u2705 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
+        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${pageProducts.length}\uac1c \uc218\uc9d1`);
         if (pageProducts.length === 0) break;
         products.push(...pageProducts);
         await sleep(2000);
       } catch (e) {
-        console.log(`\u274C 페이지 ${pageNum} 처리 실패: ${e.message}`);
+        console.log(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328: ${e.message}`);
         if (pageNum === 1) break;
       }
     }
   } catch (error) {
-    console.error("\u274C GPU 크롤링 실패:", error.message);
+    console.error("\u274C GPU \ud06c\ub864\ub9c1 \uc2e4\ud328:", error.message);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\uD83C\uDF89 총 ${products.length}개 GPU 제품 수집 완료`);
+  console.log(`\uD83C\uDF89 \ucd1d ${products.length}\uac1c GPU \uc81c\ud488 \uc218\uc9d1 \uc644\ub8cc`);
   return products;
 }
 
 const extractManufacturer = (name = "") => {
   const n = name.toUpperCase();
-  if (n.includes("NVIDIA") || n.includes("지포스") || n.includes("GEFORCE") || n.includes("RTX") || n.includes("GTX")) return "NVIDIA";
-  if (n.includes("AMD") || n.includes("RADEON") || n.includes("라데온") || /RX\s*\d+/.test(n)) return "AMD";
+  if (n.includes("NVIDIA") || n.includes("\uc9c0\ud3ec\uc2a4") || n.includes("GEFORCE") || n.includes("RTX") || n.includes("GTX")) return "NVIDIA";
+  if (n.includes("AMD") || n.includes("RADEON") || n.includes("\ub77c\ub370\uc628") || /RX\s*\d+/.test(n)) return "AMD";
   return "";
 };
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
-    console.log("\u26A0\uFE0F OPENAI_API_KEY 미설정");
+    console.log("\u26A0\uFE0F OPENAI_API_KEY \ubbf8\uc124\uc815");
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `GPU(그래픽카드) "${name}"(스펙: ${spec})의 한줄평과 스펙요약을 JSON으로 작성: {"review":"<100자 이내>", "specSummary":"<VRAM/클럭/쿠다코어/전력>"}`;
+  const prompt = `GPU(\uadf8\ub798\ud53d\uce74\ub4dc) "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<VRAM/\ud074\ub7ed/\ucfe0\ub2e4\ucf54\uc5b4/\uc804\ub825>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -279,7 +279,7 @@ async function fetchAiOneLiner({ name, spec }) {
           model: "gpt-4o-mini",
           temperature: 0.4,
           messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
+            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
             { role: "user", content: prompt },
           ],
         }),
@@ -319,7 +319,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
 
   for (const p of danawaProducts) {
     if (!p.price || p.price === 0) {
-      console.log(`\u23ED\uFE0F  건너뜀 (가격 0원): ${p.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${p.name}`);
       continue;
     }
 
@@ -348,16 +348,16 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
 
     if (!review || review.trim() === "") {
       const upperName = p.name.toUpperCase();
-      let tag = "게이밍 및 멀티미디어 작업에 적합";
-      if (/RTX\s*4090|RTX\s*4080|RX\s*7900/i.test(upperName)) tag = "최고 성능 게이밍 및 4K 렌더링에 최적";
-      else if (/RTX\s*4070|RTX\s*4060|RX\s*7800|RX\s*7700/i.test(upperName)) tag = "고성능 게이밍 및 콘텐츠 제작에 적합";
-      else if (/RTX\s*3060|RTX\s*3050|RX\s*6600/i.test(upperName)) tag = "중급 게이밍 및 일반 작업에 적합";
-      else if (/GTX|RX\s*5/i.test(upperName)) tag = "보급형 게이밍 및 경량 작업에 적합";
+      let tag = "\uac8c\uc774\ubc0d \ubc0f \uba40\ud2f0\ubbf8\ub514\uc5b4 \uc791\uc5c5\uc5d0 \uc801\ud569";
+      if (/RTX\s*4090|RTX\s*4080|RX\s*7900/i.test(upperName)) tag = "\ucd5c\uace0 \uc131\ub2a5 \uac8c\uc774\ubc0d \ubc0f 4K \ub80c\ub354\ub9c1\uc5d0 \ucd5c\uc801";
+      else if (/RTX\s*4070|RTX\s*4060|RX\s*7800|RX\s*7700/i.test(upperName)) tag = "\uace0\uc131\ub2a5 \uac8c\uc774\ubc0d \ubc0f \ucf58\ud150\uce20 \uc81c\uc791\uc5d0 \uc801\ud569";
+      else if (/RTX\s*3060|RTX\s*3050|RX\s*6600/i.test(upperName)) tag = "\uc911\uae09 \uac8c\uc774\ubc0d \ubc0f \uc77c\ubc18 \uc791\uc5c5\uc5d0 \uc801\ud569";
+      else if (/GTX|RX\s*5/i.test(upperName)) tag = "\ubcf4\uae09\ud615 \uac8c\uc774\ubc0d \ubc0f \uacbd\ub7c9 \uc791\uc5c5\uc5d0 \uc801\ud569";
       if (score && score >= MIN_3DMARK_SCORE_TO_ATTACH) {
-        if (score >= 20000) tag += ", 하이엔드 성능";
-        else if (score >= 12000) tag += ", 상급 성능";
-        else if (score >= 8000) tag += ", 중급 성능";
-        else tag += ", 보급형 성능";
+        if (score >= 20000) tag += ", \ud558\uc774\uc5d4\ub4dc \uc131\ub2a5";
+        else if (score >= 12000) tag += ", \uc0c1\uae09 \uc131\ub2a5";
+        else if (score >= 8000) tag += ", \uc911\uae09 \uc131\ub2a5";
+        else tag += ", \ubcf4\uae09\ud615 \uc131\ub2a5";
       }
       review = tag;
     }
@@ -386,14 +386,14 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
         if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: p.price }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
-      console.log("\uD83D\uDD01 업데이트됨:", p.name);
+      console.log("\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8\ub428:", p.name);
     } else {
       await col.insertOne({
         name: p.name,
         ...update,
         priceHistory: p.price > 0 ? [{ date: today, price: p.price }] : [],
       });
-      console.log("\uD83C\uDD95 삽입됨:", p.name);
+      console.log("\uD83C\uDD95 \uc0bd\uc785\ub428:", p.name);
     }
 
     if (ai) await sleep(200);
@@ -402,7 +402,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) {
     await col.deleteMany({ category: "gpu", name: { $in: toDelete } });
-    console.log("\uD83D\uDDD1\uFE0F 삭제됨:", toDelete.length, "개");
+    console.log("\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428:", toDelete.length, "\uac1c");
   }
 }
 
@@ -411,14 +411,19 @@ router.post("/sync-gpus", async (req, res) => {
   const ai = req.body?.ai !== false;
   const force = req.body?.force === true;
 
-  res.json({ message: `\u2705 GPU 동기화 시작 (pages=${maxPages}, AI: ${ai}, 가격 포함)` });
+  res.json({ message: `\u2705 GPU \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, AI: ${ai}, \uac00\uaca9 \ud3ec\ud568)` });
   setImmediate(async () => {
-    const [scores, danawa] = await Promise.all([
-      fetchGPUs(),
-      crawlDanawaGpus(maxPages),
-    ]);
-    await saveToDB(scores, danawa, { ai, force });
-    console.log("\uD83C\uDF89 모든 GPU 정보 저장 완료");
+    try {
+      const [scores, danawa] = await Promise.all([
+        fetchGPUs(),
+        crawlDanawaGpus(maxPages),
+      ]);
+      await saveToDB(scores, danawa, { ai, force });
+      invalidatePartsCache();
+      console.log("\uD83C\uDF89 \ubaa8\ub4e0 GPU \uc815\ubcf4 \uc800\uc7a5 \uc644\ub8cc");
+    } catch (err) {
+      console.error("\u274C GPU \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
+    }
   });
 });
 
