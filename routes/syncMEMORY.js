@@ -1,13 +1,13 @@
 // routes/syncMEMORY.js
 import express from "express";
 import { getDB } from "../db.js";
-import { launchBrowser, setupPage, navigateToDanawaPage } from "../utils/browser.js";
+import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
+import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
 
 const DANAWA_BASE_URL = "https://prod.danawa.com/list/?cate=112752";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchAiOneLiner({ name, spec }) {
   if (!OPENAI_API_KEY) {
@@ -161,7 +161,7 @@ async function crawlDanawaMemory(maxPages = 10) {
                 const bgEl = thumbLink || item.querySelector('.thumb_image') || item.querySelector('.prod_img');
                 if (bgEl) {
                   const bgImage = window.getComputedStyle(bgEl).backgroundImage || bgEl.style.backgroundImage;
-                  if (bgImage && bgImage !== 'none') { const m = bgImage.match(/url\(['"]?([^'"]+)['"]?\)/); if (m?.[1]) { image = m[1]; if (image.startsWith('//')) image = 'https:' + image; else if (image.startsWith('/')) image = 'https://img.danawa.com' + image; } }
+                  if (bgImage && bgImage !== 'none') { const m = bgImage.match(/url\(['"']?([^'"]+)['"']?\)/); if (m?.[1]) { image = m[1]; if (image.startsWith('//')) image = 'https:' + image; else if (image.startsWith('/')) image = 'https://img.danawa.com' + image; } }
                 }
               }
               if (!image && nameEl) {
@@ -290,6 +290,7 @@ router.post("/sync-memory", async (req, res) => {
         const memories = await crawlDanawaMemory(maxPages);
         if (memories.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
         await saveToMongoDB(memories, { ai, force });
+        invalidatePartsCache();
         console.log("\uD83C\uDF89 \uba54\ubaa8\ub9ac \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
         console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
