@@ -150,8 +150,8 @@ router.post("/check", async (req, res) => {
       let tdp = 80;
       const cpuText = `${docs.cpu?.name || ""} ${docs.cpu?.info || ""} ${docs.cpu?.specSummary || ""}`;
       const gpuText = `${docs.gpu?.name || ""} ${docs.gpu?.info || ""} ${docs.gpu?.specSummary || ""}`;
-      tdp += guessTdp(CPU_TDP_TIERS, cpuText) ?? extractWatt(cpuText) || 65;
-      tdp += guessTdp(GPU_TDP_TIERS, gpuText) ?? extractWatt(gpuText) || 150;
+      tdp += (guessTdp(CPU_TDP_TIERS, cpuText) ?? extractWatt(cpuText)) || 65;
+      tdp += (guessTdp(GPU_TDP_TIERS, gpuText) ?? extractWatt(gpuText)) || 150;
       info.psuWatt = psuWatt;
       info.estimatedTdp = tdp;
       if (psuWatt > 0) {
