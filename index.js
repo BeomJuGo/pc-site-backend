@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import config from "./config.js";
-import { connectDB } from "./db.js";
+import { connectDB, getDB } from "./db.js";
 
 import syncCPUsRouter from "./routes/syncCPUs.js";
 import syncGPUsRouter from "./routes/syncGPUs.js";
@@ -19,13 +19,12 @@ import syncStorageRouter from "./routes/syncSTORAGE.js";
 const app = express();
 const allowedOrigins = config.allowedOrigins;
 
-// CORS
 app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      console.log("❌ CORS 차단된 origin:", origin);
+      console.log("\u274C CORS \ucc28\ub2e8\ub41c origin:", origin);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -38,13 +37,12 @@ app.use(
 
 app.use(express.json());
 
-// Rate Limiting
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too Many Requests", message: "잠시 후 다시 시도해주세요." },
+  message: { error: "Too Many Requests", message: "\uc7a0\uc2dc \ud6c4 \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694." },
 });
 
 const recommendLimiter = rateLimit({
@@ -52,32 +50,29 @@ const recommendLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too Many Requests", message: "1분에 최대 10번 요청 가능합니다." },
+  message: { error: "Too Many Requests", message: "1\ubd84\uc5d0 \ucd5c\ub300 10\ubc88 \uc694\uccad \uac00\ub2a5\ud569\ub2c8\ub2e4." },
 });
 
 app.use("/api", apiLimiter);
 app.use("/api/recommend", recommendLimiter);
 
-// Admin 인증 미들웨어
 function requireAdminKey(req, res, next) {
   if (!config.adminApiKey) {
-    console.warn("⚠️ ADMIN_API_KEY 미설정 - admin 엔드포인트가 보호되지 않습니다");
+    console.warn("\u26A0\uFE0F ADMIN_API_KEY \ubbf8\uc124\uc815 - admin \uc5d4\ub4dc\ud3ec\uc778\ud2b8\uac00 \ubcf4\ud638\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4");
     return next();
   }
   const key = req.headers["authorization"]?.replace("Bearer ", "");
   if (key !== config.adminApiKey) {
-    return res.status(401).json({ error: "Unauthorized", message: "유효하지 않은 API 키입니다." });
+    return res.status(401).json({ error: "Unauthorized", message: "\uc720\ud6a8\ud558\uc9c0 \uc54a\uc740 API \ud0a4\uc785\ub2c8\ub2e4." });
   }
   next();
 }
 
-// 요청 로깅
 app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.path} from ${req.headers.origin || "same-origin"}`);
+  console.log(`\uD83D\uDCE5 ${req.method} ${req.path} from ${req.headers.origin || "same-origin"}`);
   next();
 });
 
-// 헬스 체크
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
@@ -90,13 +85,12 @@ app.get("/api/health", (req, res) => {
 
 app.get("/", (req, res) => {
   res.json({
-    message: "PC 추천 백엔드 API",
+    message: "PC \ucd94\ucc9c \ubc31\uc5d4\ub4dc API",
     status: "running",
     endpoints: ["/api/health", "/api/recommend", "/api/parts"],
   });
 });
 
-// 라우트 등록
 app.use("/api/recommend", recommendRouter);
 app.use("/api/admin", requireAdminKey, syncCPUsRouter);
 app.use("/api/admin", requireAdminKey, syncGPUsRouter);
@@ -108,11 +102,10 @@ app.use("/api/admin", requireAdminKey, syncCaseRouter);
 app.use("/api/admin", requireAdminKey, syncCoolerRouter);
 app.use("/api/admin", requireAdminKey, syncStorageRouter);
 
-// 네이버 가격 API
 app.get("/api/naver-price", async (req, res) => {
   const { query } = req.query;
   if (!query || typeof query !== "string" || query.trim() === "") {
-    return res.status(400).json({ error: "query 파라미터가 필요합니다." });
+    return res.status(400).json({ error: "query \ud30c\ub77c\ubbf8\ud130\uac00 \ud544\uc694\ud569\ub2c8\ub2e4." });
   }
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   try {
@@ -125,19 +118,35 @@ app.get("/api/naver-price", async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: "네이버 API 요청 실패" });
+    res.status(500).json({ error: "\ub124\uc774\ubc84 API \uc694\uccad \uc2e4\ud328" });
   }
 });
 
-// GPT 정보 API
 app.post("/api/gpt-info", async (req, res) => {
   const { partName } = req.body;
   if (!partName || typeof partName !== "string" || partName.trim() === "") {
-    return res.status(400).json({ error: "partName이 필요합니다." });
+    return res.status(400).json({ error: "partName\uc774 \ud544\uc694\ud569\ub2c8\ub2e4." });
   }
 
-  const reviewPrompt = `${partName}의 장점과 단점을 각각 한 문장으로 알려줘. 형식은 '장점: ..., 단점: ...'으로 해줘.`;
-  const specPrompt = `${partName}의 주요 사양을 요약해서 알려줘. 코어 수, 스레드 수, L2/L3 캐시, 베이스 클럭, 부스트 클럭 위주로 간단하게 정리해줘. 예시: 코어: 6, 스레드: 12, ...`;
+  // DB \uce90\uc2dc \uba3c\uc800 \uc870\ud68c (GPT \ud638\ucd9c \ube44\uc6a9 \uc808\uac10)
+  try {
+    const db = getDB();
+    if (db) {
+      const cached = await db.collection("parts").findOne(
+        { name: partName.trim() },
+        { projection: { review: 1, info: 1, specSummary: 1 } }
+      );
+      if (cached?.review && (cached.info || cached.specSummary)) {
+        return res.json({
+          review: cached.review,
+          specSummary: cached.specSummary || cached.info,
+        });
+      }
+    }
+  } catch (_) {}
+
+  const reviewPrompt = `${partName}\uc758 \uc7a5\uc810\uacfc \ub2e8\uc810\uc744 \uac01\uac01 \ud55c \ubb38\uc7a5\uc73c\ub85c \uc54c\ub824\uc918. \ud615\uc2dd\uc740 '\uc7a5\uc810: ..., \ub2e8\uc810: ...'\uc73c\ub85c \ud574\uc918.`;
+  const specPrompt = `${partName}\uc758 \uc8fc\uc694 \uc0ac\uc591\uc744 \uc694\uc57d\ud574\uc11c \uc54c\ub824\uc918. \ucf54\uc5b4 \uc218, \uc2a4\ub808\ub4dc \uc218, L2/L3 \uce90\uc2dc, \ubca0\uc774\uc2a4 \ud074\ub7ed, \ubd80\uc2a4\ud2b8 \ud074\ub7ed \uc704\uc8fc\ub85c \uac04\ub2e8\ud558\uac8c \uc815\ub9ac\ud574\uc918. \uc608\uc2dc: \ucf54\uc5b4: 6, \uc2a4\ub808\ub4dc: 12, ...`;
 
   try {
     const [reviewRes, specRes] = await Promise.all([
@@ -172,21 +181,20 @@ app.post("/api/gpt-info", async (req, res) => {
     const reviewData = await reviewRes.json();
     const specData = await specRes.json();
 
-    const review = reviewData.choices?.[0]?.message?.content || "한줄평 생성 실패";
-    const specSummary = specData.choices?.[0]?.message?.content || "사양 요약 실패";
+    const review = reviewData.choices?.[0]?.message?.content || "\ud55c\uc904\ud3c9 \uc0dd\uc131 \uc2e4\ud328";
+    const specSummary = specData.choices?.[0]?.message?.content || "\uc0ac\uc591 \uc694\uc57d \uc2e4\ud328";
 
     res.json({ review, specSummary });
   } catch (error) {
-    console.error("❌ GPT 통합 요청 실패:", error.message);
-    res.status(500).json({ error: "GPT 정보 요청 실패" });
+    console.error("\u274C GPT \ud1b5\ud569 \uc694\uccad \uc2e4\ud328:", error.message);
+    res.status(500).json({ error: "GPT \uc815\ubcf4 \uc694\uccad \uc2e4\ud328" });
   }
 });
 
-// 404 핸들러
 app.use((req, res) => {
   res.status(404).json({
     error: "Not Found",
-    message: `경로를 찾을 수 없습니다: ${req.method} ${req.path}`,
+    message: `\uacbd\ub85c\ub97c \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4: ${req.method} ${req.path}`,
     availableRoutes: [
       "GET /",
       "GET /api/health",
@@ -204,9 +212,8 @@ app.use((req, res) => {
   });
 });
 
-// 에러 핸들러
 app.use((err, req, res, next) => {
-  console.error("❌ 서버 에러:", err);
+  console.error("\u274C \uc11c\ubc84 \uc5d0\ub7ec:", err);
   res.status(err.status || 500).json({
     error: err.message || "Internal Server Error",
     path: req.path,
@@ -214,13 +221,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-// DB 연결 후 서버 시작
 connectDB().then(() => {
   app.listen(config.port, "0.0.0.0", () => {
-    console.log(`✅ 서버 실행 중: http://localhost:${config.port}`);
-    console.log(`🌐 CORS 허용 도메인:`, allowedOrigins);
+    console.log(`\u2705 \uc11c\ubc84 \uc2e4\ud589 \uc911: http://localhost:${config.port}`);
+    console.log(`\uD83C\uDF10 CORS \ud5c8\uc6a9 \ub3c4\uba54\uc778:`, allowedOrigins);
   });
 }).catch(err => {
-  console.error("❌ MongoDB 연결 실패:", err);
+  console.error("\u274C MongoDB \uc5f0\uacb0 \uc2e4\ud328:", err);
   process.exit(1);
 });
