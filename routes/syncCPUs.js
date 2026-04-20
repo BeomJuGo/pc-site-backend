@@ -37,8 +37,8 @@ function normalizeCpuName(name) {
   normalized = normalized.replace(/\([^)]*\)/g, "");
   const replacements = {
     "라이젠": "RYZEN", "스레드리퍼": "THREADRIPPER", "애슬론": "ATHLON",
-    "인텔": "INTEL", "코어": "CORE", "웈트라": "ULTRA",
-    "폨티엄": "PENTIUM", "셀러론": "CELERON", "제온": "XEON",
+    "인텔": "INTEL", "코어": "CORE", "웸트라": "ULTRA",
+    "폰티엄": "PENTIUM", "셀러론": "CELERON", "제온": "XEON",
   };
   for (const [kor, eng] of Object.entries(replacements)) {
     normalized = normalized.replace(new RegExp(kor, "gi"), eng);
@@ -61,7 +61,7 @@ function extractBrand(name) {
   const n = name.toUpperCase();
   if (n.includes("ARM") || n.includes("SAMSUNG") || n.includes("MEDIATEK") || n.includes("QUALCOMM") || n.includes("APPLE") || n.includes("EXYNOS") || n.includes("DIMENSITY") || n.includes("SNAPDRAGON")) return "OTHER";
   if (n.includes("AMD") || n.includes("RYZEN") || n.includes("라이젠") || n.includes("THREADRIPPER") || n.includes("ATHLON") || n.includes("PHENOM") || n.includes("FX") || n.includes("EPYC")) return "AMD";
-  if (n.includes("INTEL") || n.includes("CORE") || n.includes("인텔") || n.includes("코어") || n.includes("PENTIUM") || n.includes("폨티엄") || n.includes("CELERON") || n.includes("셀러론") || n.includes("XEON") || n.includes("제온") || n.includes("ULTR") || n.startsWith("I3 ") || n.startsWith("I5 ") || n.startsWith("I7 ") || n.startsWith("I9 ")) return "Intel";
+  if (n.includes("INTEL") || n.includes("CORE") || n.includes("인텔") || n.includes("코어") || n.includes("PENTIUM") || n.includes("폰티엄") || n.includes("CELERON") || n.includes("셀러론") || n.includes("XEON") || n.includes("제온") || n.includes("ULTR") || n.startsWith("I3 ") || n.startsWith("I5 ") || n.startsWith("I7 ") || n.startsWith("I9 ")) return "Intel";
   return null;
 }
 
@@ -135,7 +135,7 @@ function extractSocket(name = "", spec = "") {
   const lga = combined.match(/LGA\s?-?\s?(\d{3,4})/i);
   if (lga) return `Socket: LGA${lga[1]}`;
   if (/인텔|INTEL/i.test(combined)) {
-    if (/코어\s*웈트라|CORE\s*ULTRA/i.test(combined) && /시리즈\s*2|SERIES\s*2|애로우레이크|ARROW\s*LAKE/i.test(combined)) return "Socket: LGA1851";
+    if (/코어\s*웸트라|CORE\s*ULTRA/i.test(combined) && /시리즈\s*2|SERIES\s*2|애로우레이크|ARROW\s*LAKE/i.test(combined)) return "Socket: LGA1851";
     if (/14세대|13세대|12세대|\b(14|13|12)\s*GEN/i.test(combined) || /낙터레이크|RAPTOR|앨더레이크|ALDER/i.test(combined)) return "Socket: LGA1700";
     if (/11세대|10세대|\b(11|10)\s*GEN/i.test(combined) || /로켓레이크|ROCKET|코멧레이크|COMET/i.test(combined)) return "Socket: LGA1200";
     if (/9세대|8세대|\b(9|8)\s*GEN/i.test(combined) || /커피레이크|COFFEE/i.test(combined)) return "Socket: LGA1151";
@@ -162,8 +162,8 @@ function extractCpuInfo(name = "", spec = "") {
   const boostClockMatch = combined.match(/(?:부스트|최대)[:\s]*(\d+\.?\d*)\s*GHz/i);
   if (baseClockMatch) parts.push(`베이스: ${baseClockMatch[1]}GHz`);
   if (boostClockMatch) parts.push(`부스트: ${boostClockMatch[1]}GHz`);
-  const cacheMatch = combined.match(/(\d+)\s*MB\s*(?:캐시|CACHE)/i);
-  if (cacheMatch) parts.push(`캐시: ${cacheMatch[1]}MB`);
+  const cacheMatch = combined.match(/(\d+)\s*MB\s*(?:쳨시|CACHE)/i);
+  if (cacheMatch) parts.push(`쳨시: ${cacheMatch[1]}MB`);
   const tdpMatch = combined.match(/TDP[:\s]*(\d+)W/i);
   if (tdpMatch) parts.push(`TDP: ${tdpMatch[1]}W`);
   const socket = extractSocket(name, spec);
@@ -435,7 +435,7 @@ function findBenchmarkScore(cpuName, benchmarks) {
     if (n.includes('CORE I9') || n.includes('코어I9') || n.includes('코어 I9')) return 'CORE_I9';
     if (n.includes('CORE ULTRA') || n.includes('ULTR')) return 'CORE_ULTRA';
     if (n.includes('CELERON') || n.includes('셀러론')) return 'CELERON';
-    if (n.includes('PENTIUM') || n.includes('폨티엄')) return 'PENTIUM';
+    if (n.includes('PENTIUM') || n.includes('폰티엄')) return 'PENTIUM';
     if (n.includes('XEON') || n.includes('제온')) return 'XEON';
     if (n.includes('CORE2') || n.includes('코어2')) return 'CORE2';
     return null;
@@ -533,10 +533,10 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     if (!info || info.trim() === "") info = baseInfo;
     if (!review || review.trim() === "") {
       const upperName = cpu.name.toUpperCase();
-      let tag = "일반 작업과 가벼운 게임직에 적합";
+      let tag = "일반 작업과 가방은 게임직에 적합";
       if (/THREADRIPPER|EPYC/.test(upperName)) tag = "워크스테이션/서버급 연산에 적합";
       else if (/XEON/.test(upperName)) tag = "서버/워크스테이션 용도에 적합";
-      else if (/X3D/.test(upperName)) tag = "게임직 성능 최적화 (대용량 캐시)";
+      else if (/X3D/.test(upperName)) tag = "게임직 성능 최적화 (대용량 쳨시)";
       else if (/K\b/.test(upperName)) tag = "오버클럭/게임직에 유리";
       else if (/F\b/.test(upperName)) tag = "내장그래픽 없음, 외장 GPU 권장";
       if (benchScore >= 45000) tag += ", 하이엔드 성능";
@@ -556,7 +556,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       const ops = { $set: update, $unset: { specSummary: "" } };
       if (cpu.price > 0 && cpu.price !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { date: today, price: cpu.price } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: cpu.price }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
@@ -574,7 +574,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) await col.deleteMany({ category: "cpu", name: { $in: toDelete } });
 
-  console.log(`\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너떐 ${skipped}개`);
+  console.log(`\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뀐 ${skipped}개`);
   console.log(`📊 벤치마크 점수: ${withScore}/${cpus.length}개 매칭 완료`);
 }
 

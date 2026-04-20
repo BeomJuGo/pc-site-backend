@@ -383,7 +383,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
       if (p.price > 0 && p.price !== old.price) {
         const priceHistory = old.priceHistory || [];
         const already = priceHistory.some(ph => ph.date === today);
-        if (!already) ops.$push = { priceHistory: { date: today, price: p.price } };
+        if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: p.price }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       console.log("\uD83D\uDD01 업데이트됨:", p.name);
