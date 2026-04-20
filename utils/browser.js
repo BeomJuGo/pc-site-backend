@@ -7,6 +7,8 @@ const DEFAULT_PROTOCOL_TIMEOUT = Number(
   process.env.PUPPETEER_PROTOCOL_TIMEOUT || 240000
 );
 
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // 공통 광고/추적 차단 호스트 목록
 export const BLOCK_HOSTS = [
   'google-analytics.com', 'analytics.google.com', 'googletagmanager.com', 'google.com/ccm',
@@ -97,7 +99,6 @@ export async function setupPage(page, timeout = 60000) {
 export async function navigateToDanawaPage(page, pageNum, itemSelector = '.main_prodlist .prod_item') {
   if (pageNum === 1) return;
 
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const pageSelector = `a.num[page="${pageNum}"]`;
   const pageExists = await page.evaluate(
     (sel) => !!document.querySelector(sel),
@@ -119,7 +120,6 @@ export async function navigateToDanawaPage(page, pageNum, itemSelector = '.main_
     }, pageNum);
   }
 
-  // 클릭 인식 대기 후 새 항목 출현까지 스마트 대기 (sleep(5000) 대비 4.5초 절약)
   await sleep(500);
   await page.waitForFunction(
     (sel) => document.querySelectorAll(sel).length > 0,
