@@ -1,0 +1,301 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "PC 견적 추천 API",
+    "version": "1.0.0",
+    "description": "PC 부품 조회, 견적 저장/공유, 가격 알림, 호환성 검사 API"
+  },
+  "servers": [
+    { "url": "/", "description": "Current server" }
+  ],
+  "tags": [
+    { "name": "parts", "description": "부품 조회" },
+    { "name": "builds", "description": "견적 저장/공유" },
+    { "name": "alerts", "description": "가격 알림" },
+    { "name": "compatibility", "description": "호환성 검사" },
+    { "name": "recommend", "description": "AI 추천" },
+    { "name": "system", "description": "시스템" }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["system"],
+        "summary": "서버 상태 확인",
+        "responses": {
+          "200": {
+            "description": "서버 정상",
+            "content": {
+              "application/json": {
+                "example": { "status": "OK", "timestamp": "2025-01-01T00:00:00.000Z", "uptime": 3600 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parts": {
+      "get": {
+        "tags": ["parts"],
+        "summary": "부품 목록 조회",
+        "parameters": [
+          { "name": "category", "in": "query", "required": true, "schema": { "type": "string", "enum": ["cpu", "gpu", "motherboard", "memory", "psu", "cooler", "storage", "case"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "example": "price" } },
+          { "name": "order", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "asc" } }
+        ],
+        "responses": {
+          "200": { "description": "부품 목록" }
+        }
+      }
+    },
+    "/api/parts/value-rank": {
+      "get": {
+        "tags": ["parts"],
+        "summary": "가성비 랭킹 조회 (점수/가격 비율 기준)",
+        "parameters": [
+          { "name": "category", "in": "query", "required": true, "schema": { "type": "string", "enum": ["cpu", "gpu", "memory", "storage"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "가성비 순 부품 목록" }
+        }
+      }
+    },
+    "/api/parts/budget-picks": {
+      "get": {
+        "tags": ["parts"],
+        "summary": "예산별 추천 부품 세트 (카테고리 비율 배분)",
+        "parameters": [
+          { "name": "budget", "in": "query", "required": true, "schema": { "type": "integer", "example": 1000000 }, "description": "총 예산 (원)" }
+        ],
+        "responses": {
+          "200": { "description": "카테고리별 추천 부품" }
+        }
+      }
+    },
+    "/api/parts/batch": {
+      "post": {
+        "tags": ["parts"],
+        "summary": "여러 부품 일괄 조회 (최대 50개)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "items": [
+                  { "category": "cpu", "name": "AMD Ryzen 5 7600X" },
+                  { "category": "gpu", "name": "NVIDIA RTX 4070" }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "조회된 부품 배열" }
+        }
+      }
+    },
+    "/api/parts/danawa-url": {
+      "get": {
+        "tags": ["parts"],
+        "summary": "다나와 검색 URL 생성",
+        "parameters": [
+          { "name": "name", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "다나와 검색 URL" }
+        }
+      }
+    },
+    "/api/parts/{category}/{name}": {
+      "get": {
+        "tags": ["parts"],
+        "summary": "특정 부품 상세 조회",
+        "parameters": [
+          { "name": "category", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "부품 상세 정보" },
+          "404": { "description": "부품 없음" }
+        }
+      }
+    },
+    "/api/parts/{category}/{name}/history": {
+      "get": {
+        "tags": ["parts"],
+        "summary": "부품 가격 히스토리 조회",
+        "parameters": [
+          { "name": "category", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "가격 히스토리 배열" }
+        }
+      }
+    },
+    "/api/builds": {
+      "post": {
+        "tags": ["builds"],
+        "summary": "견적 저장 및 공유 링크 생성 (30일 유효)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "builds": [{ "category": "cpu", "name": "AMD Ryzen 5 7600X", "price": 250000 }],
+                "purpose": "게임용",
+                "budget": 1500000
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "shareId 및 만료일 반환",
+            "content": {
+              "application/json": {
+                "example": { "shareId": "a1b2c3d4", "expiresAt": "2025-02-01T00:00:00.000Z" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/builds/{shareId}": {
+      "get": {
+        "tags": ["builds"],
+        "summary": "공유된 견적 조회",
+        "parameters": [
+          { "name": "shareId", "in": "path", "required": true, "schema": { "type": "string", "example": "a1b2c3d4" } }
+        ],
+        "responses": {
+          "200": { "description": "견적 정보" },
+          "404": { "description": "견적 없음" },
+          "410": { "description": "만료된 견적" }
+        }
+      }
+    },
+    "/api/alerts": {
+      "post": {
+        "tags": ["alerts"],
+        "summary": "가격 알림 등록",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "category": "gpu",
+                "name": "NVIDIA RTX 4070",
+                "targetPrice": 500000,
+                "email": "user@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "알림 등록 완료" },
+          "409": { "description": "중복 알림" }
+        }
+      },
+      "get": {
+        "tags": ["alerts"],
+        "summary": "내 가격 알림 목록 조회",
+        "parameters": [
+          { "name": "email", "in": "query", "required": true, "schema": { "type": "string", "format": "email" } }
+        ],
+        "responses": {
+          "200": { "description": "알림 목록" }
+        }
+      }
+    },
+    "/api/alerts/{id}": {
+      "delete": {
+        "tags": ["alerts"],
+        "summary": "가격 알림 삭제",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "삭제 완료" },
+          "404": { "description": "알림 없음" }
+        }
+      }
+    },
+    "/api/compatibility/check": {
+      "post": {
+        "tags": ["compatibility"],
+        "summary": "부품 호환성 검사 (소켓, DDR, PSU, 폼팩터)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "parts": {
+                  "cpu": "AMD Ryzen 5 7600X",
+                  "motherboard": "ASUS ROG STRIX B650E-F GAMING WIFI",
+                  "memory": "Samsung DDR5-4800 16GB",
+                  "psu": "Seasonic Focus GX-750",
+                  "cooler": "Noctua NH-D15",
+                  "case": "Fractal Design Define 7"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "호환성 검사 결과",
+            "content": {
+              "application/json": {
+                "example": {
+                  "compatible": true,
+                  "issues": [],
+                  "warnings": ["PSU 여유 부족: 750W (실사 20% 여유 시 820W 이상 권장)"],
+                  "info": { "cpuSocket": "AM5", "boardSocket": "AM5", "boardDdr": "DDR5", "memDdr": "DDR5" },
+                  "summary": "호환 가능 (주의사항 있음)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/recommend": {
+      "post": {
+        "tags": ["recommend"],
+        "summary": "AI 기반 PC 견적 추천",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": { "budget": 1500000, "purpose": "게임용", "priority": "가성비" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "추천 견적" }
+        }
+      }
+    },
+    "/api/gpt-info": {
+      "post": {
+        "tags": ["parts"],
+        "summary": "GPT 기반 부품 한줄평 및 사양 요약 (분당 10회 제한)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": { "partName": "AMD Ryzen 5 7600X" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "부품 리뷰 및 사양 요약" },
+          "429": { "description": "요청 횟수 초과" }
+        }
+      }
+    }
+  }
+}
