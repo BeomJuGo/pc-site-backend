@@ -1,4 +1,3 @@
-// index.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -6,6 +5,7 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import config from "./config.js";
 import { connectDB, getDB } from "./db.js";
+import logger from "./utils/logger.js";
 
 import syncCPUsRouter from "./routes/syncCPUs.js";
 import syncGPUsRouter from "./routes/syncGPUs.js";
@@ -20,6 +20,14 @@ import syncStorageRouter from "./routes/syncSTORAGE.js";
 import buildsRouter from "./routes/builds.js";
 import alertsRouter, { checkPriceAlerts } from "./routes/alerts.js";
 import compatibilityRouter from "./routes/compatibility.js";
+import docsRouter from "./routes/docs.js";
+
+const REQUIRED_ENV = ["MONGODB_URI", "OPENAI_API_KEY", "ADMIN_API_KEY"];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length > 0) {
+  console.error(`\u274C \ud544\uc218 \ud658\uacbd\ubcc0\uc218 \ub204\ub77d: ${missingEnv.join(", ")}`);
+  process.exit(1);
+}
 
 const app = express();
 const allowedOrigins = config.allowedOrigins;
@@ -32,7 +40,7 @@ app.use(
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      console.log("\u274C CORS \ucc28\ub2e8\ub41c origin:", origin);
+      logger.warn(`CORS \ucc28\ub2e8\ub41c origin: ${origin}`);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -69,8 +77,35 @@ const gptInfoLimiter = rateLimit({
   message: { error: "Too Many Requests", message: "1\ubd84\uc5d0 \ucd5c\ub300 10\ubc88 \uc694\uccad \uac00\ub2a5\ud569\ub2c8\ub2e4." },
 });
 
+const buildsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "\uc7a0\uc2dc \ud6c4 \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694." },
+});
+
+const alertsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "\uc7a0\uc2dc \ud6c4 \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694." },
+});
+
+const compatibilityLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "\uc7a0\uc2dc \ud6c4 \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694." },
+});
+
 app.use("/api", apiLimiter);
 app.use("/api/recommend", recommendLimiter);
+app.use("/api/builds", buildsLimiter);
+app.use("/api/alerts", alertsLimiter);
+app.use("/api/compatibility", compatibilityLimiter);
 
 function requireAdminKey(req, res, next) {
   if (!config.adminApiKey) {
@@ -84,7 +119,7 @@ function requireAdminKey(req, res, next) {
 }
 
 app.use((req, res, next) => {
-  console.log(`\uD83D\uDCE5 ${req.method} ${req.path} from ${req.headers.origin || "same-origin"}`);
+  logger.info(`${req.method} ${req.path} from ${req.headers.origin || "same-origin"}`);
   next();
 });
 
@@ -100,10 +135,12 @@ app.get("/", (req, res) => {
   res.json({
     message: "PC \ucd94\ucc9c \ubc31\uc5d4\ub4dc API",
     status: "running",
+    docs: "/api/docs",
     endpoints: ["/api/health", "/api/recommend", "/api/parts", "/api/builds", "/api/alerts", "/api/compatibility"],
   });
 });
 
+app.use("/api/docs", docsRouter);
 app.use("/api/recommend", recommendRouter);
 app.use("/api/admin", requireAdminKey, syncCPUsRouter);
 app.use("/api/admin", requireAdminKey, syncGPUsRouter);
@@ -190,7 +227,7 @@ app.post("/api/gpt-info", gptInfoLimiter, async (req, res) => {
     const specSummary = specData.choices?.[0]?.message?.content || "\uc0ac\uc591 \uc694\uc57d \uc2e4\ud328";
     res.json({ review, specSummary });
   } catch (error) {
-    console.error("\u274C GPT \ud1b5\ud569 \uc694\uccad \uc2e4\ud328:", error.message);
+    logger.error(`GPT \ud1b5\ud569 \uc694\uccad \uc2e4\ud328: ${error.message}`);
     res.status(500).json({ error: "GPT \uc815\ubcf4 \uc694\uccad \uc2e4\ud328" });
   }
 });
@@ -199,26 +236,11 @@ app.use((req, res) => {
   res.status(404).json({
     error: "Not Found",
     message: `\uacbd\ub85c\ub97c \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4: ${req.method} ${req.path}`,
-    availableRoutes: [
-      "GET /", "GET /api/health",
-      "GET /api/parts", "GET /api/parts/value-rank?category=gpu",
-      "GET /api/parts/budget-picks?budget=1000000",
-      "POST /api/parts/batch", "GET /api/parts/danawa-url?name=...",
-      "GET /api/parts/:category/:name", "GET /api/parts/:category/:name/history",
-      "POST /api/recommend",
-      "POST /api/builds", "GET /api/builds/:shareId",
-      "POST /api/alerts", "GET /api/alerts?email=...", "DELETE /api/alerts/:id",
-      "POST /api/compatibility/check",
-      "POST /api/admin/sync-cpus", "POST /api/admin/sync-gpus",
-      "POST /api/admin/sync-motherboards", "POST /api/admin/sync-memory",
-      "POST /api/admin/sync-psu", "POST /api/admin/sync-case",
-      "POST /api/admin/sync-cooler", "POST /api/admin/sync-storage",
-    ],
   });
 });
 
 app.use((err, req, res, next) => {
-  console.error("\u274C \uc11c\ubc84 \uc5d0\ub7ec:", err);
+  logger.error(`\uc11c\ubc84 \uc5d0\ub7ec: ${err.message}`, err);
   const isProduction = config.nodeEnv === "production";
   res.status(err.status || 500).json({
     error: isProduction ? "Internal Server Error" : (err.message || "Internal Server Error"),
@@ -227,16 +249,58 @@ app.use((err, req, res, next) => {
   });
 });
 
-connectDB().then(() => {
+function setupAutoSync(cron, port, adminKey) {
+  const syncRoutes = [
+    "/api/admin/sync-cpus",
+    "/api/admin/sync-gpus",
+    "/api/admin/sync-motherboards",
+    "/api/admin/sync-memory",
+    "/api/admin/sync-psu",
+    "/api/admin/sync-case",
+    "/api/admin/sync-cooler",
+    "/api/admin/sync-storage",
+  ];
+
+  cron.schedule("0 3 * * *", async () => {
+    logger.info("\uc790\ub3d9 \ud06c\ub864\ub9c1 \uc2dc\uc791");
+    for (const route of syncRoutes) {
+      try {
+        const r = await fetch(`http://localhost:${port}${route}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${adminKey}` },
+          signal: AbortSignal.timeout(10 * 60 * 1000),
+        });
+        logger.info(`\uc790\ub3d9 \ud06c\ub864\ub9c1 \uc644\ub8cc: ${route} (${r.status})`);
+      } catch (err) {
+        logger.error(`\uc790\ub3d9 \ud06c\ub864\ub9c1 \uc2e4\ud328: ${route} - ${err.message}`);
+      }
+      await new Promise((r) => setTimeout(r, 60 * 1000));
+    }
+    logger.info("\uc790\ub3d9 \ud06c\ub864\ub9c1 \uc804\uccb4 \uc644\ub8cc");
+  }, { timezone: "Asia/Seoul" });
+
+  logger.info("\uc790\ub3d9 \ud06c\ub864\ub9c1 \uc2a4\ucf00\uc904 \ub4f1\ub85d\ub428 (\ub9e4\uc77c 03:00 KST)");
+}
+
+async function startServer() {
+  await connectDB();
+
   app.listen(config.port, "0.0.0.0", () => {
-    console.log(`\u2705 \uc11c\ubc84 \uc2e4\ud589 \uc911: http://localhost:${config.port}`);
-    console.log(`\uD83C\uDF10 CORS \ud5c8\uc6a9 \ub3c4\uba54\uc778:`, allowedOrigins);
+    logger.info(`\uc11c\ubc84 \uc2e4\ud589 \uc911: http://localhost:${config.port}`);
+    logger.info(`API \ubb38\uc11c: http://localhost:${config.port}/api/docs`);
+    logger.info(`CORS \ud5c8\uc6a9 \ub3c4\uba54\uc778: ${allowedOrigins.join(", ")}`);
   });
 
-  // \uac00\uaca9 \uc54c\ub9bc \ccb4\ud06c - 6\uc2dc\uac04\ub9c8\ub2e4
   setInterval(checkPriceAlerts, 6 * 60 * 60 * 1000);
-  console.log("\uD83D\uDD14 \uac00\uaca9 \uc54c\ub9bc \uccb4\ucee4 \uc2dc\uc791 (6\uc2dc\uac04 \uac04\uaca9)");
-}).catch(err => {
-  console.error("\u274C MongoDB \uc5f0\uacb0 \uc2e4\ud328:", err);
+  logger.info("\uac00\uaca9 \uc54c\ub9bc \uccb4\ucee4 \uc2dc\uc791 (6\uc2dc\uac04 \uac04\uaca9)");
+
+  if (process.env.ENABLE_AUTO_SYNC === "true" && config.adminApiKey) {
+    const { default: cron } = await import("node-cron");
+    setupAutoSync(cron, config.port, config.adminApiKey);
+  }
+}
+
+startServer().catch((err) => {
+  logger.error(`\uc11c\ubc84 \uc2dc\uc791 \uc2e4\ud328: ${err.message}`);
   process.exit(1);
 });
