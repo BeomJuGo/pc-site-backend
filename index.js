@@ -1,6 +1,8 @@
 // index.js
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
 import rateLimit from "express-rate-limit";
 import config from "./config.js";
 import { connectDB, getDB } from "./db.js";
@@ -19,6 +21,9 @@ import syncStorageRouter from "./routes/syncSTORAGE.js";
 const app = express();
 const allowedOrigins = config.allowedOrigins;
 
+app.use(helmet());
+app.use(compression());
+
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -30,7 +35,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
-    exposedHeaders: ["Content-Length", "X-JSON"],
+    exposedHeaders: ["Content-Length", "X-JSON", "X-Total-Count", "X-Page", "X-Total-Pages"],
     maxAge: 86400,
   })
 );
@@ -53,13 +58,20 @@ const recommendLimiter = rateLimit({
   message: { error: "Too Many Requests", message: "1\ubd84\uc5d0 \ucd5c\ub300 10\ubc88 \uc694\uccad \uac00\ub2a5\ud569\ub2c8\ub2e4." },
 });
 
+const gptInfoLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "1\ubd84\uc5d0 \ucd5c\ub300 10\ubc88 \uc694\uccad \uac00\ub2a5\ud569\ub2c8\ub2e4." },
+});
+
 app.use("/api", apiLimiter);
 app.use("/api/recommend", recommendLimiter);
 
 function requireAdminKey(req, res, next) {
   if (!config.adminApiKey) {
-    console.warn("\u26A0\uFE0F ADMIN_API_KEY \ubbf8\uc124\uc815 - admin \uc5d4\ub4dc\ud3ec\uc778\ud2b8\uac00 \ubcf4\ud638\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4");
-    return next();
+    return res.status(500).json({ error: "Server Misconfiguration", message: "ADMIN_API_KEY\uac00 \uc11c\ubc84\uc5d0 \uc124\uc815\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4." });
   }
   const key = req.headers["authorization"]?.replace("Bearer ", "");
   if (key !== config.adminApiKey) {
@@ -78,8 +90,6 @@ app.get("/api/health", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    cors: "enabled",
-    allowedOrigins,
   });
 });
 
@@ -107,6 +117,9 @@ app.get("/api/naver-price", async (req, res) => {
   if (!query || typeof query !== "string" || query.trim() === "") {
     return res.status(400).json({ error: "query \ud30c\ub77c\ubbf8\ud130\uac00 \ud544\uc694\ud569\ub2c8\ub2e4." });
   }
+  if (query.length > 200) {
+    return res.status(400).json({ error: "query\uac00 \ub108\ubb34 \uae38\uc2b5\ub2c8\ub2e4. (\ucd5c\ub300 200\uc790)" });
+  }
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   try {
     const response = await fetch(url, {
@@ -122,10 +135,13 @@ app.get("/api/naver-price", async (req, res) => {
   }
 });
 
-app.post("/api/gpt-info", async (req, res) => {
+app.post("/api/gpt-info", gptInfoLimiter, async (req, res) => {
   const { partName } = req.body;
   if (!partName || typeof partName !== "string" || partName.trim() === "") {
     return res.status(400).json({ error: "partName\uc774 \ud544\uc694\ud569\ub2c8\ub2e4." });
+  }
+  if (partName.length > 200) {
+    return res.status(400).json({ error: "partName\uc774 \ub108\ubb34 \uae38\ub2c8\ub2e4. (\ucd5c\ub300 200\uc790)" });
   }
 
   // DB \uce90\uc2dc \uba3c\uc800 \uc870\ud68c (GPT \ud638\ucd9c \ube44\uc6a9 \uc808\uac10)
@@ -145,8 +161,9 @@ app.post("/api/gpt-info", async (req, res) => {
     }
   } catch (_) {}
 
-  const reviewPrompt = `${partName}\uc758 \uc7a5\uc810\uacfc \ub2e8\uc810\uc744 \uac01\uac01 \ud55c \ubb38\uc7a5\uc73c\ub85c \uc54c\ub824\uc918. \ud615\uc2dd\uc740 '\uc7a5\uc810: ..., \ub2e8\uc810: ...'\uc73c\ub85c \ud574\uc918.`;
-  const specPrompt = `${partName}\uc758 \uc8fc\uc694 \uc0ac\uc591\uc744 \uc694\uc57d\ud574\uc11c \uc54c\ub824\uc918. \ucf54\uc5b4 \uc218, \uc2a4\ub808\ub4dc \uc218, L2/L3 \uce90\uc2dc, \ubca0\uc774\uc2a4 \ud074\ub7ed, \ubd80\uc2a4\ud2b8 \ud074\ub7ed \uc704\uc8fc\ub85c \uac04\ub2e8\ud558\uac8c \uc815\ub9ac\ud574\uc918. \uc608\uc2dc: \ucf54\uc5b4: 6, \uc2a4\ub808\ub4dc: 12, ...`;
+  const safeName = partName.trim();
+  const reviewPrompt = `${safeName}\uc758 \uc7a5\uc810\uacfc \ub2e8\uc810\uc744 \uac01\uac01 \ud55c \ubb38\uc7a5\uc73c\ub85c \uc54c\ub824\uc918. \ud615\uc2dd\uc740 '\uc7a5\uc810: ..., \ub2e8\uc810: ...'\uc73c\ub85c \ud574\uc918.`;
+  const specPrompt = `${safeName}\uc758 \uc8fc\uc694 \uc0ac\uc591\uc744 \uc694\uc57d\ud574\uc11c \uc54c\ub824\uc918. \ucf54\uc5b4 \uc218, \uc2a4\ub808\ub4dc \uc218, L2/L3 \uce90\uc2dc, \ubca0\uc774\uc2a4 \ud074\ub7ed, \ubd80\uc2a4\ud2b8 \ud074\ub7ed \uc704\uc8fc\ub85c \uac04\ub2e8\ud558\uac8c \uc815\ub9ac\ud574\uc918. \uc608\uc2dc: \ucf54\uc5b4: 6, \uc2a4\ub808\ub4dc: 12, ...`;
 
   try {
     const [reviewRes, specRes] = await Promise.all([
@@ -214,8 +231,9 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("\u274C \uc11c\ubc84 \uc5d0\ub7ec:", err);
+  const isProduction = config.nodeEnv === "production";
   res.status(err.status || 500).json({
-    error: err.message || "Internal Server Error",
+    error: isProduction ? "Internal Server Error" : (err.message || "Internal Server Error"),
     path: req.path,
     method: req.method,
   });

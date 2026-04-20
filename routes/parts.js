@@ -4,15 +4,12 @@ import { getDB } from "../db.js";
 
 const router = express.Router();
 
-// 이름 fuzzy 매칭 헬퍼: 정확 매칭 → regex fallback (DB 레벨 처리)
 async function findPartByName(db, category, rawName) {
   const decoded = decodeURIComponent(rawName);
 
-  // 1차: 정확한 이름 매칭 (인덱스 활용)
   let part = await db.collection("parts").findOne({ category, name: decoded });
   if (part) return part;
 
-  // 2차: 괄호 제거 후 접두사 매칭
   const cleanName = decoded.split("(")[0].trim();
   const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   part = await db.collection("parts").findOne({
@@ -21,49 +18,59 @@ async function findPartByName(db, category, rawName) {
   });
   if (part) return part;
 
-  // 3차: 부분 포함 매칭
   return db.collection("parts").findOne({
     category,
     name: { $regex: escaped, $options: "i" },
   });
 }
 
-// /api/parts?category=cpu|gpu|motherboard|memory
+// /api/parts?category=cpu|gpu|...&page=1&limit=50
 router.get("/", async (req, res) => {
-  const { category } = req.query;
+  const { category, page, limit } = req.query;
   try {
     const db = getDB();
     const query = category ? { category } : {};
-    const parts = await db.collection("parts").find(query).toArray();
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 100));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [parts, total] = await Promise.all([
+      db.collection("parts").find(query).skip(skip).limit(limitNum).toArray(),
+      db.collection("parts").countDocuments(query),
+    ]);
+
+    res.set("X-Total-Count", String(total));
+    res.set("X-Page", String(pageNum));
+    res.set("X-Total-Pages", String(Math.ceil(total / limitNum)));
     res.json(parts);
   } catch (err) {
-    res.status(500).json({ error: "부품 목록 조회 실패" });
+    res.status(500).json({ error: "\ubd80\ud488 \ubaa9\ub85d \uc870\ud68c \uc2e4\ud328" });
   }
 });
 
-// 가격 히스토리: /api/parts/:category/:name/history
+// \uac00\uaca9 \ud788\uc2a4\ud1a0\ub9ac: /api/parts/:category/:name/history
 router.get("/:category/:name/history", async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
     const part = await findPartByName(db, category, name);
-    if (!part) return res.status(404).json({ error: "부품을 찾을 수 없음" });
+    if (!part) return res.status(404).json({ error: "\ubd80\ud488\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc74c" });
     res.json({ priceHistory: part.priceHistory || [] });
   } catch (err) {
-    res.status(500).json({ error: "가격 히스토리 조회 실패" });
+    res.status(500).json({ error: "\uac00\uaca9 \ud788\uc2a4\ud1a0\ub9ac \uc870\ud68c \uc2e4\ud328" });
   }
 });
 
-// 상세 정보: /api/parts/:category/:name
+// \uc0c1\uc138 \uc815\ubcf4: /api/parts/:category/:name
 router.get("/:category/:name", async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
     const part = await findPartByName(db, category, name);
-    if (!part) return res.status(404).json({ error: "부품을 찾을 수 없음" });
+    if (!part) return res.status(404).json({ error: "\ubd80\ud488\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc74c" });
     res.json(part);
   } catch (err) {
-    res.status(500).json({ error: "부품 상세 조회 실패" });
+    res.status(500).json({ error: "\ubd80\ud488 \uc0c1\uc138 \uc870\ud68c \uc2e4\ud328" });
   }
 });
 
