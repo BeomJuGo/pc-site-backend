@@ -7,6 +7,7 @@ import logger from "../utils/logger.js";
 import { validate } from "../middleware/validate.js";
 import { recommendSchema } from "../schemas/recommend.js";
 import { makeAiCacheKey, getOrComputeRecommendation } from "../utils/aiCache.js";
+import { upgradeAdvisorSchema } from "../schemas/recommend.js";
 
 const OPENAI_API_KEY = config.openaiApiKey;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -616,5 +617,128 @@ router.post("/", validate(recommendSchema), async (req, res) => {
     });
   }
 });
+
+// POST /api/recommend/upgrade
+router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
+  const { currentBuild, budget, purpose = "게임용" } = req.body;
+  try {
+    const db = getDB();
+
+    const [currentCpu, currentGpu] = await Promise.all([
+      currentBuild.cpu
+        ? db.collection("parts").findOne(
+            { category: "cpu", name: currentBuild.cpu },
+            { projection: { name: 1, price: 1, benchmarkScore: 1 } }
+          )
+        : null,
+      currentBuild.gpu
+        ? db.collection("parts").findOne(
+            { category: "gpu", name: currentBuild.gpu },
+            { projection: { name: 1, price: 1, benchmarkScore: 1 } }
+          )
+        : null,
+    ]);
+
+    const cpuScore = currentCpu?.benchmarkScore?.passmarkscore || 0;
+    const gpuScore = currentGpu?.benchmarkScore?.["3dmarkscore"] || 0;
+
+    const upgradeTargets = resolveUpgradeTargets(purpose, cpuScore, gpuScore, currentBuild);
+
+    const suggestions = (
+      await Promise.all(
+        upgradeTargets.map(async (target) => {
+          const scoreKey =
+            target.category === "cpu"
+              ? "benchmarkScore.passmarkscore"
+              : "benchmarkScore.3dmarkscore";
+          const currentScore = target.category === "cpu" ? cpuScore : gpuScore;
+
+          const filter = { category: target.category, price: { $gt: 0, $lte: budget } };
+          if (currentScore > 0) filter[scoreKey] = { $gt: currentScore };
+
+          const candidates = await db
+            .collection("parts")
+            .find(filter, { projection: { priceHistory: 0 } })
+            .sort({ [scoreKey]: -1 })
+            .limit(3)
+            .toArray();
+
+          if (candidates.length === 0) return null;
+
+          return {
+            category: target.category,
+            reason: target.reason,
+            priority: target.priority,
+            candidates: candidates.map((c) => {
+              const newScore =
+                target.category === "cpu"
+                  ? (c.benchmarkScore?.passmarkscore || 0)
+                  : (c.benchmarkScore?.["3dmarkscore"] || 0);
+              const improvement =
+                currentScore > 0
+                  ? Math.round(((newScore - currentScore) / currentScore) * 100)
+                  : null;
+              return { ...c, _currentScore: currentScore, _newScore: newScore, _improvement: improvement };
+            }),
+          };
+        })
+      )
+    ).filter(Boolean);
+
+    res.json({
+      currentBuild,
+      budget,
+      purpose,
+      cpuScore,
+      gpuScore,
+      suggestions,
+      summary:
+        suggestions.length > 0
+          ? `${suggestions[0].category.toUpperCase()} 업그레이드를 우선 권장합니다.`
+          : "현재 예산 내에서 유의미한 업그레이드 옵션을 찾지 못했습니다.",
+    });
+  } catch (err) {
+    logger.error(`업그레이드 어드바이저 실패: ${err.message}`);
+    res.status(500).json({ error: "업그레이드 분석 실패" });
+  }
+});
+
+function resolveUpgradeTargets(purpose, cpuScore, gpuScore, currentBuild) {
+  const has = (k) => !!currentBuild[k];
+  if (purpose === "게임용") {
+    return [
+      has("gpu") && { category: "gpu", reason: "게임 성능의 핵심은 GPU입니다.", priority: 1 },
+      has("cpu") && { category: "cpu", reason: "CPU 병목 해소로 프레임 안정성이 향상됩니다.", priority: 2 },
+    ].filter(Boolean);
+  }
+  if (purpose === "작업용") {
+    return [
+      has("cpu") && { category: "cpu", reason: "렌더링·인코딩 등 작업 성능의 핵심은 CPU입니다.", priority: 1 },
+      has("gpu") && { category: "gpu", reason: "GPU 가속 지원 작업 성능이 향상됩니다.", priority: 2 },
+    ].filter(Boolean);
+  }
+  if (purpose === "사무용") {
+    return [
+      has("cpu") && { category: "cpu", reason: "멀티태스킹 성능이 향상됩니다.", priority: 1 },
+      has("memory") && { category: "memory", reason: "메모리 용량 확장으로 체감 속도가 향상됩니다.", priority: 2 },
+    ].filter(Boolean);
+  }
+  // 가성비: upgrade whichever is relatively weaker
+  const cpuNorm = cpuScore / 15000;
+  const gpuNorm = gpuScore / 8000;
+  const gpuIsWeaker = cpuNorm > gpuNorm;
+  return [
+    has(gpuIsWeaker ? "gpu" : "cpu") && {
+      category: gpuIsWeaker ? "gpu" : "cpu",
+      reason: "현재 구성의 상대적 약점을 보완합니다.",
+      priority: 1,
+    },
+    has(gpuIsWeaker ? "cpu" : "gpu") && {
+      category: gpuIsWeaker ? "cpu" : "gpu",
+      reason: "추가 업그레이드 옵션입니다.",
+      priority: 2,
+    },
+  ].filter(Boolean);
+}
 
 export default router;

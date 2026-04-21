@@ -14,6 +14,7 @@ async function ensureIndexes(database) {
   await parts.createIndex({ category: 1 });
   await parts.createIndex({ category: 1, name: 1 });
   await parts.createIndex({ category: 1, price: 1 });
+  await parts.createIndex({ name: "text" }, { default_language: "none" });
   // value-rank 정렬용: 내림차순
   await parts.createIndex({ category: 1, "benchmarkScore.passmarkscore": -1 });
   await parts.createIndex({ category: 1, "benchmarkScore.3dmarkscore": -1 });

@@ -40,3 +40,27 @@ export const naverPriceQuerySchema = z.object({
 export const gptInfoSchema = z.object({
   partName: z.string({ required_error: "partName이 필요합니다." }).min(1).max(200),
 });
+
+export const searchQuerySchema = z
+  .object({
+    q: z.string().min(1).max(200).optional(),
+    category: z.enum(VALID_CATEGORIES).optional(),
+    manufacturer: z.string().max(100).optional(),
+    priceMin: z.coerce.number().int().nonnegative().optional(),
+    priceMax: z.coerce.number().int().positive().optional(),
+    sort: z.enum(["price_asc", "price_desc", "score_desc", "value_desc"]).optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .refine((d) => d.q || d.category, { message: "q 또는 category 중 하나는 필요합니다." });
+
+export const compareSchema = z.object({
+  parts: z
+    .array(
+      z.object({
+        category: z.enum(VALID_CATEGORIES),
+        name: z.string().min(1).max(200),
+      })
+    )
+    .min(2, "최소 2개 부품이 필요합니다.")
+    .max(5, "최대 5개까지 비교 가능합니다."),
+});
