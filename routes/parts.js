@@ -60,7 +60,7 @@ router.get("/", setCacheHeaders(60), async (req, res) => {
 router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60), async (req, res) => {
   const { q, category, manufacturer, priceMin, priceMax, sort = "price_asc", limit = 50 } = req.query;
   const cacheKey = `parts:search:${JSON.stringify(req.query)}`;
-  const cached = getCache(cacheKey);
+  const cached = await getCache(cacheKey);
   if (cached) return res.json(cached);
 
   try {
@@ -141,7 +141,7 @@ router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60),
 router.get("/value-rank", validate(valueRankQuerySchema, "query"), setCacheHeaders(120), async (req, res) => {
   const { category, limit = 20 } = req.query;
   const cacheKey = `parts:value-rank:${category}:${limit}`;
-  const cached = getCache(cacheKey);
+  const cached = await getCache(cacheKey);
   if (cached) return res.json(cached);
 
   try {
@@ -160,7 +160,7 @@ router.get("/budget-picks", validate(budgetPicksQuerySchema, "query"), setCacheH
   const { budget } = req.query;
   const budgetNum = Number(budget);
   const cacheKey = `parts:budget-picks:${budgetNum}`;
-  const cached = getCache(cacheKey);
+  const cached = await getCache(cacheKey);
   if (cached) return res.json(cached);
 
   try {

@@ -14,7 +14,7 @@ const CACHE_TTL = 60 * 60 * 1000; // 1시간
 
 async function getPriceData(category, name) {
   const cacheKey = `prices:${category}:${name}`;
-  const cached = getCache(cacheKey);
+  const cached = await getCache(cacheKey);
   if (cached) return { ...cached, _fromCache: true };
 
   const db = getDB();

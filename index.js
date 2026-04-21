@@ -5,6 +5,8 @@ import compression from "compression";
 import rateLimit from "express-rate-limit";
 import config from "./config.js";
 import { connectDB, getDB } from "./db.js";
+import { connectRedisCache } from "./utils/responseCache.js";
+import { initJobQueue, scheduleRepeating, scheduleCron } from "./utils/jobQueue.js";
 import logger from "./utils/logger.js";
 import { validate } from "./middleware/validate.js";
 import { naverPriceQuerySchema, gptInfoSchema } from "./schemas/parts.js";
@@ -263,41 +265,33 @@ app.use((err, req, res, next) => {
   });
 });
 
-function setupAutoSync(cron, port, adminKey) {
+async function runAutoSync(port, adminKey) {
   const syncRoutes = [
-    "/api/admin/sync-cpus",
-    "/api/admin/sync-gpus",
-    "/api/admin/sync-motherboards",
-    "/api/admin/sync-memory",
-    "/api/admin/sync-psu",
-    "/api/admin/sync-case",
-    "/api/admin/sync-cooler",
-    "/api/admin/sync-storage",
+    "/api/admin/sync-cpus", "/api/admin/sync-gpus", "/api/admin/sync-motherboards",
+    "/api/admin/sync-memory", "/api/admin/sync-psu", "/api/admin/sync-case",
+    "/api/admin/sync-cooler", "/api/admin/sync-storage",
   ];
-
-  cron.schedule("0 3 * * *", async () => {
-    logger.info("자동 크롤링 시작");
-    for (const route of syncRoutes) {
-      try {
-        const r = await fetch(`http://localhost:${port}${route}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${adminKey}` },
-          signal: AbortSignal.timeout(10 * 60 * 1000),
-        });
-        logger.info(`자동 크롤링 완료: ${route} (${r.status})`);
-      } catch (err) {
-        logger.error(`자동 크롤링 실패: ${route} - ${err.message}`);
-      }
-      await new Promise((r) => setTimeout(r, 60 * 1000));
+  logger.info("자동 크롤링 시작");
+  for (const route of syncRoutes) {
+    try {
+      const r = await fetch(`http://localhost:${port}${route}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminKey}` },
+        signal: AbortSignal.timeout(10 * 60 * 1000),
+      });
+      logger.info(`자동 크롤링 완료: ${route} (${r.status})`);
+    } catch (err) {
+      logger.error(`자동 크롤링 실패: ${route} - ${err.message}`);
     }
-    logger.info("자동 크롤링 전체 완료");
-  }, { timezone: "Asia/Seoul" });
-
-  logger.info("자동 크롤링 스케줄 등록됨 (매일 03:00 KST)");
+    await new Promise((r) => setTimeout(r, 60 * 1000));
+  }
+  logger.info("자동 크롤링 전체 완료");
 }
 
 async function startServer() {
   await connectDB();
+  await connectRedisCache();
+  await initJobQueue();
 
   app.listen(config.port, "0.0.0.0", () => {
     logger.info(`서버 실행 중: http://localhost:${config.port}`);
@@ -305,12 +299,12 @@ async function startServer() {
     logger.info(`CORS 허용 도메인: ${allowedOrigins.join(", ")}`);
   });
 
-  setInterval(checkPriceAlerts, 6 * 60 * 60 * 1000);
-  logger.info("가격 알림 체커 시작 (6시간 간격)");
+  await scheduleRepeating("price-alert-check", 6 * 60 * 60 * 1000, checkPriceAlerts);
 
   if (process.env.ENABLE_AUTO_SYNC === "true" && config.adminApiKey) {
-    const { default: cron } = await import("node-cron");
-    setupAutoSync(cron, config.port, config.adminApiKey);
+    await scheduleCron("parts-sync", "0 3 * * *", () =>
+      runAutoSync(config.port, config.adminApiKey)
+    );
   }
 }
 
