@@ -22,6 +22,7 @@ import syncStorageRouter from "./routes/syncSTORAGE.js";
 import buildsRouter from "./routes/builds.js";
 import alertsRouter, { checkPriceAlerts } from "./routes/alerts.js";
 import compatibilityRouter from "./routes/compatibility.js";
+import pricesRouter from "./routes/prices.js";
 import docsRouter from "./routes/docs.js";
 
 const REQUIRED_ENV = ["MONGODB_URI", "OPENAI_API_KEY", "ADMIN_API_KEY"];
@@ -104,11 +105,20 @@ const compatibilityLimiter = rateLimit({
   message: { error: "Too Many Requests", message: "잠시 후 다시 시도해주세요." },
 });
 
+const pricesLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "1분에 최대 20번 요청 가능합니다." },
+});
+
 app.use("/api", apiLimiter);
 app.use("/api/recommend", recommendLimiter);
 app.use("/api/builds", buildsLimiter);
 app.use("/api/alerts", alertsLimiter);
 app.use("/api/compatibility", compatibilityLimiter);
+app.use("/api/prices", pricesLimiter);
 
 function requireAdminKey(req, res, next) {
   if (!config.adminApiKey) {
@@ -169,6 +179,7 @@ app.use("/api/admin", requireAdminKey, syncStorageRouter);
 app.use("/api/builds", buildsRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/compatibility", compatibilityRouter);
+app.use("/api/prices", pricesRouter);
 
 app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req, res) => {
   const { query } = req.query;

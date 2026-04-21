@@ -53,6 +53,18 @@ export const searchQuerySchema = z
   })
   .refine((d) => d.q || d.category, { message: "q 또는 category 중 하나는 필요합니다." });
 
+export const priceCheckSchema = z.object({
+  parts: z
+    .array(
+      z.object({
+        category: z.enum(VALID_CATEGORIES),
+        name: z.string().min(1).max(200),
+      })
+    )
+    .min(1, "parts가 비어있습니다.")
+    .max(8, "최대 8개까지 일괄 조회 가능합니다."),
+});
+
 export const compareSchema = z.object({
   parts: z
     .array(
