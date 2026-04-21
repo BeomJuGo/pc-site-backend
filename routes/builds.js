@@ -2,23 +2,20 @@
 import express from "express";
 import { getDB } from "../db.js";
 import crypto from "crypto";
+import logger from "../utils/logger.js";
+import { validate } from "../middleware/validate.js";
+import { createBuildSchema } from "../schemas/builds.js";
 
 const router = express.Router();
 
 // POST /api/builds - 견적 저장
-router.post("/", async (req, res) => {
+router.post("/", validate(createBuildSchema), async (req, res) => {
   try {
     const { builds, purpose, budget } = req.body;
-    if (!builds || !Array.isArray(builds) || builds.length === 0)
-      return res.status(400).json({ error: "builds 배열이 필요합니다." });
-    if (!budget || typeof budget !== "number")
-      return res.status(400).json({ error: "budget이 필요합니다." });
-    if (builds.length > 10)
-      return res.status(400).json({ error: "최대 10개 견적까지 저장 가능합니다." });
 
     const db = getDB();
     const shareId = crypto.randomBytes(4).toString("hex");
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30일
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     await db.collection("builds").insertOne({
       shareId,
@@ -31,7 +28,7 @@ router.post("/", async (req, res) => {
 
     res.json({ shareId, expiresAt });
   } catch (err) {
-    console.error("\u274C 견적 저장 실패:", err);
+    logger.error(`견적 저장 실패: ${err.message}`);
     res.status(500).json({ error: "견적 저장 실패" });
   }
 });

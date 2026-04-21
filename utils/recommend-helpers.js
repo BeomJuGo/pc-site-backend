@@ -1,12 +1,12 @@
 // utils/recommend-helpers.js
-// \ucd94\ucccd \uc54c\uace0\ub9ac\uc998 \uc720\ud2f8\ub9ac\ud2f0: \uc778\uba54\ubaa8\ub9ac \uce90\uc2dc + \ucf00\uc774\uc2a4 \ud3fc\ud329\ud130 \ud638\ud658\uc131
+import logger from "./logger.js";
+import { invalidatePrefix } from "./responseCache.js";
 
 const _partsCache = { data: null, ts: 0 };
 const CACHE_TTL = 5 * 60 * 1000;
 
 export async function loadParts(db) {
   if (_partsCache.data && Date.now() - _partsCache.ts < CACHE_TTL) {
-    console.log("\uD83D\uDCE6 \uce90\uc2dc\uc5d0\uc11c \ubd80\ud488 \ub370\uc774\ud130 \ub85c\ub4dc");
     return _partsCache.data;
   }
   const col = db.collection("parts");
@@ -23,13 +23,15 @@ export async function loadParts(db) {
   ]);
   _partsCache.data = { cpus, gpus, memories, boards, psus, coolers, storages, cases };
   _partsCache.ts = Date.now();
-  console.log(`\uD83D\uDCE6 DB \ub85c\ub4dc \uc644\ub8cc (CPU:${cpus.length}, GPU:${gpus.length}, MEM:${memories.length}, BOARD:${boards.length}, PSU:${psus.length}, COOLER:${coolers.length}, STORAGE:${storages.length}, CASE:${cases.length})`);
+  logger.info(`부품 DB 로드 완료 (CPU:${cpus.length}, GPU:${gpus.length}, MEM:${memories.length}, BOARD:${boards.length})`);
   return _partsCache.data;
 }
 
 export function invalidatePartsCache() {
   _partsCache.data = null;
   _partsCache.ts = 0;
+  invalidatePrefix("parts:");
+  logger.info("부품 캐시 무효화 완료");
 }
 
 export function extractBoardFormFactor(board) {

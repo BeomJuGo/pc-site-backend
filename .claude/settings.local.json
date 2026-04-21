@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm test *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git rebase *)"
+    ]
+  }
+}

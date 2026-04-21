@@ -1,6 +1,9 @@
 // routes/compatibility.js - 호환성 자동 검사 (Feature 4)
 import express from "express";
 import { getDB } from "../db.js";
+import logger from "../utils/logger.js";
+import { validate } from "../middleware/validate.js";
+import { compatibilityCheckSchema } from "../schemas/compatibility.js";
 
 const router = express.Router();
 
@@ -97,11 +100,9 @@ function detectFormFactor(text = "") {
 }
 
 // POST /api/compatibility/check
-router.post("/check", async (req, res) => {
+router.post("/check", validate(compatibilityCheckSchema), async (req, res) => {
   try {
     const { parts } = req.body;
-    if (!parts || typeof parts !== "object")
-      return res.status(400).json({ error: "parts \uac1d\uccb4\uac00 \ud544\uc694\ud569\ub2c8\ub2e4. { cpu: '\uc774\ub984', gpu: '\uc774\ub984', ... }" });
 
     const db = getDB();
     const issues = [];
@@ -131,7 +132,7 @@ router.post("/check", async (req, res) => {
       info.cpuSocket = cpuSocket;
       info.boardSocket = boardSocket;
       if (cpuSocket && boardSocket && normalizeSocket(cpuSocket) !== normalizeSocket(boardSocket))
-        issues.push(`\uc18c\ucf13 \ubd88\uc77c\uce58: CPU(${cpuSocket}) \u2194 \uba54\uc778\ubcf4\ub4dc(${boardSocket})`);
+        issues.push(`소켓 불일치: CPU(${cpuSocket}) ↔ 메인보드(${boardSocket})`);
     }
 
     // 2. 메인보드 ↔ 메모리 DDR
@@ -141,10 +142,10 @@ router.post("/check", async (req, res) => {
       info.boardDdr = boardDdr;
       info.memDdr = memDdr;
       if (boardDdr && memDdr && boardDdr !== memDdr)
-        issues.push(`\uba54\ubaa8\ub9ac \uaddc\uaca9 \ubd88\uc77c\uce58: \uba54\uc778\ubcf4\ub4dc(${boardDdr}) \u2194 \uba54\ubaa8\ub9ac(${memDdr})`);
+        issues.push(`메모리 규격 불일치: 메인보드(${boardDdr}) ↔ 메모리(${memDdr})`);
     }
 
-    // 3. PSU 전력 충분 여부 (TDP 티어 테이블 기반 추정)
+    // 3. PSU 전력 충분 여부
     if (docs.psu) {
       const psuWatt = extractWatt(`${docs.psu.name} ${docs.psu.info || ""}`);
       let tdp = 80;
@@ -156,9 +157,9 @@ router.post("/check", async (req, res) => {
       info.estimatedTdp = tdp;
       if (psuWatt > 0) {
         if (psuWatt < tdp)
-          issues.push(`\uc804\ub825 \ubd80\uc871: PSU(${psuWatt}W) < \uc608\uc0c1 \uc18c\ube44\uc804\ub825(${tdp}W)`);
+          issues.push(`전력 부족: PSU(${psuWatt}W) < 예상 소비전력(${tdp}W)`);
         else if (psuWatt < Math.ceil(tdp * 1.2))
-          warnings.push(`PSU \uc5ec\uc720 \ubd80\uc871: ${psuWatt}W (\uc2e4\uc0ac 20% \uc5ec\uc720 \uc2dc ${Math.ceil(tdp * 1.2)}W \uc774\uc0c1 \uad8c\uc7a5)`);
+          warnings.push(`PSU 여유 부족: ${psuWatt}W (실사 20% 여유 시 ${Math.ceil(tdp * 1.2)}W 이상 권장)`);
       }
     }
 
@@ -166,7 +167,7 @@ router.post("/check", async (req, res) => {
     if (docs.cooler && info.cpuSocket) {
       const sockets = docs.cooler.specs?.sockets || [];
       if (sockets.length > 0 && !sockets.some((s) => normalizeSocket(s) === normalizeSocket(info.cpuSocket)))
-        issues.push(`\ucfe8\ub7ec \uc18c\ucf13 \ubd88\uc77c\uce58: \uc9c0\uc6d0(${sockets.join(", ")}) \u2194 CPU(${info.cpuSocket})`);
+        issues.push(`쿨러 소켓 불일치: 지원(${sockets.join(", ")}) ↔ CPU(${info.cpuSocket})`);
     }
 
     // 5. 케이스 ↔ 메인보드 폼팩터
@@ -176,7 +177,7 @@ router.post("/check", async (req, res) => {
         || detectFormFactor(`${docs.motherboard.name} ${docs.motherboard.info || ""} ${docs.motherboard.specSummary || ""}`);
       info.boardFormFactor = boardFF;
       if (caseFF.length > 0 && boardFF && !caseFF.includes(boardFF))
-        issues.push(`\ud3fc\ud329\ud130 \ubd88\uc77c\uce58: \ucf00\uc774\uc2a4 \uc9c0\uc6d0(${caseFF.join(", ")}) \u2194 \uba54\uc778\ubcf4\ub4dc(${boardFF})`);
+        issues.push(`폼팩터 불일치: 케이스 지원(${caseFF.join(", ")}) ↔ 메인보드(${boardFF})`);
     }
 
     const compatible = issues.length === 0;
@@ -186,12 +187,12 @@ router.post("/check", async (req, res) => {
       warnings,
       info,
       summary: compatible
-        ? warnings.length > 0 ? "\ud638\ud658 \uac00\ub2a5 (\uc8fc\uc758\uc0ac\ud56d \uc788\uc74c)" : "\ubaa8\ub4e0 \ubd80\ud488\uc774 \ud638\ud658\ub429\ub2c8\ub2e4."
-        : `${issues.length}\uac1c\uc758 \ud638\ud658\uc131 \ubb38\uc81c\uac00 \ubc1c\uacac\ub418\uc5c8\uc2b5\ub2c8\ub2e4.`,
+        ? warnings.length > 0 ? "호환 가능 (주의사항 있음)" : "모든 부품이 호환됩니다."
+        : `${issues.length}개의 호환성 문제가 발견되었습니다.`,
     });
   } catch (err) {
-    console.error("\u274C \ud638\ud658\uc131 \uac80\uc0ac \uc2e4\ud328:", err);
-    res.status(500).json({ error: "\ud638\ud658\uc131 \uac80\uc0ac \uc2e4\ud328" });
+    logger.error(`호환성 검사 실패: ${err.message}`);
+    res.status(500).json({ error: "호환성 검사 실패" });
   }
 });
 

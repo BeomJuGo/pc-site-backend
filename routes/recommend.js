@@ -3,6 +3,10 @@ import express from "express";
 import { getDB } from "../db.js";
 import config from "../config.js";
 import { loadParts, extractBoardFormFactor, isCaseCompatible } from "../utils/recommend-helpers.js";
+import logger from "../utils/logger.js";
+import { validate } from "../middleware/validate.js";
+import { recommendSchema } from "../schemas/recommend.js";
+import { makeAiCacheKey, getOrComputeRecommendation } from "../utils/aiCache.js";
 
 const OPENAI_API_KEY = config.openaiApiKey;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -247,7 +251,7 @@ async function generateBuildEvaluation(build, purpose, budget) {
 
   for (let i = 0; i < 2; i++) {
     try {
-      console.log(`🤖 AI 평가 생성 시도 ${i + 1}/2: ${build.label} 빌드`);
+      logger.info(`AI 평가 생성 시도 ${i + 1}/2: ${build.label} 빌드`);
       const res = await Promise.race([
         fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
@@ -271,18 +275,18 @@ async function generateBuildEvaluation(build, purpose, budget) {
         const errorData = await res.json().catch(() => ({ error: { message: "알 수 없는 오류" } }));
         const errorMessage = errorData?.error?.message || "알 수 없는 오류";
         const errorCode = errorData?.error?.code || "unknown";
-        console.error(`❌ OpenAI API 오류 (${res.status}):`, errorMessage);
+        logger.error(`OpenAI API 오류 (${res.status}): ${errorMessage}`);
         if (res.status === 429 && errorCode === "insufficient_quota") break;
         continue;
       }
 
       const data = await res.json();
       const raw = data?.choices?.[0]?.message?.content || "";
-      if (!raw) { console.warn("⚠️ OpenAI 응답이 비어있음"); continue; }
+      if (!raw) { logger.warn("OpenAI 응답이 비어있음"); continue; }
 
       const start = raw.indexOf("{");
       const end = raw.lastIndexOf("}") + 1;
-      if (start === -1 || end === 0) { console.warn("⚠️ JSON을 찾을 수 없음"); continue; }
+      if (start === -1 || end === 0) { logger.warn("JSON을 찾을 수 없음"); continue; }
 
       const parsed = JSON.parse(raw.slice(start, end));
       return {
@@ -292,9 +296,9 @@ async function generateBuildEvaluation(build, purpose, budget) {
       };
     } catch (e) {
       if (e.message?.includes('타임아웃')) {
-        console.error(`⏱️ AI 평가 타임아웃:`, e.message);
+        logger.warn(`AI 평가 타임아웃: ${e.message}`);
       } else {
-        console.error(`❌ AI 평가 재시도 ${i + 1}/2 실패:`, e.message);
+        logger.error(`AI 평가 재시도 ${i + 1}/2 실패: ${e.message}`);
       }
       if (i < 1) await sleep(1000);
     }
@@ -310,28 +314,11 @@ async function generateBuildEvaluation(build, purpose, budget) {
 
 /* ==================== 개선된 추천 로직 ==================== */
 
-router.post("/", async (req, res) => {
+router.post("/", validate(recommendSchema), async (req, res) => {
   try {
     const { budget, purpose } = req.body;
 
-    if (!budget || typeof budget !== 'number' || isNaN(budget)) {
-      return res.status(400).json({ error: "INVALID_BUDGET", message: "예산은 숫자여야 합니다." });
-    }
-    if (budget < config.validation.minBudget) {
-      return res.status(400).json({ error: "BUDGET_TOO_LOW", message: `최소 예산은 ${config.validation.minBudget.toLocaleString()}원입니다.` });
-    }
-    if (budget > config.validation.maxBudget) {
-      return res.status(400).json({ error: "BUDGET_TOO_HIGH", message: `최대 예산은 ${config.validation.maxBudget.toLocaleString()}원입니다.` });
-    }
-    if (!purpose || !config.validation.validPurposes.includes(purpose)) {
-      return res.status(400).json({
-        error: "INVALID_PURPOSE",
-        message: `용도는 다음 중 하나여야 합니다: ${config.validation.validPurposes.join(", ")}`,
-        validPurposes: config.validation.validPurposes,
-      });
-    }
-
-    console.log(`\n🎯 추천 요청: 예산 ${budget.toLocaleString()}원, 용도: ${purpose}`);
+    logger.info(`추천 요청: 예산 ${budget.toLocaleString()}원, 용도: ${purpose}`);
 
     const db = getDB();
     if (!db) {
@@ -340,7 +327,7 @@ router.post("/", async (req, res) => {
 
     const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
 
-    console.log(`📦 부품: CPU(${cpus.length}), GPU(${gpus.length}), Memory(${memories.length}), Board(${boards.length})`);
+    logger.info(`부품 로드: CPU(${cpus.length}), GPU(${gpus.length}), Memory(${memories.length}), Board(${boards.length})`);
 
     const weights = {
       "사무용": { cpu: 0.4, gpu: 0.2, cpuBudgetRatio: 0.25, gpuBudgetRatio: 0.15 },
@@ -534,8 +521,7 @@ router.post("/", async (req, res) => {
       if (results.length >= 50) break;
     }
 
-    console.log(`🎉 조합 생성 완료: ${results.length}개`);
-    console.log(`📊 필터링 통계:`, filterStats);
+    logger.info(`조합 생성 완료: ${results.length}개, 통계: ${JSON.stringify(filterStats)}`);
 
     if (results.length === 0) {
       return res.status(400).json({
@@ -573,7 +559,7 @@ router.post("/", async (req, res) => {
       `${results.length}개 조합 중 최적 선택`,
     ];
 
-    console.log("🤖 AI 견적 평가 생성 중...");
+    logger.info("AI 견적 평가 생성 중...");
     const buildsWithAI = await Promise.all(
       uniqueBuilds.map(async (b) => {
         const buildData = {
@@ -597,7 +583,10 @@ router.post("/", async (req, res) => {
             formFactor: `${b.boardFormFactor} ↔ ${b.case.specs?.formFactor?.join("/") || "ATX"}`,
           },
         };
-        const aiEvaluation = await generateBuildEvaluation(buildData, purpose, budget);
+        const aiCacheKey = makeAiCacheKey({ budget, purpose, label: b.label, cpuName: b.cpu.name, gpuName: b.gpu.name });
+        const aiEvaluation = await getOrComputeRecommendation(aiCacheKey, () =>
+          generateBuildEvaluation(buildData, purpose, budget)
+        );
         return {
           ...buildData,
           aiEvaluation: aiEvaluation.evaluation || "",
@@ -608,7 +597,7 @@ router.post("/", async (req, res) => {
       })
     );
 
-    console.log("✅ AI 견적 평가 완료");
+    logger.info("AI 견적 평가 완료");
 
     res.json({
       builds: buildsWithAI,
@@ -618,7 +607,7 @@ router.post("/", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ 추천 오류:", error);
+    logger.error(`추천 오류: ${error.message}`);
     const isProduction = process.env.NODE_ENV === 'production';
     res.status(500).json({
       error: "RECOMMENDATION_ERROR",
