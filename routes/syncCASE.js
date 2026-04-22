@@ -3,6 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
+import { resolvePrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 
@@ -242,25 +243,26 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
         specSummary = existing?.specSummary || specs.info;
       }
 
+      const resolvedCase = await resolvePrice(caseItem.name, caseItem.price);
       const update = {
         category: "case", manufacturer, info: specs.info, image: caseItem.image, specs,
-        price: caseItem.price || 0,
+        price: resolvedCase.price || 0, danawaPrice: resolvedCase.danawaPrice || 0,
         ...(ai ? { review, specSummary } : {}),
       };
 
       if (existing) {
         const today = new Date().toISOString().slice(0, 10);
         const ops = { $set: update };
-        if (caseItem.price > 0 && caseItem.price !== existing.price) {
+        if (resolvedCase.price > 0 && resolvedCase.price !== existing.price) {
           const priceHistory = existing.priceHistory || [];
-          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: caseItem.price }], $slice: -90 } };
+          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolvedCase.price }], $slice: -90 } };
         }
         await col.updateOne({ _id: existing._id }, ops);
         updated++;
         console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       } else {
         const today = new Date().toISOString().slice(0, 10);
-        const priceHistory = caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [];
+        const priceHistory = resolvedCase.price > 0 ? [{ date: today, price: resolvedCase.price }] : [];
         await col.insertOne({ name: caseItem.name, ...update, priceHistory });
         inserted++;
         console.log(`\u2728 \uc2e0\uaddc \ucd94\uac00: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);

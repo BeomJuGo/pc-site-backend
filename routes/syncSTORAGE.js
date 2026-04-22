@@ -3,6 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
+import { resolvePrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 
@@ -305,13 +306,14 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
       }
     }
 
+    const resolvedStorage = await resolvePrice(storage.name, storage.price);
     const update = {
       category: "storage",
       info: storage.info,
       image: storage.image,
       manufacturer: extractManufacturer(storage.name),
       specs: storage.specs,
-      price: storage.price || 0,
+      price: resolvedStorage.price || 0, danawaPrice: resolvedStorage.danawaPrice || 0,
       benchmarkScore: storageScore > 0 ? { "storagescore": storageScore } : undefined,
       ...(ai ? { review, specSummary } : {}),
     };
@@ -319,16 +321,16 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
     if (old) {
       const today = new Date().toISOString().slice(0, 10);
       const ops = { $set: update };
-      if (storage.price > 0 && storage.price !== old.price) {
+      if (resolvedStorage.price > 0 && resolvedStorage.price !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: storage.price }], $slice: -90 } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolvedStorage.price }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${storage.name} (\uac00\uaca9: ${(storage.price ?? 0).toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = storage.price > 0 ? [{ date: today, price: storage.price }] : [];
+      const priceHistory = resolvedStorage.price > 0 ? [{ date: today, price: resolvedStorage.price }] : [];
       await col.insertOne({ name: storage.name, ...update, priceHistory });
       inserted++;
       console.log(`\uD83C\uDD95 \uc2e0\uaddc \ucd94\uac00: ${storage.name} (\uac00\uaca9: ${(storage.price ?? 0).toLocaleString()}\uc6d0)`);

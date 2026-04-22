@@ -26,6 +26,7 @@ import alertsRouter, { checkPriceAlerts } from "./routes/alerts.js";
 import compatibilityRouter from "./routes/compatibility.js";
 import pricesRouter from "./routes/prices.js";
 import docsRouter from "./routes/docs.js";
+import adminMaintenanceRouter from "./routes/adminMaintenance.js";
 
 const REQUIRED_ENV = ["MONGODB_URI", "OPENAI_API_KEY", "ADMIN_API_KEY"];
 const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
@@ -182,6 +183,7 @@ app.use("/api/admin", requireAdminKey, syncPSURouter);
 app.use("/api/admin", requireAdminKey, syncCaseRouter);
 app.use("/api/admin", requireAdminKey, syncCoolerRouter);
 app.use("/api/admin", requireAdminKey, syncStorageRouter);
+app.use("/api/admin", requireAdminKey, adminMaintenanceRouter);
 app.use("/api/builds", buildsRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/compatibility", compatibilityRouter);
