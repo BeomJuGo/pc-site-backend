@@ -3,6 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import config from "../config.js";
 import { loadParts, extractBoardFormFactor, isCaseCompatible } from "../utils/recommend-helpers.js";
+import { getPopularityScore } from "../utils/naverDatalab.js";
 import logger from "../utils/logger.js";
 import { validate } from "../middleware/validate.js";
 import { recommendSchema } from "../schemas/recommend.js";
@@ -348,22 +349,48 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
 
   const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
 
+  // 브랜드 가중치 로드 (없으면 mallCount만 사용)
+  const brandWeightDocs = await db.collection("brand_weights").find().toArray().catch(() => []);
+  const brandWeightMap = Object.fromEntries(brandWeightDocs.map((d) => [d.category, d.weights || {}]));
+
   const fmtCpu = (p) => `${p.name} | ${p.price.toLocaleString()}원 | 소켓:${extractCpuSocket(p)} | TDP:${extractTdp(p.info || "")}W`;
   const fmtGpu = (p) => `${p.name} | ${p.price.toLocaleString()}원 | TDP:${extractTdp(p.info || "")}W`;
   const fmtBoard = (p) => `${p.name} | ${p.price.toLocaleString()}원 | 소켓:${extractBoardSocket(p)}`;
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  // CPU: 예산 전체 허용 (APU/내장그래픽 CPU 포함), GPU: 예산 60% 이하 (optional)
-  // 보조 부품: ratio와 실제 시장 최솟값 중 큰 값 사용
+  // CPU/GPU: 벤치마크 점수 기준 상위 후보 (기존 유지)
   const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 40);
   const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= budget * 0.60).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
-  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.10, 80000)).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.20, 200000)).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 55000)).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.05, 35000)).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 60000)).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.07, 50000)).sort((a, b) => b.price - a.price).slice(0, 15);
+
+  // 보조 부품: mallCount + DataLab 브랜드 가중치 합산 인기도 점수 기준 상위 10개
+  // 메인보드는 소켓 다양성 확보를 위해 AMD 5개 + Intel 5개로 분리
+  const boardBudget = Math.max(budget * 0.10, 80000);
+  const boardsFiltered = [...boards].filter(p => p.price > 0 && p.price <= boardBudget * 1.5);
+  const amdBoards = boardsFiltered.filter(b => /am[45]|b[45][56][05]|x[45][67][05]|a[46][25]0/i.test(b.name))
+    .sort((a, b) => getPopularityScore(b, "motherboard", brandWeightMap) - getPopularityScore(a, "motherboard", brandWeightMap)).slice(0, 5);
+  const intelBoards = boardsFiltered.filter(b => /lga|z[67][89]0|b[78][56]0|h[78][17]0|z[45]90|b[45][56]0/i.test(b.name))
+    .sort((a, b) => getPopularityScore(b, "motherboard", brandWeightMap) - getPopularityScore(a, "motherboard", brandWeightMap)).slice(0, 5);
+  const sortedBoards = [...new Map([...amdBoards, ...intelBoards].map(p => [p._id.toString(), p])).values()];
+
+  // 메모리: DDR4 5개 + DDR5 5개로 분리
+  const memBudget = Math.max(budget * 0.08, 55000);
+  const memsFiltered = [...memories].filter(p => p.price > 0 && p.price <= memBudget * 2.0);
+  const ddr4Mems = memsFiltered.filter(m => /ddr4/i.test(m.name))
+    .sort((a, b) => getPopularityScore(b, "memory", brandWeightMap) - getPopularityScore(a, "memory", brandWeightMap)).slice(0, 5);
+  const ddr5Mems = memsFiltered.filter(m => /ddr5/i.test(m.name))
+    .sort((a, b) => getPopularityScore(b, "memory", brandWeightMap) - getPopularityScore(a, "memory", brandWeightMap)).slice(0, 5);
+  const sortedMems = [...new Map([...ddr4Mems, ...ddr5Mems].map(p => [p._id.toString(), p])).values()];
+
+  const sortByPopularity = (arr, category, priceCap) =>
+    arr.filter(p => p.price > 0 && p.price <= priceCap)
+      .sort((a, b) => getPopularityScore(b, category, brandWeightMap) - getPopularityScore(a, category, brandWeightMap))
+      .slice(0, 10);
+
+  const sortedPsus = sortByPopularity(psus, "psu", Math.max(budget * 0.08, 55000));
+  const sortedCoolers = sortByPopularity(coolers, "cooler", Math.max(budget * 0.05, 35000));
+  const sortedStorages = sortByPopularity(storages, "storage", Math.max(budget * 0.08, 60000));
+  const sortedCases = sortByPopularity(cases, "case", Math.max(budget * 0.07, 50000));
 
   const userPrompt = [
     `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,

@@ -1,6 +1,7 @@
 import express from "express";
 import { getDB } from "../db.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { fetchAllBrandWeights } from "../utils/naverDatalab.js";
 import logger from "../utils/logger.js";
 
 const router = express.Router();
@@ -171,6 +172,32 @@ router.post("/update-all-specs", async (req, res) => {
       await sleep(300);
     }
     logger.info(`update-all-specs 완료: 성공 ${updated}개, 실패 ${failed}개 (총 ${parts.length}개)`);
+  });
+});
+
+/* ==================== 브랜드 인기도 가중치 업데이트 (Naver DataLab) ==================== */
+
+router.post("/update-brand-weights", async (req, res) => {
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DB 연결 실패" });
+
+  res.json({ status: "started", message: "DataLab 브랜드 가중치 수집 중 (6개 카테고리 × 최근 3개월)" });
+
+  setImmediate(async () => {
+    try {
+      const weights = await fetchAllBrandWeights();
+      const now = new Date();
+      for (const [category, brandScores] of Object.entries(weights)) {
+        await db.collection("brand_weights").replaceOne(
+          { _id: category },
+          { _id: category, category, weights: brandScores, updatedAt: now },
+          { upsert: true }
+        );
+      }
+      logger.info(`update-brand-weights 완료: ${Object.keys(weights).length}개 카테고리 저장`);
+    } catch (err) {
+      logger.error(`update-brand-weights 실패: ${err.message}`);
+    }
   });
 });
 
