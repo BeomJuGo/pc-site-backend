@@ -345,18 +345,18 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  // budget-ratio 제한 없이 예산 이하 전체 부품 제공, AI가 용도에 맞게 자유롭게 선택
-  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
-  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
-  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
+  // 각 카테고리별 pool 상한: AI가 자유롭게 배분하되, 개별 부품이 총예산을 혼자 소진하는 것만 방지
+  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= budget * 0.45).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
+  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= budget * 0.60).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
+  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= budget * 0.20).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= budget * 0.20).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= budget * 0.15).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= budget * 0.12).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= budget * 0.20).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= budget * 0.15).sort((a, b) => b.price - a.price).slice(0, 15);
 
   const userPrompt = [
-    `예산: ${budget.toLocaleString()}원`,
+    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
     `용도: ${purpose}`,
     "",
     "[사용 가능한 부품 목록 — 반드시 이 목록에서만 선택]",
