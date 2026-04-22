@@ -28,7 +28,7 @@ const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
-- 총 가격이 예산의 90~100% 범위 내`;
+- 총 가격이 반드시 예산의 90~100% 범위 내여야 함. 예산을 초과하는 선택은 절대 금지`;
 
 /* ==================== util ==================== */
 
@@ -347,14 +347,24 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  const sortedCpus = [...cpus].sort((a, b) => (getCpuScore(b) / (b.price || 1)) - (getCpuScore(a) / (a.price || 1))).slice(0, 30);
-  const sortedGpus = [...gpus].sort((a, b) => (getGpuScore(b) / (b.price || 1)) - (getGpuScore(a) / (a.price || 1))).slice(0, 30);
-  const sortedBoards = [...boards].sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedMems = [...memories].sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedPsus = [...psus].sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCoolers = [...coolers].sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedStorages = [...storages].sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCases = [...cases].sort((a, b) => b.price - a.price).slice(0, 15);
+  // 예산 비율 기반 가격 상한 — 각 카테고리 선택지를 예산 범위 내로 제한
+  const cpuMax = budget * 0.40;
+  const gpuMax = budget * 0.50;
+  const boardMax = Math.max(budget * 0.15, 50000);
+  const memMax = Math.max(budget * 0.12, 30000);
+  const psuMax = Math.max(budget * 0.12, 40000);
+  const coolerMax = Math.max(budget * 0.08, 20000);
+  const storageMax = Math.max(budget * 0.15, 50000);
+  const caseMax = Math.max(budget * 0.10, 30000);
+
+  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= cpuMax).sort((a, b) => (getCpuScore(b) / (b.price || 1)) - (getCpuScore(a) / (a.price || 1))).slice(0, 25);
+  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= gpuMax).sort((a, b) => (getGpuScore(b) / (b.price || 1)) - (getGpuScore(a) / (a.price || 1))).slice(0, 25);
+  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= boardMax).sort((a, b) => a.price - b.price).slice(0, 15);
+  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= memMax).sort((a, b) => a.price - b.price).slice(0, 15);
+  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= psuMax).sort((a, b) => a.price - b.price).slice(0, 12);
+  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= coolerMax).sort((a, b) => a.price - b.price).slice(0, 12);
+  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= storageMax).sort((a, b) => a.price - b.price).slice(0, 12);
+  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= caseMax).sort((a, b) => a.price - b.price).slice(0, 12);
 
   const userPrompt = [
     `예산: ${budget.toLocaleString()}원`,
@@ -435,6 +445,11 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   }
 
   const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
+
+  // AI가 예산을 5% 이상 초과하면 오류 처리 — refresh-all 루프에서 skip됨
+  if (totalPrice > budget * 1.05) {
+    throw new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원`);
+  }
 
   return {
     budget,
