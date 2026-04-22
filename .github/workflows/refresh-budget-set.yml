@@ -1,8 +1,8 @@
-name: Daily Budget Set Refresh
+name: Weekly Budget Set Refresh
 
 on:
   schedule:
-    - cron: "0 20 * * *"
+    - cron: "0 20 * * 1"  # 매주 월요일 20:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -15,33 +15,27 @@ jobs:
 
     env:
       BACKEND_URL: https://pc-site-backend.onrender.com
-      API_PATH: /api/recommend/budget-set/refresh
 
     steps:
-      - name: Refresh compatible budget set (with retries)
+      - name: Refresh all AI budget sets
         shell: bash
         run: |
           set -e
-          echo "POST $BACKEND_URL$API_PATH"
+          echo "POST $BACKEND_URL/api/recommend/budget-set/refresh-all"
 
-          for i in 1 2 3; do
-            echo "Attempt $i..."
-            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-              -X POST "$BACKEND_URL$API_PATH" \
-              -H "Content-Type: application/json" \
-              --max-time 300) || true
+          http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST "$BACKEND_URL/api/recommend/budget-set/refresh-all" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+            --max-time 30) || true
 
-            echo "HTTP $http_code"
-            cat /tmp/resp.txt || true
+          echo "HTTP $http_code"
+          cat /tmp/resp.txt || true
 
-            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-              echo "✅ Budget set refreshed successfully"
-              exit 0
-            fi
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "✅ refresh-all started successfully (runs in background)"
+            exit 0
+          fi
 
-            echo "⚠️ Failed (HTTP $http_code). Retrying in 30s..."
-            sleep 30
-          done
-
-          echo "❌ All retries failed"
+          echo "❌ Failed (HTTP $http_code)"
           exit 1
