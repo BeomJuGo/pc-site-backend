@@ -91,7 +91,7 @@ async function fetchAiOneLiner({ name, spec }) {
         method: "POST",
         headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-5.4",
           temperature: 0.4,
           messages: [
             { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
