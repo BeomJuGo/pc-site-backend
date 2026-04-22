@@ -412,6 +412,7 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
       body: JSON.stringify({
         model: "gpt-5.4",
         response_format: { type: "json_object" },
+        temperature: 0,
         messages,
         max_completion_tokens: 1500,
       }),
@@ -458,27 +459,51 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
       continue;
     }
 
-    const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
+    // DB 실제 가격으로 검증 (AI 환각 방지)
+    const partNamesForLookup = Object.values(enrichedParts).map(p => p.name);
+    const dbPartsForPrice = await db.collection("parts").find(
+      { name: { $in: partNamesForLookup } },
+      { projection: { name: 1, price: 1, image: 1 } }
+    ).toArray();
+    const dbPriceMap = Object.fromEntries(dbPartsForPrice.map(p => [p.name, p]));
+
+    const hallucinated = [];
+    for (const key of PART_KEYS) {
+      if (!enrichedParts[key]) continue;
+      const dbPart = dbPriceMap[enrichedParts[key].name];
+      if (dbPart) {
+        enrichedParts[key].price = dbPart.price || enrichedParts[key].price;
+        enrichedParts[key].image = dbPart.image || null;
+      } else {
+        hallucinated.push(`${key}: ${enrichedParts[key].name}`);
+        delete enrichedParts[key];
+      }
+    }
+    if (hallucinated.length > 0) {
+      lastError = new Error(`AI가 DB에 없는 부품 선택: ${hallucinated.join(", ")}`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `다음 부품은 DB에 존재하지 않습니다: ${hallucinated.join(", ")}. 반드시 제공된 부품 목록에서 정확한 이름으로만 선택하세요.` });
+      continue;
+    }
+
+    const totalPrice = Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
+    const breakdown = Object.entries(enrichedParts)
+      .map(([k, v]) => `${k}: ${v.name} (${v.price.toLocaleString()}원)`)
+      .join(", ");
 
     if (totalPrice > budget * 1.10) {
       lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원의 110%`);
+      const over = (totalPrice - Math.round(budget * 1.1)).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `총 가격 ${totalPrice.toLocaleString()}원이 예산 ${budget.toLocaleString()}원의 110%(${Math.round(budget*1.1).toLocaleString()}원)를 초과합니다. 더 저렴한 부품으로 교체하여 합계가 ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원이 되도록 수정하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
       continue;
     }
     if (totalPrice < budget * 0.90) {
       lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 90%`);
+      const gap = (Math.round(budget * 0.9) - totalPrice).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `총 가격 ${totalPrice.toLocaleString()}원이 예산 ${budget.toLocaleString()}원의 90%(${Math.round(budget*0.9).toLocaleString()}원)에 미달합니다. 더 고사양 부품으로 교체하여 합계가 ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원이 되도록 수정하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. GPU 또는 CPU를 더 고사양으로 교체하세요.` });
       continue;
-    }
-
-    // 이미지 조회는 검증 통과 후 한 번만
-    const partNames = Object.values(enrichedParts).map(p => p.name);
-    const dbParts = await db.collection("parts").find({ name: { $in: partNames } }, { projection: { name: 1, image: 1 } }).toArray();
-    const imageMap = Object.fromEntries(dbParts.map(p => [p.name, p.image]));
-    for (const key of PART_KEYS) {
-      if (enrichedParts[key]) enrichedParts[key].image = imageMap[enrichedParts[key].name] || null;
     }
 
     return {
