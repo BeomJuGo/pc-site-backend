@@ -30,7 +30,7 @@ export async function searchNaverShopping(query, display = 20, sort = "sim") {
 export function parseNaverItems(data) {
   if (!data?.items?.length) return [];
   return data.items
-    .filter((item) => item.lprice && parseInt(item.lprice) > 0)
+    .filter((item) => item.lprice && parseInt(item.lprice) >= 1000)
     .map((item) => ({
       mallName: item.mallName || "기타",
       title: item.title.replace(/<[^>]*>/g, "").trim(),

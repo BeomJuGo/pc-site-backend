@@ -11,10 +11,8 @@ export async function fetchNaverPrice(partName) {
     // (sort=asc는 스팸/광고 1원짜리 상품이 상위에 올라와 잘못된 가격을 반환함)
     const data = await searchNaverShopping(partName, 20, "sim");
     const items = parseNaverItems(data);
-    // 1,000원 미만은 스팸 상품으로 간주하고 제외
-    const valid = items.filter((item) => item.price >= 1000);
-    if (!valid.length) return 0;
-    return Math.min(...valid.map((item) => item.price));
+    if (!items.length) return 0;
+    return Math.min(...items.map((item) => item.price));
   } catch (err) {
     logger.warn(`fetchNaverPrice 실패 (${partName}): ${err.message}`);
     return 0;
