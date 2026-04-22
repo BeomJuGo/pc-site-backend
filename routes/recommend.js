@@ -21,17 +21,26 @@ const CACHED_PURPOSES = ["게임용", "작업용"];
 const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 주어진 부품 목록(실제 DB 데이터)에서만 선택하여 예산과 용도에 최적화된 호환 가능한 PC 견적을 작성하세요.
 반드시 JSON만 출력하고 다른 텍스트는 절대 포함하지 마세요.
+
+GPU는 선택 사항입니다:
+- 예산이 충분하면 GPU를 포함하세요.
+- 예산이 부족하거나 GPU를 추가하면 총 가격이 초과될 경우, 내장 그래픽이 탑재된 CPU(AMD 라이젠 G시리즈, 인텔 내장그래픽 CPU 등)를 선택하고 GPU는 제외하세요.
+- GPU 없이 구성할 때 출력 형식의 gpu 필드는 생략합니다.
+
 출력 형식: {"parts":{"cpu":{"name":"...","price":숫자},"gpu":{"name":"...","price":숫자},"motherboard":{"name":"...","price":숫자},"memory":{"name":"...","price":숫자},"psu":{"name":"...","price":숫자},"cooler":{"name":"...","price":숫자},"storage":{"name":"...","price":숫자},"case":{"name":"...","price":숫자}},"totalPrice":숫자,"summary":"한줄설명"}
+(gpu 필드는 예산 초과 시 생략 가능)
+
 호환성 규칙:
 - CPU 소켓과 메인보드 소켓 일치
 - 메모리 DDR 규격 일치
-- PSU 출력 = CPU TDP + GPU TDP + 100W 이상
+- PSU 출력 = CPU TDP + GPU TDP + 100W 이상 (GPU 없으면 CPU TDP + 100W)
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
-예산 활용 규칙 (절대 준수):
+
+예산 규칙 (절대 준수):
 - 총 가격은 예산의 90~110% 범위여야 함
 - 총 가격이 예산의 90% 미만이면 오답 — 더 고사양 부품으로 교체할 것
-- 총 가격이 예산의 110% 초과도 오답 — 더 저렴한 부품으로 교체할 것`;
+- 총 가격이 예산의 110% 초과도 오답 — 더 저렴한 부품으로 교체하거나 GPU를 제외할 것`;
 
 /* ==================== util ==================== */
 
@@ -345,17 +354,16 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  // purpose별 pool 상한: 최댓값 합산이 105% 이내가 되도록 설정 (게임용 GPU 우선, 작업용 CPU 우선)
-  const cpuMax = purpose === "작업용" ? budget * 0.35 : budget * 0.22;
-  const gpuMax = purpose === "작업용" ? budget * 0.22 : budget * 0.40;
-  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= cpuMax).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
-  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= gpuMax).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
-  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 70000)).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 50000)).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.07, 50000)).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.05, 30000)).sort((a, b) => b.price - a.price).slice(0, 15);
+  // CPU: 예산 전체 허용 (APU/내장그래픽 CPU 포함), GPU: 예산 60% 이하 (optional)
+  // 보조 부품: ratio와 실제 시장 최솟값 중 큰 값 사용
+  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 40);
+  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= budget * 0.60).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
+  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.10, 80000)).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.20, 200000)).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 55000)).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.05, 35000)).sort((a, b) => b.price - a.price).slice(0, 15);
   const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 60000)).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.07, 45000)).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.07, 50000)).sort((a, b) => b.price - a.price).slice(0, 15);
 
   const userPrompt = [
     `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
@@ -440,10 +448,13 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
       if (p?.name) enrichedParts[key] = { name: p.name, price: p.price || 0, image: null, category: key };
     }
 
-    if (Object.keys(enrichedParts).length < 5) {
-      lastError = new Error(`AI가 불충분한 부품 수 반환: ${Object.keys(enrichedParts).length}개`);
+    // GPU는 선택 사항 — cpu/motherboard/memory/psu/storage/case 6개는 필수
+    const REQUIRED_KEYS = ["cpu", "motherboard", "memory", "psu", "storage", "case"];
+    const missingRequired = REQUIRED_KEYS.filter(k => !enrichedParts[k]);
+    if (missingRequired.length > 0) {
+      lastError = new Error(`AI가 필수 부품 누락: ${missingRequired.join(", ")}`);
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: "8개 부품을 모두 포함하여 다시 시도하세요." });
+      messages.push({ role: "user", content: `다음 필수 부품이 누락되었습니다: ${missingRequired.join(", ")}. GPU는 생략 가능하지만 나머지는 반드시 포함하세요.` });
       continue;
     }
 
