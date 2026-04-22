@@ -28,8 +28,12 @@ const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
-- 용도에 맞게 부품 비율 조정: 게임용=GPU 비중 예산 50% 이상, 작업용=CPU 비중 예산 40% 이상, 가성비=성능/가격 균형
-- 시스템 총 가격이 반드시 예산의 90~100% 범위 내여야 함. 예산을 초과하는 선택은 절대 금지`;
+- 용도에 맞게 부품 비율 조정: 게임용=GPU 비중 높이기, 작업용=CPU 비중 높이기, 가성비=성능/가격 균형
+예산 활용 규칙 (반드시 준수):
+- 총 가격이 예산의 80~100% 범위여야 함. 예산을 초과하는 선택은 절대 금지
+- 총 가격이 예산의 80% 미만이면 오답임 — 더 고사양 부품으로 교체하여 예산을 최대한 활용할 것
+- 예산이 100만원이면 총 가격은 최소 80만원 이상이어야 함
+- 예산이 200만원이면 총 가격은 최소 160만원 이상이어야 함`;
 
 /* ==================== util ==================== */
 
@@ -443,6 +447,9 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
 
   if (totalPrice > budget * 1.05) {
     throw new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원`);
+  }
+  if (totalPrice < budget * 0.70) {
+    throw new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 70%`);
   }
 
   return {
