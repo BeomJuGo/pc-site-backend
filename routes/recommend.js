@@ -16,10 +16,10 @@ const router = express.Router();
 const buildingInProgress = new Set();
 
 const BUDGET_SET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const CACHED_PURPOSES = ["가성비", "게임용", "작업용"];
+const CACHED_PURPOSES = ["게임용", "작업용"];
 
 const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
-주어진 부품 목록(실제 DB 데이터)에서만 선택하여 예산에 맞는 호환 가능한 PC 견적을 작성하세요.
+주어진 부품 목록(실제 DB 데이터)에서만 선택하여 예산과 용도에 최적화된 호환 가능한 PC 견적을 작성하세요.
 반드시 JSON만 출력하고 다른 텍스트는 절대 포함하지 마세요.
 출력 형식: {"parts":{"cpu":{"name":"...","price":숫자},"gpu":{"name":"...","price":숫자},"motherboard":{"name":"...","price":숫자},"memory":{"name":"...","price":숫자},"psu":{"name":"...","price":숫자},"cooler":{"name":"...","price":숫자},"storage":{"name":"...","price":숫자},"case":{"name":"...","price":숫자}},"totalPrice":숫자,"summary":"한줄설명"}
 호환성 규칙:
@@ -28,10 +28,6 @@ const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
-용도별 부품 비율 지침:
-- 게임용: GPU에 예산의 40~50% 배분, CPU는 25~35%
-- 작업용: CPU에 예산의 35~45% 배분, GPU는 20~30%
-- 가성비: CPU와 GPU에 균형 있게 배분
 예산 활용 규칙 (절대 준수):
 - 총 가격은 예산의 90~110% 범위여야 함
 - 총 가격이 예산의 90% 미만이면 오답 — 더 고사양 부품으로 교체할 것
@@ -473,9 +469,9 @@ function checkAdminKey(req, res) {
 /* ==================== 호환 세트 엔드포인트 ==================== */
 
 router.get("/budget-set", async (req, res) => {
-  const VALID_PURPOSES = ["게임용", "작업용", "사무용", "가성비"];
+  const VALID_PURPOSES = ["게임용", "작업용", "사무용"];
   const budget = Math.max(300000, Math.min(10000000, Number(req.query.budget) || 1500000));
-  const purpose = VALID_PURPOSES.includes(req.query.purpose) ? req.query.purpose : "가성비";
+  const purpose = VALID_PURPOSES.includes(req.query.purpose) ? req.query.purpose : "게임용";
 
   const memKey = `recommend:budget-set:${budget}:${purpose}`;
   const memHit = getCache(memKey);
