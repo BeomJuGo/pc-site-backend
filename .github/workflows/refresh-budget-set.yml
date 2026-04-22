@@ -1,0 +1,47 @@
+name: Daily Budget Set Refresh
+
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh-budget-set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: refresh-budget-set
+      cancel-in-progress: false
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+      API_PATH: /api/recommend/budget-set/refresh
+
+    steps:
+      - name: Refresh compatible budget set (with retries)
+        shell: bash
+        run: |
+          set -e
+          echo "POST $BACKEND_URL$API_PATH"
+
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL$API_PATH" \
+              -H "Content-Type: application/json" \
+              --max-time 300) || true
+
+            echo "HTTP $http_code"
+            cat /tmp/resp.txt || true
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Budget set refreshed successfully"
+              exit 0
+            fi
+
+            echo "⚠️ Failed (HTTP $http_code). Retrying in 30s..."
+            sleep 30
+          done
+
+          echo "❌ All retries failed"
+          exit 1
