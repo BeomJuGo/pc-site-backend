@@ -7,6 +7,7 @@ import { validate } from "../middleware/validate.js";
 import { createAlertSchema, getAlertsQuerySchema } from "../schemas/alerts.js";
 
 const router = express.Router();
+const MAX_ALERTS_PER_EMAIL = 20;
 
 async function sendAlertEmail(to, partName, targetPrice, currentPrice) {
   const smtpUser = process.env.SMTP_USER;
@@ -37,8 +38,14 @@ async function sendAlertEmail(to, partName, targetPrice, currentPrice) {
 router.post("/", validate(createAlertSchema), async (req, res) => {
   try {
     const { category, name, targetPrice, email } = req.body;
-
     const db = getDB();
+
+    // 이메일당 최대 등록 개수 제한
+    const count = await db.collection("price_alerts").countDocuments({ email, triggered: false });
+    if (count >= MAX_ALERTS_PER_EMAIL) {
+      return res.status(429).json({ error: `이메일당 최대 ${MAX_ALERTS_PER_EMAIL}개의 알림만 등록할 수 있습니다.` });
+    }
+
     const existing = await db.collection("price_alerts").findOne({ category, name, email, triggered: false });
     if (existing) return res.status(409).json({ error: "이미 동일한 알림이 등록되어 있습니다." });
 
@@ -68,33 +75,51 @@ router.get("/", validate(getAlertsQuerySchema, "query"), async (req, res) => {
   }
 });
 
-// DELETE /api/alerts/:id - 알림 삭제
+// DELETE /api/alerts/:id?email=xxx - 알림 삭제 (소유자 이메일 검증)
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const { email } = req.query;
+
     if (!ObjectId.isValid(id)) return res.status(400).json({ error: "유효하지 않은 ID입니다." });
+    if (!email || typeof email !== "string" || !email.includes("@"))
+      return res.status(400).json({ error: "소유자 확인을 위해 email 파라미터가 필요합니다." });
+
     const db = getDB();
-    const result = await db.collection("price_alerts").deleteOne({ _id: new ObjectId(id) });
-    if (result.deletedCount === 0) return res.status(404).json({ error: "알림을 찾을 수 없습니다." });
+    // email 일치 여부까지 함께 검증하여 타인의 알림 삭제 방지
+    const result = await db.collection("price_alerts").deleteOne({ _id: new ObjectId(id), email });
+    if (result.deletedCount === 0)
+      return res.status(404).json({ error: "알림을 찾을 수 없거나 삭제 권한이 없습니다." });
+
     res.json({ message: "알림이 삭제되었습니다." });
   } catch (err) {
     res.status(500).json({ error: "알림 삭제 실패" });
   }
 });
 
+// 가격 알림 체크 - N+1 쿼리 개선: 알림 목록의 부품을 $in으로 일괄 조회
 export async function checkPriceAlerts() {
   try {
     const db = getDB();
     if (!db) return;
+
     const alerts = await db.collection("price_alerts").find({ triggered: false }).toArray();
     if (alerts.length === 0) return;
     logger.info(`가격 알림 체크: ${alerts.length}개`);
+
+    // 필요한 부품 이름 목록을 한 번에 조회
+    const uniqueNames = [...new Set(alerts.map((a) => a.name))];
+    const parts = await db
+      .collection("parts")
+      .find({ name: { $in: uniqueNames } }, { projection: { name: 1, category: 1, price: 1 } })
+      .toArray();
+
+    const partsMap = new Map(parts.map((p) => [`${p.category}::${p.name}`, p]));
+
     for (const alert of alerts) {
-      const part = await db.collection("parts").findOne(
-        { category: alert.category, name: alert.name },
-        { projection: { price: 1 } }
-      );
+      const part = partsMap.get(`${alert.category}::${alert.name}`);
       if (!part || part.price > alert.targetPrice) continue;
+
       await db.collection("price_alerts").updateOne(
         { _id: alert._id },
         { $set: { triggered: true, triggeredAt: new Date(), triggeredPrice: part.price } }
