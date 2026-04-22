@@ -14,7 +14,6 @@ const OPENAI_API_KEY = config.openaiApiKey;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const router = express.Router();
 
-// 백그라운드 계산 진행 중 여부 (중복 트리거 방지)
 const buildingInProgress = new Set();
 
 /* ==================== util ==================== */
@@ -332,10 +331,10 @@ router.get("/budget-set", async (req, res) => {
   const budget = Math.max(300000, Math.min(10000000, Number(req.query.budget) || 1500000));
   const purpose = VALID_PURPOSES.includes(req.query.purpose) ? req.query.purpose : "가성비";
 
-  // 1. 인메모리 캐시
   const memKey = `recommend:budget-set:${budget}:${purpose}`;
+  // parts 없는 빈 객체는 캐시 히트로 쭘성하지 않음
   const memHit = getCache(memKey);
-  if (memHit) return res.json(memHit);
+  if (memHit?.parts) return res.json(memHit);
 
   const db = getDB();
   if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "DB 연결 실패" });
@@ -345,31 +344,36 @@ router.get("/budget-set", async (req, res) => {
     const doc = await db.collection("cached_sets").findOne({ _id: `budget-set:${budget}:${purpose}` });
 
     if (doc) {
-      const age = Date.now() - new Date(doc.computedAt).getTime();
       const result = doc.result;
-      setCache(memKey, result, 10 * 60 * 1000);
-
-      // 24h 초과: 오래된 데이터 즉시 반환 + 백그라운드 갱신
-      if (age > MAX_AGE_MS) {
-        const bgKey = `${budget}:${purpose}`;
-        if (!buildingInProgress.has(bgKey)) {
-          buildingInProgress.add(bgKey);
-          logger.info(`budget-set stale (${Math.round(age / 3600000)}h) — 백그라운드 갱신`);
-          buildCompatibleSet(budget, purpose, db)
-            .then(async (best) => {
-              if (!best) return;
-              const fresh = formatBudgetSetResult(best, budget, purpose);
-              await saveBudgetSetToDb(db, budget, purpose, fresh);
-              logger.info(`budget-set 백그라운드 갱신 완료: ${best.totalPrice.toLocaleString()}원`);
-            })
-            .catch(e => logger.error(`budget-set 백그라운드 갱신 실패: ${e.message}`))
-            .finally(() => buildingInProgress.delete(bgKey));
+      // 무효 문서(parts 없음) 감지 → 삭제 후 재계산
+      if (!result?.parts) {
+        logger.warn(`budget-set 무효 문서 감지 — 삭제 후 재계산`);
+        await db.collection("cached_sets").deleteOne({ _id: `budget-set:${budget}:${purpose}` });
+      } else {
+        const age = Date.now() - new Date(doc.computedAt).getTime();
+        setCache(memKey, result, 10 * 60 * 1000);
+        if (age > MAX_AGE_MS) {
+          const bgKey = `${budget}:${purpose}`;
+          if (!buildingInProgress.has(bgKey)) {
+            buildingInProgress.add(bgKey);
+            logger.info(`budget-set stale (${Math.round(age / 3600000)}h) — 백그라운드 갱신`);
+            buildCompatibleSet(budget, purpose, db)
+              .then(async (best) => {
+                if (!best) return;
+                const fresh = formatBudgetSetResult(best, budget, purpose);
+                await saveBudgetSetToDb(db, budget, purpose, fresh);
+                setCache(memKey, fresh, 10 * 60 * 1000);
+                logger.info(`budget-set 백그라운드 갱신 완료: ${best.totalPrice.toLocaleString()}원`);
+              })
+              .catch(e => logger.error(`budget-set 백그라운드 갱신 실패: ${e.message}`))
+              .finally(() => buildingInProgress.delete(bgKey));
+          }
         }
+        return res.json(result);
       }
-      return res.json(result);
     }
 
-    // 2. DB에 데이터 없음: 백그라운드 계산 트리거 후 503 반환
+    // DB 없음 또는 무효 문서: 백그라운드 계산 후 503
     const bgKey = `${budget}:${purpose}`;
     if (!buildingInProgress.has(bgKey)) {
       buildingInProgress.add(bgKey);
@@ -379,6 +383,7 @@ router.get("/budget-set", async (req, res) => {
           if (!best) return;
           const result = formatBudgetSetResult(best, budget, purpose);
           await saveBudgetSetToDb(db, budget, purpose, result);
+          setCache(memKey, result, 10 * 60 * 1000);
           logger.info(`budget-set 초기 계산 완료: ${best.totalPrice.toLocaleString()}원`);
         })
         .catch(e => logger.error(`budget-set 초기 계산 실패: ${e.message}`))
@@ -414,6 +419,9 @@ router.post("/budget-set/refresh", async (req, res) => {
       if (!best) { results.push({ budget, purpose, status: "no_result" }); continue; }
       const result = formatBudgetSetResult(best, budget, purpose);
       await saveBudgetSetToDb(db, budget, purpose, result);
+      // in-memory 캐시도 즉시 갱신
+      const memKey = `recommend:budget-set:${budget}:${purpose}`;
+      setCache(memKey, result, 10 * 60 * 1000);
       results.push({ budget, purpose, status: "ok", totalPrice: result.totalPrice });
       logger.info(`budget-set 갱신 완료: ${budget.toLocaleString()}원/${purpose} → ${best.totalPrice.toLocaleString()}원`);
     } catch (e) {
