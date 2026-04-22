@@ -546,8 +546,8 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       review = tag;
     }
 
-    const naverPrice = await fetchNaverPrice(cpu.name);
-    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: naverPrice };
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(cpu.name);
+    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: naverPrice, mallCount: mallCount || 0 };
     const hasExistingBench = old?.benchScore && old.benchScore > 0;
     if (!hasExistingBench) update.benchScore = benchScore;
     if (review) update.review = review;

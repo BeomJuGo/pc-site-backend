@@ -246,9 +246,9 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
       }
     }
 
-    const naverPrice = await fetchNaverPrice(memory.name);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(memory.name);
     const update = {
-      category: "memory", info, image: memory.image, price: naverPrice || 0,
+      category: "memory", info, image: memory.image, price: naverPrice || 0, mallCount: mallCount || 0,
       benchmarkScore: memoryScore > 0 ? { "memoryscore": memoryScore } : undefined,
       ...(ai ? { review, specSummary } : {}),
     };

@@ -306,14 +306,14 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
       }
     }
 
-    const naverPrice = await fetchNaverPrice(storage.name);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(storage.name);
     const update = {
       category: "storage",
       info: storage.info,
       image: storage.image,
       manufacturer: extractManufacturer(storage.name),
       specs: storage.specs,
-      price: naverPrice || 0,
+      price: naverPrice || 0, mallCount: mallCount || 0,
       benchmarkScore: storageScore > 0 ? { "storagescore": storageScore } : undefined,
       ...(ai ? { review, specSummary } : {}),
     };

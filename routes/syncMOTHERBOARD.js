@@ -230,9 +230,9 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
       }
     }
 
-    const naverPrice = await fetchNaverPrice(board.name);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(board.name);
     const update = {
-      category: "motherboard", info, image: board.image, price: naverPrice || 0,
+      category: "motherboard", info, image: board.image, price: naverPrice || 0, mallCount: mallCount || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 

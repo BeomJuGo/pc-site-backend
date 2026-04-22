@@ -267,9 +267,9 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
       }
     }
 
-    const naverPrice = await fetchNaverPrice(psu.name);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(psu.name);
     const update = {
-      category: "psu", info, image: psu.image, price: naverPrice || 0,
+      category: "psu", info, image: psu.image, price: naverPrice || 0, mallCount: mallCount || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 

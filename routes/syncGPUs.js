@@ -364,7 +364,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const naverPrice = await fetchNaverPrice(p.name);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(p.name);
     const hasExistingBench = old?.benchmarkScore?.["3dmarkscore"] && old.benchmarkScore["3dmarkscore"] > 0;
     const benchmarkScore = hasExistingBench
       ? old.benchmarkScore
@@ -374,6 +374,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
       category: "gpu",
       image: p.image,
       price: naverPrice || 0,
+      mallCount: mallCount || 0,
       manufacturer: extractManufacturer(p.name),
       review,
       specSummary,

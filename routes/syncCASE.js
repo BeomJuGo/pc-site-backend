@@ -243,10 +243,10 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
         specSummary = existing?.specSummary || specs.info;
       }
 
-      const naverPrice = await fetchNaverPrice(caseItem.name);
+      const { price: naverPrice, mallCount } = await fetchNaverPrice(caseItem.name);
       const update = {
         category: "case", manufacturer, info: specs.info, image: caseItem.image, specs,
-        price: naverPrice || 0,
+        price: naverPrice || 0, mallCount: mallCount || 0,
         ...(ai ? { review, specSummary } : {}),
       };
 

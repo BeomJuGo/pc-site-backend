@@ -7,14 +7,15 @@ import logger from "./logger.js";
  */
 export async function fetchNaverPrice(partName) {
   try {
-    // sort=sim: 관련도순 20개 조회 후 그 중 최저가 선택
-    // (sort=asc는 스팸/광고 1원짜리 상품이 상위에 올라와 잘못된 가격을 반환함)
+    // sort=sim: 관련도순 20개 조회 후 최저가 + 판매 몰 수 반환
     const data = await searchNaverShopping(partName, 20, "sim");
     const items = parseNaverItems(data);
-    if (!items.length) return 0;
-    return Math.min(...items.map((item) => item.price));
+    if (!items.length) return { price: 0, mallCount: 0 };
+    const price = Math.min(...items.map((item) => item.price));
+    const mallCount = new Set(items.map((item) => item.mallName).filter(Boolean)).size;
+    return { price, mallCount };
   } catch (err) {
     logger.warn(`fetchNaverPrice 실패 (${partName}): ${err.message}`);
-    return 0;
+    return { price: 0, mallCount: 0 };
   }
 }

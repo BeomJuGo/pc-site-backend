@@ -278,14 +278,14 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
       }
     }
 
-    const naverPrice = await fetchNaverPrice(cooler.name);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(cooler.name);
     const update = {
       category: "cooler",
       info: specs.info,
       image: cooler.image,
       manufacturer: extractManufacturer(cooler.name),
       specs: { type: specs.type, sockets: specs.sockets, tdpW: specs.tdpW, heightMm: specs.heightMm, specText: specs.specText },
-      price: naverPrice || 0,
+      price: naverPrice || 0, mallCount: mallCount || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 

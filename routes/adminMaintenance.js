@@ -90,12 +90,12 @@ router.post("/update-all-prices", async (req, res) => {
 
     for (const part of parts) {
       try {
-        const naverPrice = await fetchNaverPrice(part.name);
+        const { price: naverPrice, mallCount } = await fetchNaverPrice(part.name);
         if (!naverPrice || naverPrice <= 0) {
           skipped++;
           continue;
         }
-        const ops = { $set: { price: naverPrice } };
+        const ops = { $set: { price: naverPrice, mallCount: mallCount || 0 } };
         if (naverPrice !== part.price) {
           ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
         }
