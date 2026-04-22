@@ -1,5 +1,6 @@
 import express from "express";
 import { getDB } from "../db.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 import logger from "../utils/logger.js";
 
 const router = express.Router();
@@ -26,10 +27,10 @@ router.post("/cleanup-db", async (req, res) => {
   });
   results.deleted_laptop_memory = r2.deletedCount;
 
-  // 3. 90일 이전 priceHistory 항목 삭제 (aggregation pipeline update)
+  // 3. 90일 이전 priceHistory 항목 $pull로 삭제 (string 날짜 비교)
   const r3 = await db.collection("parts").updateMany(
-    { "priceHistory.0": { $exists: true } },
-    [{ $set: { priceHistory: { $filter: { input: { $ifNull: ["$priceHistory", []] }, cond: { $gte: ["$$this.date", cutoff] } } } } }]
+    { "priceHistory.date": { $lt: cutoff } },
+    { $pull: { priceHistory: { date: { $lt: cutoff } } } }
   );
   results.trimmed_price_history = r3.modifiedCount;
   results.price_history_cutoff = cutoff;
@@ -51,6 +52,45 @@ router.post("/cleanup-db", async (req, res) => {
 
   logger.info(`cleanup-db 완료: ${JSON.stringify(results)}`);
   res.json({ status: "ok", ...results });
+});
+
+/* ==================== 모든 부품 가격을 네이버쇼핑 API로 업데이트 ==================== */
+
+router.post("/update-all-prices", async (req, res) => {
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DB 연결 실패" });
+
+  const category = req.body?.category || null;
+  const filter = category ? { category } : {};
+  const parts = await db.collection("parts").find(filter, { projection: { _id: 1, name: 1, category: 1, price: 1 } }).toArray();
+
+  res.json({ status: "started", total: parts.length, category: category || "전체" });
+
+  setImmediate(async () => {
+    let updated = 0, skipped = 0, failed = 0;
+    const today = new Date().toISOString().slice(0, 10);
+
+    for (const part of parts) {
+      try {
+        const naverPrice = await fetchNaverPrice(part.name);
+        if (!naverPrice || naverPrice <= 0) {
+          skipped++;
+          continue;
+        }
+        const ops = { $set: { price: naverPrice } };
+        if (naverPrice !== part.price) {
+          ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
+        }
+        await db.collection("parts").updateOne({ _id: part._id }, ops);
+        updated++;
+      } catch (err) {
+        logger.error(`가격 업데이트 실패: ${part.name} — ${err.message}`);
+        failed++;
+      }
+      await sleep(200);
+    }
+    logger.info(`update-all-prices 완료: 성공 ${updated}개, 건너뜀 ${skipped}개, 실패 ${failed}개 (총 ${parts.length}개)`);
+  });
 });
 
 /* ==================== 모든 부품 spec GPT-5.4 재생성 ==================== */
@@ -88,7 +128,7 @@ router.post("/update-all-specs", async (req, res) => {
   const db = getDB();
   if (!db) return res.status(500).json({ error: "DB 연결 실패" });
 
-  const category = req.body?.category || null; // 특정 카테고리만 처리하려면 지정
+  const category = req.body?.category || null;
   const filter = category ? { category } : {};
   const parts = await db.collection("parts").find(filter, { projection: { _id: 1, name: 1, category: 1 } }).toArray();
 
@@ -110,7 +150,7 @@ router.post("/update-all-specs", async (req, res) => {
         logger.error(`spec 업데이트 실패: ${part.name} — ${err.message}`);
         failed++;
       }
-      await sleep(300); // OpenAI rate limit 준수
+      await sleep(300);
     }
     logger.info(`update-all-specs 완료: 성공 ${updated}개, 실패 ${failed}개 (총 ${parts.length}개)`);
   });

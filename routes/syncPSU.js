@@ -3,7 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { resolvePrice } from "../utils/priceResolver.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 
@@ -267,25 +267,25 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
       }
     }
 
-    const resolvedPsu = await resolvePrice(psu.name, psu.price);
+    const naverPrice = await fetchNaverPrice(psu.name);
     const update = {
-      category: "psu", info, image: psu.image, price: resolvedPsu.price || 0, danawaPrice: resolvedPsu.danawaPrice || 0,
+      category: "psu", info, image: psu.image, price: naverPrice || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
       const today = new Date().toISOString().slice(0, 10);
       const ops = { $set: update };
-      if (resolvedPsu.price > 0 && resolvedPsu.price !== old.price) {
+      if (naverPrice > 0 && naverPrice !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolvedPsu.price }], $slice: -90 } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = resolvedPsu.price > 0 ? [{ date: today, price: resolvedPsu.price }] : [];
+      const priceHistory = naverPrice > 0 ? [{ date: today, price: naverPrice }] : [];
       await col.insertOne({ name: psu.name, ...update, priceHistory });
       inserted++;
       console.log(`\uD83C\uDD95 \uc0bd\uc785: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);

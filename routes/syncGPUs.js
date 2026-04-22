@@ -4,7 +4,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
-import { resolvePrice } from "../utils/priceResolver.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
@@ -364,7 +364,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const resolved = await resolvePrice(p.name, p.price);
+    const naverPrice = await fetchNaverPrice(p.name);
     const hasExistingBench = old?.benchmarkScore?.["3dmarkscore"] && old.benchmarkScore["3dmarkscore"] > 0;
     const benchmarkScore = hasExistingBench
       ? old.benchmarkScore
@@ -373,8 +373,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     const update = {
       category: "gpu",
       image: p.image,
-      price: resolved.price || 0,
-      danawaPrice: resolved.danawaPrice || 0,
+      price: naverPrice || 0,
       manufacturer: extractManufacturer(p.name),
       review,
       specSummary,
@@ -383,10 +382,10 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
 
     if (old) {
       const ops = { $set: update };
-      if (resolved.price > 0 && resolved.price !== old.price) {
+      if (naverPrice > 0 && naverPrice !== old.price) {
         const priceHistory = old.priceHistory || [];
         const already = priceHistory.some(ph => ph.date === today);
-        if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: resolved.price }], $slice: -90 } };
+        if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       console.log("\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8\ub428:", p.name);
@@ -394,7 +393,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
       await col.insertOne({
         name: p.name,
         ...update,
-        priceHistory: resolved.price > 0 ? [{ date: today, price: resolved.price }] : [],
+        priceHistory: naverPrice > 0 ? [{ date: today, price: naverPrice }] : [],
       });
       console.log("\uD83C\uDD95 \uc0bd\uc785\ub428:", p.name);
     }

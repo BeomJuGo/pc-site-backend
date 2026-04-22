@@ -3,7 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { resolvePrice } from "../utils/priceResolver.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 
@@ -246,9 +246,9 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
       }
     }
 
-    const resolvedMem = await resolvePrice(memory.name, memory.price);
+    const naverPrice = await fetchNaverPrice(memory.name);
     const update = {
-      category: "memory", info, image: memory.image, price: resolvedMem.price || 0, danawaPrice: resolvedMem.danawaPrice || 0,
+      category: "memory", info, image: memory.image, price: naverPrice || 0,
       benchmarkScore: memoryScore > 0 ? { "memoryscore": memoryScore } : undefined,
       ...(ai ? { review, specSummary } : {}),
     };
@@ -256,16 +256,16 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
     if (old) {
       const today = new Date().toISOString().slice(0, 10);
       const ops = { $set: update };
-      if (resolvedMem.price > 0 && resolvedMem.price !== old.price) {
+      if (naverPrice > 0 && naverPrice !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolvedMem.price }], $slice: -90 } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${memory.name} (\uac00\uaca9: ${memory.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = resolvedMem.price > 0 ? [{ date: today, price: resolvedMem.price }] : [];
+      const priceHistory = naverPrice > 0 ? [{ date: today, price: naverPrice }] : [];
       await col.insertOne({ name: memory.name, ...update, priceHistory });
       inserted++;
       console.log(`\uD83C\uDD95 \uc0bd\uc785: ${memory.name} (\uac00\uaca9: ${memory.price.toLocaleString()}\uc6d0)`);

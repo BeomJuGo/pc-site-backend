@@ -3,7 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { resolvePrice } from "../utils/priceResolver.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 
@@ -230,25 +230,25 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
       }
     }
 
-    const resolvedBoard = await resolvePrice(board.name, board.price);
+    const naverPrice = await fetchNaverPrice(board.name);
     const update = {
-      category: "motherboard", info, image: board.image, price: resolvedBoard.price || 0, danawaPrice: resolvedBoard.danawaPrice || 0,
+      category: "motherboard", info, image: board.image, price: naverPrice || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
       const today = new Date().toISOString().slice(0, 10);
       const ops = { $set: update };
-      if (resolvedBoard.price > 0 && resolvedBoard.price !== old.price) {
+      if (naverPrice > 0 && naverPrice !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolvedBoard.price }], $slice: -90 } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${board.name} (\uac00\uaca9: ${board.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = resolvedBoard.price > 0 ? [{ date: today, price: resolvedBoard.price }] : [];
+      const priceHistory = naverPrice > 0 ? [{ date: today, price: naverPrice }] : [];
       await col.insertOne({ name: board.name, ...update, priceHistory });
       inserted++;
       console.log(`\uD83C\uDD95 \uc0bd\uc785: ${board.name} (\uac00\uaca9: ${board.price.toLocaleString()}\uc6d0)`);

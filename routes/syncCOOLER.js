@@ -3,7 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { resolvePrice } from "../utils/priceResolver.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 
@@ -278,30 +278,30 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
       }
     }
 
-    const resolvedCooler = await resolvePrice(cooler.name, cooler.price);
+    const naverPrice = await fetchNaverPrice(cooler.name);
     const update = {
       category: "cooler",
       info: specs.info,
       image: cooler.image,
       manufacturer: extractManufacturer(cooler.name),
       specs: { type: specs.type, sockets: specs.sockets, tdpW: specs.tdpW, heightMm: specs.heightMm, specText: specs.specText },
-      price: resolvedCooler.price || 0, danawaPrice: resolvedCooler.danawaPrice || 0,
+      price: naverPrice || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
       const today = new Date().toISOString().slice(0, 10);
       const ops = { $set: update };
-      if (resolvedCooler.price > 0 && resolvedCooler.price !== old.price) {
+      if (naverPrice > 0 && naverPrice !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolvedCooler.price }], $slice: -90 } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${cooler.name} (\uac00\uaca9: ${cooler.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = resolvedCooler.price > 0 ? [{ date: today, price: resolvedCooler.price }] : [];
+      const priceHistory = naverPrice > 0 ? [{ date: today, price: naverPrice }] : [];
       await col.insertOne({ name: cooler.name, ...update, priceHistory });
       inserted++;
       console.log(`\uD83C\uDD95 \uc2e0\uaddc \ucd94\uac00: ${cooler.name} (\uac00\uaca9: ${cooler.price.toLocaleString()}\uc6d0)`);

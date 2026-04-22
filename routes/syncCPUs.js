@@ -3,7 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, BLOCK_HOSTS, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { resolvePrice } from "../utils/priceResolver.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
 
 const router = express.Router();
 const MIN_PASSMARK_SCORE_FOR_SAVE = 10000;
@@ -546,8 +546,8 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       review = tag;
     }
 
-    const resolved = await resolvePrice(cpu.name, cpu.price);
-    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: resolved.price, danawaPrice: resolved.danawaPrice };
+    const naverPrice = await fetchNaverPrice(cpu.name);
+    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: naverPrice };
     const hasExistingBench = old?.benchScore && old.benchScore > 0;
     if (!hasExistingBench) update.benchScore = benchScore;
     if (review) update.review = review;
@@ -555,14 +555,14 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     if (old) {
       const today = new Date().toISOString().slice(0, 10);
       const ops = { $set: update, $unset: { specSummary: "" } };
-      if (resolved.price > 0 && resolved.price !== old.price) {
+      if (naverPrice > 0 && naverPrice !== old.price) {
         const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: resolved.price }], $slice: -90 } };
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
       }
       await col.updateOne({ _id: old._id }, ops);
       updated++;
     } else {
-      const priceHistory = resolved.price > 0 ? [{ date: new Date().toISOString().slice(0, 10), price: resolved.price }] : [];
+      const priceHistory = naverPrice > 0 ? [{ date: new Date().toISOString().slice(0, 10), price: naverPrice }] : [];
       await col.insertOne({ name: cpu.name, ...update, priceHistory });
       inserted++;
     }
