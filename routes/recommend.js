@@ -16,6 +16,21 @@ const router = express.Router();
 
 const buildingInProgress = new Set();
 
+// budget-set AI 전환 상수
+const BUDGET_SET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
+주어진 부품 목록(실제 DB 데이터)에서만 선택하여 예산에 맞는 호환 가능한 PC 견적을 작성하세요.
+반드시 JSON만 출력하고 다른 텍스트는 절대 포함하지 마세요.
+출력 형식: {"parts":{"cpu":{"name":"...","price":숫자},"gpu":{"name":"...","price":숫자},"motherboard":{"name":"...","price":숫자},"memory":{"name":"...","price":숫자},"psu":{"name":"...","price":숫자},"cooler":{"name":"...","price":숫자},"storage":{"name":"...","price":숫자},"case":{"name":"...","price":숫자}},"totalPrice":숫자,"summary":"한줄설명"}
+호환성 규칙:
+- CPU 소켓과 메인보드 소켓 일치
+- 메모리 DDR 규격 일치
+- PSU 출력 = CPU TDP + GPU TDP + 100W 이상
+- 쿨러 소켓 CPU와 일치
+- 케이스 퍴폼팩터 메인보드와 일치
+- 총 가격이 예산의 90~100% 범위 내`;
+
 /* ==================== util ==================== */
 
 function escapeRegex(str) {
@@ -180,6 +195,8 @@ function checkBottleneck(cpuScore, gpuScore, purpose, userBudget) {
   return r >= ratio.min && r <= ratio.max;
 }
 
+/* ==================== 코드 기반 견적 (개별 쫐천 POST /api/recommend 에서만 사용) ==================== */
+
 async function buildCompatibleSet(budget, purpose, db) {
   const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
   const weights = {
@@ -318,9 +335,131 @@ function formatBudgetSetResult(best, budget, purpose) {
   };
 }
 
+/* ==================== AI 기반 budget-set 생성 ==================== */
+
+async function buildCompatibleSetWithAI(budget, purpose, db) {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
+
+  const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
+
+  const fmtCpu = (p) => `${p.name} | ${p.price.toLocaleString()}원 | 소켓:${extractCpuSocket(p)} | TDP:${extractTdp(p.info || "")}W`;
+  const fmtGpu = (p) => `${p.name} | ${p.price.toLocaleString()}원 | TDP:${extractTdp(p.info || "")}W`;
+  const fmtBoard = (p) => `${p.name} | ${p.price.toLocaleString()}원 | 소켓:${extractBoardSocket(p)}`;
+  const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
+  const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
+
+  const sortedCpus = [...cpus].sort((a, b) => (getCpuScore(b) / (b.price || 1)) - (getCpuScore(a) / (a.price || 1))).slice(0, 30);
+  const sortedGpus = [...gpus].sort((a, b) => (getGpuScore(b) / (b.price || 1)) - (getGpuScore(a) / (a.price || 1))).slice(0, 30);
+  const sortedBoards = [...boards].sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedMems = [...memories].sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedPsus = [...psus].sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCoolers = [...coolers].sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedStorages = [...storages].sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCases = [...cases].sort((a, b) => b.price - a.price).slice(0, 15);
+
+  const userPrompt = [
+    `예산: ${budget.toLocaleString()}원`,
+    `용도: ${purpose}`,
+    "",
+    "[사용 가능한 부품 목록 — 반드시 이 목록에서만 선택]",
+    "",
+    "=== CPU ===",
+    ...sortedCpus.map(fmtCpu),
+    "",
+    "=== GPU ===",
+    ...sortedGpus.map(fmtGpu),
+    "",
+    "=== 메인보드 ===",
+    ...sortedBoards.map(fmtBoard),
+    "",
+    "=== 메모리 ===",
+    ...sortedMems.map(fmtMem),
+    "",
+    "=== PSU ===",
+    ...sortedPsus.map(fmtSimple),
+    "",
+    "=== 쿨러 ===",
+    ...sortedCoolers.map(fmtSimple),
+    "",
+    "=== 스토리지 ===",
+    ...sortedStorages.map(fmtSimple),
+    "",
+    "=== 케이스 ===",
+    ...sortedCases.map(fmtSimple),
+  ].join("\n");
+
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: "gpt-5.4-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: BUDGET_SET_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 1500,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    throw new Error(`OpenAI API 오류 ${resp.status}: ${errBody?.error?.message || ""}`);
+  }
+
+  const data = await resp.json();
+  const raw = data?.choices?.[0]?.message?.content || "";
+  const parsed = JSON.parse(raw);
+
+  if (!parsed.parts || typeof parsed.parts !== "object") {
+    throw new Error("AI 응답에 parts 객체가 없음");
+  }
+
+  // 이미지 URL을 DB에서 조회
+  const partNames = Object.values(parsed.parts).map(p => p?.name).filter(Boolean);
+  const dbParts = partNames.length > 0
+    ? await db.collection("parts").find({ name: { $in: partNames } }, { projection: { name: 1, image: 1 } }).toArray()
+    : [];
+  const imageMap = Object.fromEntries(dbParts.map(p => [p.name, p.image]));
+
+  const PART_KEYS = ["cpu", "gpu", "motherboard", "memory", "psu", "cooler", "storage", "case"];
+  const enrichedParts = {};
+  for (const key of PART_KEYS) {
+    const p = parsed.parts[key];
+    if (p?.name) {
+      enrichedParts[key] = { name: p.name, price: p.price || 0, image: imageMap[p.name] || null, category: key };
+    }
+  }
+
+  if (Object.keys(enrichedParts).length < 5) {
+    throw new Error(`AI가 불충분한 부품 수 반환: ${Object.keys(enrichedParts).length}개`);
+  }
+
+  const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
+
+  return {
+    budget,
+    purpose,
+    totalPrice,
+    computedAt: new Date().toISOString(),
+    parts: enrichedParts,
+    summary: parsed.summary || "",
+  };
+}
+
 async function saveBudgetSetToDb(db, budget, purpose, result) {
   const _id = `budget-set:${budget}:${purpose}`;
   await db.collection("cached_sets").replaceOne({ _id }, { _id, budget, purpose, result, computedAt: new Date() }, { upsert: true });
+}
+
+function checkAdminKey(req, res) {
+  const key = req.headers["authorization"]?.replace("Bearer ", "");
+  if (!config.adminApiKey || key !== config.adminApiKey) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  return true;
 }
 
 /* ==================== 호환 세트 (MongoDB 영속 캐시) ==================== */
@@ -332,7 +471,6 @@ router.get("/budget-set", async (req, res) => {
   const purpose = VALID_PURPOSES.includes(req.query.purpose) ? req.query.purpose : "가성비";
 
   const memKey = `recommend:budget-set:${budget}:${purpose}`;
-  // parts 없는 빈 객체는 캐시 히트로 쭘성하지 않음
   const memHit = getCache(memKey);
   if (memHit?.parts) return res.json(memHit);
 
@@ -340,32 +478,29 @@ router.get("/budget-set", async (req, res) => {
   if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "DB 연결 실패" });
 
   try {
-    const MAX_AGE_MS = 24 * 60 * 60 * 1000;
     const doc = await db.collection("cached_sets").findOne({ _id: `budget-set:${budget}:${purpose}` });
 
     if (doc) {
       const result = doc.result;
-      // 무효 문서(parts 없음) 감지 → 삭제 후 재계산
       if (!result?.parts) {
         logger.warn(`budget-set 무효 문서 감지 — 삭제 후 재계산`);
         await db.collection("cached_sets").deleteOne({ _id: `budget-set:${budget}:${purpose}` });
       } else {
         const age = Date.now() - new Date(doc.computedAt).getTime();
         setCache(memKey, result, 10 * 60 * 1000);
-        if (age > MAX_AGE_MS) {
+        if (age > BUDGET_SET_TTL_MS) {
           const bgKey = `${budget}:${purpose}`;
           if (!buildingInProgress.has(bgKey)) {
             buildingInProgress.add(bgKey);
-            logger.info(`budget-set stale (${Math.round(age / 3600000)}h) — 백그라운드 갱신`);
-            buildCompatibleSet(budget, purpose, db)
-              .then(async (best) => {
-                if (!best) return;
-                const fresh = formatBudgetSetResult(best, budget, purpose);
+            logger.info(`budget-set stale (${Math.round(age / 86400000)}d) — AI 백그라운드 갱신`);
+            buildCompatibleSetWithAI(budget, purpose, db)
+              .then(async (fresh) => {
+                if (!fresh?.parts) return;
                 await saveBudgetSetToDb(db, budget, purpose, fresh);
                 setCache(memKey, fresh, 10 * 60 * 1000);
-                logger.info(`budget-set 백그라운드 갱신 완료: ${best.totalPrice.toLocaleString()}원`);
+                logger.info(`budget-set AI 백그라운드 갱신 완료: ${fresh.totalPrice?.toLocaleString()}원`);
               })
-              .catch(e => logger.error(`budget-set 백그라운드 갱신 실패: ${e.message}`))
+              .catch(e => logger.error(`budget-set AI 백그라운드 갱신 실패: ${e.message}`))
               .finally(() => buildingInProgress.delete(bgKey));
           }
         }
@@ -373,20 +508,19 @@ router.get("/budget-set", async (req, res) => {
       }
     }
 
-    // DB 없음 또는 무효 문서: 백그라운드 계산 후 503
+    // DB 없음 또는 무효 문서: AI 백그라운드 계산 후 503
     const bgKey = `${budget}:${purpose}`;
     if (!buildingInProgress.has(bgKey)) {
       buildingInProgress.add(bgKey);
-      logger.info(`budget-set 없음 — 백그라운드 계산 시작: ${budget.toLocaleString()}원 / ${purpose}`);
-      buildCompatibleSet(budget, purpose, db)
-        .then(async (best) => {
-          if (!best) return;
-          const result = formatBudgetSetResult(best, budget, purpose);
+      logger.info(`budget-set 없음 — AI 백그라운드 계산 시작: ${budget.toLocaleString()}원 / ${purpose}`);
+      buildCompatibleSetWithAI(budget, purpose, db)
+        .then(async (result) => {
+          if (!result?.parts) return;
           await saveBudgetSetToDb(db, budget, purpose, result);
           setCache(memKey, result, 10 * 60 * 1000);
-          logger.info(`budget-set 초기 계산 완료: ${best.totalPrice.toLocaleString()}원`);
+          logger.info(`budget-set AI 초기 계산 완료: ${result.totalPrice?.toLocaleString()}원`);
         })
-        .catch(e => logger.error(`budget-set 초기 계산 실패: ${e.message}`))
+        .catch(e => logger.error(`budget-set AI 초기 계산 실패: ${e.message}`))
         .finally(() => buildingInProgress.delete(bgKey));
     }
 
@@ -401,35 +535,56 @@ router.get("/budget-set", async (req, res) => {
   }
 });
 
-// POST /api/recommend/budget-set/refresh
+// POST /api/recommend/budget-set/refresh (단일 수동 갱신, ADMIN 인증 필요)
 router.post("/budget-set/refresh", async (req, res) => {
+  if (!checkAdminKey(req, res)) return;
   const db = getDB();
   if (!db) return res.status(500).json({ error: "DB 연결 실패" });
 
-  const TARGETS = [
-    { budget: 1500000, purpose: "가성비" },
-    { budget: 1500000, purpose: "게임용" },
-  ];
+  const budget = parseInt(req.body?.budget) || 1500000;
+  const purpose = req.body?.purpose || "가성비";
 
-  const results = [];
-  for (const { budget, purpose } of TARGETS) {
-    try {
-      logger.info(`budget-set 갱신 시작: ${budget.toLocaleString()}원 / ${purpose}`);
-      const best = await buildCompatibleSet(budget, purpose, db);
-      if (!best) { results.push({ budget, purpose, status: "no_result" }); continue; }
-      const result = formatBudgetSetResult(best, budget, purpose);
-      await saveBudgetSetToDb(db, budget, purpose, result);
-      // in-memory 캐시도 즉시 갱신
-      const memKey = `recommend:budget-set:${budget}:${purpose}`;
-      setCache(memKey, result, 10 * 60 * 1000);
-      results.push({ budget, purpose, status: "ok", totalPrice: result.totalPrice });
-      logger.info(`budget-set 갱신 완료: ${budget.toLocaleString()}원/${purpose} → ${best.totalPrice.toLocaleString()}원`);
-    } catch (e) {
-      logger.error(`budget-set 갱신 실패 ${budget}/${purpose}: ${e.message}`);
-      results.push({ budget, purpose, status: "error", message: e.message });
-    }
+  try {
+    logger.info(`budget-set AI 갱신 시작: ${budget.toLocaleString()}원 / ${purpose}`);
+    const result = await buildCompatibleSetWithAI(budget, purpose, db);
+    await saveBudgetSetToDb(db, budget, purpose, result);
+    const memKey = `recommend:budget-set:${budget}:${purpose}`;
+    setCache(memKey, result, 10 * 60 * 1000);
+    logger.info(`budget-set AI 갱신 완료: ${budget.toLocaleString()}원/${purpose} → ${result.totalPrice?.toLocaleString()}원`);
+    res.json({ status: "ok", budget, purpose, totalPrice: result.totalPrice, summary: result.summary });
+  } catch (e) {
+    logger.error(`budget-set AI 갱신 실패 ${budget}/${purpose}: ${e.message}`);
+    res.status(500).json({ error: e.message });
   }
-  res.json({ refreshed: results, timestamp: new Date().toISOString() });
+});
+
+// POST /api/recommend/budget-set/refresh-all (전체 26개 티어 일괄 AI 갱신, ADMIN 인증 필요)
+router.post("/budget-set/refresh-all", async (req, res) => {
+  if (!checkAdminKey(req, res)) return;
+  const purpose = req.body?.purpose || "가성비";
+  const budgets = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
+  res.json({ status: "started", total: budgets.length, purpose });
+
+  (async () => {
+    const db = getDB();
+    if (!db) return;
+    let success = 0, fail = 0;
+    for (const budget of budgets) {
+      try {
+        const result = await buildCompatibleSetWithAI(budget, purpose, db);
+        await saveBudgetSetToDb(db, budget, purpose, result);
+        const memKey = `recommend:budget-set:${budget}:${purpose}`;
+        setCache(memKey, result, 10 * 60 * 1000);
+        logger.info(`budget-set AI 완료: ${budget.toLocaleString()}원 → ${result.totalPrice?.toLocaleString()}원`);
+        success++;
+      } catch (err) {
+        logger.error(`budget-set AI 실패: ${budget.toLocaleString()}원 — ${err.message}`);
+        fail++;
+      }
+      await sleep(2000);
+    }
+    logger.info(`budget-set refresh-all 완료: 성공 ${success}개, 실패 ${fail}개`);
+  })();
 });
 
 /* ==================== AI 견적 평가 ==================== */
@@ -447,7 +602,7 @@ async function generateBuildEvaluation(build, purpose, budget) {
     `케이스: ${parts.case?.name || ""} (${parts.case?.price?.toLocaleString() || 0}원)`,
   ].join("\n");
   const compat = build.compatibility || {};
-  const prompt = `${build.label} 견적 (총 ${build.totalPrice?.toLocaleString() || 0}원).\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n\n부품:\n${partsList}\n\n호환성: 소켓 ${compat.socket || ""}, 메모리 ${compat.ddr || ""}, 전력 ${compat.power || ""}\n\nJSON만: {"evaluation":"<200자>","strengths":[],"recommendations":[]}`;
+  const prompt = `${build.label} 견적 (싙 ${build.totalPrice?.toLocaleString() || 0}원).\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n\n부품:\n${partsList}\n\n호환성: 소켓 ${compat.socket || ""}, 메모리 ${compat.ddr || ""}, 전력 ${compat.power || ""}\n\nJSON만: {"evaluation":"<200자>","strengths":[],"recommendations":[]}`;
   const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
   for (let i = 0; i < 2; i++) {
     try {
@@ -455,7 +610,7 @@ async function generateBuildEvaluation(build, purpose, budget) {
         fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "gpt-4o-mini", temperature: 0.6, messages: [{ role: "system", content: "PC 견적 전문가. JSON만 출력." }, { role: "user", content: prompt }] }),
+          body: JSON.stringify({ model: "gpt-5.4-mini", temperature: 0.6, messages: [{ role: "system", content: "PC 견적 전문가. JSON만 출력." }, { role: "user", content: prompt }] }),
         }),
         timeout(config.apiTimeouts.aiEvaluation),
       ]);
@@ -642,7 +797,7 @@ router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
     const [currentCpu, currentGpu] = await Promise.all([findPartForUpgrade(db, "cpu", currentBuild.cpu), findPartForUpgrade(db, "gpu", currentBuild.gpu)]);
     const cpuScore = currentCpu?.benchmarkScore?.passmarkscore || 0;
     const gpuScore = currentGpu?.benchmarkScore?.["3dmarkscore"] || 0;
-    logger.info(`업그레이드: CPU="${currentCpu?.name || "미인식"}"(${cpuScore}), GPU="${currentGpu?.name || "미인식"}"(${gpuScore})`);
+    logger.info(`업그레이드: CPU="${currentCpu?.name || "미인식}"}"(${cpuScore}), GPU="${currentGpu?.name || "미인식}"}"(${gpuScore})`);
     const upgradeTargets = resolveUpgradeTargets(purpose, cpuScore, gpuScore, currentBuild);
     const suggestions = (await Promise.all(upgradeTargets.map(async (target) => {
       const sk = target.category === "cpu" ? "benchmarkScore.passmarkscore" : "benchmarkScore.3dmarkscore";

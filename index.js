@@ -133,7 +133,6 @@ function requireAdminKey(req, res, next) {
   next();
 }
 
-// 요청 로깅: /api/health 및 정적 자산 제외하여 불필요한 I/O 최소화
 const SKIP_LOG_PATHS = new Set(["/api/health", "/favicon.ico"]);
 app.use((req, res, next) => {
   if (!SKIP_LOG_PATHS.has(req.path)) {
@@ -232,12 +231,12 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${config.openaiApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: reviewPrompt }], max_tokens: 150, temperature: 0.7 }),
+        body: JSON.stringify({ model: "gpt-5.4-mini", messages: [{ role: "user", content: reviewPrompt }], max_tokens: 150, temperature: 0.7 }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${config.openaiApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: specPrompt }], max_tokens: 150, temperature: 0.7 }),
+        body: JSON.stringify({ model: "gpt-5.4-mini", messages: [{ role: "user", content: specPrompt }], max_tokens: 150, temperature: 0.7 }),
       }),
     ]);
 
