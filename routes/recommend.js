@@ -16,6 +16,29 @@ const router = express.Router();
 
 /* ==================== 유틸리티 함수 ==================== */
 
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// 업그레이드 어드바이저용 퍼지 부품 조회 (부분 이름 허용)
+async function findPartForUpgrade(db, category, rawName) {
+  if (!rawName) return null;
+  const name = rawName.trim();
+  const proj = { projection: { name: 1, price: 1, benchmarkScore: 1 } };
+
+  // 1) 완전 일치
+  let part = await db.collection("parts").findOne({ category, name }, proj);
+  if (part) return part;
+
+  // 2) 앞부분 일치 (사용자가 짧게 입력한 경우: "7500F", "9070")
+  const escaped = escapeRegex(name);
+  part = await db.collection("parts").findOne(
+    { category, name: { $regex: escaped, $options: "i" } },
+    proj
+  );
+  return part || null;
+}
+
 function normalizeSocket(socket) {
   if (!socket) return "";
   const s = socket.toUpperCase().replace(/\s+/g, "").replace(/-/g, "");
@@ -624,23 +647,16 @@ router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
   try {
     const db = getDB();
 
+    // 퍼지 매칭으로 현재 부품 조회 (부분 이름 입력 허용)
     const [currentCpu, currentGpu] = await Promise.all([
-      currentBuild.cpu
-        ? db.collection("parts").findOne(
-            { category: "cpu", name: currentBuild.cpu },
-            { projection: { name: 1, price: 1, benchmarkScore: 1 } }
-          )
-        : null,
-      currentBuild.gpu
-        ? db.collection("parts").findOne(
-            { category: "gpu", name: currentBuild.gpu },
-            { projection: { name: 1, price: 1, benchmarkScore: 1 } }
-          )
-        : null,
+      findPartForUpgrade(db, "cpu", currentBuild.cpu),
+      findPartForUpgrade(db, "gpu", currentBuild.gpu),
     ]);
 
     const cpuScore = currentCpu?.benchmarkScore?.passmarkscore || 0;
     const gpuScore = currentGpu?.benchmarkScore?.["3dmarkscore"] || 0;
+
+    logger.info(`업그레이드 어드바이저: CPU="${currentCpu?.name || "미인식"}" (${cpuScore}), GPU="${currentGpu?.name || "미인식"}" (${gpuScore})`);
 
     const upgradeTargets = resolveUpgradeTargets(purpose, cpuScore, gpuScore, currentBuild);
 
@@ -652,9 +668,14 @@ router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
               ? "benchmarkScore.passmarkscore"
               : "benchmarkScore.3dmarkscore";
           const currentScore = target.category === "cpu" ? cpuScore : gpuScore;
+          // 현재 부품의 DB _id (퍼지 매칭으로 찾은 경우 제외용)
+          const currentPartId = target.category === "cpu" ? currentCpu?._id : currentGpu?._id;
 
           const filter = { category: target.category, price: { $gt: 0, $lte: budget } };
+          // 현재 점수보다 높은 것만 (점수 0이면 조건 없음 — 하지만 현재 부품은 _id로 명시 제외)
           if (currentScore > 0) filter[scoreKey] = { $gt: currentScore };
+          // 현재 부품 자체는 후보에서 제외
+          if (currentPartId) filter._id = { $ne: currentPartId };
 
           const candidates = await db
             .collection("parts")
@@ -669,6 +690,7 @@ router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
             category: target.category,
             reason: target.reason,
             priority: target.priority,
+            currentName: target.category === "cpu" ? currentCpu?.name : currentGpu?.name,
             candidates: candidates.map((c) => {
               const newScore =
                 target.category === "cpu"
@@ -686,7 +708,10 @@ router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
     ).filter(Boolean);
 
     res.json({
-      currentBuild,
+      currentBuild: {
+        cpu: currentCpu?.name || currentBuild.cpu,
+        gpu: currentGpu?.name || currentBuild.gpu,
+      },
       budget,
       purpose,
       cpuScore,
@@ -723,7 +748,6 @@ function resolveUpgradeTargets(purpose, cpuScore, gpuScore, currentBuild) {
       has("memory") && { category: "memory", reason: "메모리 용량 확장으로 체감 속도가 향상됩니다.", priority: 2 },
     ].filter(Boolean);
   }
-  // 가성비: upgrade whichever is relatively weaker
   const cpuNorm = cpuScore / 15000;
   const gpuNorm = gpuScore / 8000;
   const gpuIsWeaker = cpuNorm > gpuNorm;
