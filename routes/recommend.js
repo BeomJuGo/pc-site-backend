@@ -540,7 +540,7 @@ router.post("/budget-set/refresh", async (req, res) => {
   if (!db) return res.status(500).json({ error: "DB 연결 실패" });
 
   const budget = parseInt(req.body?.budget) || 1500000;
-  const purpose = req.body?.purpose || "가성비";
+  const purpose = req.body?.purpose || "게임용";
 
   try {
     logger.info(`budget-set AI 갱신 시작: ${budget.toLocaleString()}원 / ${purpose}`);
@@ -595,7 +595,7 @@ router.post("/", validate(recommendSchema), async (req, res) => {
     const db = getDB();
     if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "데이터베이스 연결에 실패했습니다." });
 
-    // 1. DB 캐시 조회 (가성비/게임용/작업용, 100k 단위 반올림, 500k~3000k)
+    // 1. DB 캐시 조회 (게임용/작업용, 100k 단위 반올림, 500k~3000k)
     if (CACHED_PURPOSES.includes(purpose)) {
       const { cached, clampedBudget } = await getCachedBudgetSet(db, budget, purpose);
       if (cached?.parts) {
