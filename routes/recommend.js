@@ -348,16 +348,24 @@ async function buildCompatibleSet(budget, purpose, db) {
       const gpuTdp = extractTdp(gpu.info || "");
       const totalTdp = cpuTdp + gpuTdp + 100;
 
-      const compatiblePsus = psus.filter(p => {
+      // PSU: 와트 파싱 실패 시 가격 기준 fallback
+      let compatiblePsus = psus.filter(p => {
         const psuWattage = extractTdp(p.name || p.info || "");
         return psuWattage >= totalTdp * 1.2 && p.price <= psuBudget * 1.5 && p.price >= 40000;
       });
+      if (compatiblePsus.length === 0) {
+        compatiblePsus = psus.filter(p => p.price >= 40000 && p.price <= psuBudget * 2.0);
+      }
       if (compatiblePsus.length === 0) continue;
       const psu = compatiblePsus.sort((a, b) => Math.abs(a.price - psuBudget) - Math.abs(b.price - psuBudget))[0];
 
-      const compatibleCoolers = coolers.filter(c => {
+      // 쿨러: 소켓/TDP 파싱 실패 시 가격 기준 fallback
+      let compatibleCoolers = coolers.filter(c => {
         return isCoolerCompatible(c, cpuSocket, cpuTdp) && c.price <= coolerBudget * 1.5 && c.price >= 15000;
       });
+      if (compatibleCoolers.length === 0) {
+        compatibleCoolers = coolers.filter(c => c.price >= 15000 && c.price <= coolerBudget * 2.0);
+      }
       if (compatibleCoolers.length === 0) continue;
       const cooler = compatibleCoolers.sort((a, b) => {
         const aSpecs = parseCoolerSpecs(a), bSpecs = parseCoolerSpecs(b);
