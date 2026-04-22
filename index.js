@@ -36,7 +36,6 @@ if (missingEnv.length > 0) {
 
 const app = express();
 app.set("etag", "strong");
-// Render.com은 리버스 프록시 뒤에 있으므로 trust proxy 설정 필요
 app.set("trust proxy", 1);
 const allowedOrigins = config.allowedOrigins;
 
@@ -209,27 +208,9 @@ app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req
 // GPT 부품 정보 프롬프트 빌더
 // ============================================================
 function buildGptPrompts(partName) {
-  const reviewPrompt = `당신은 PC 부품 전문 리뷰어입니다. 반드시 이 특정 제품(${partName})에만 해당하는 한줄평을 작성하세요.
+  const reviewPrompt = `당신은 PC 부품 전문 리뷰어입니다. 반드시 이 특정 제품(${partName})에만 해당하는 한줄평을 작성하세요.\n\n규칙:\n- 이 제품 고유의 특징에 근거한 구체적인 장점 1가지 (수치, 성능 포지션, 설계 특성 등 포함)\n- 이 제품의 실제 한계나 단점 1가지 (구체적으로)\n- \"성능이 좋다\", \"가격이 합리적이다\", \"가성비가 뛰어나다\" 같은 모든 제품에 해당하는 범용 표현 절대 금지\n- 반드시 이 모델명에만 해당하는 내용으로 작성\n형식(다른 텍스트 없이): 장점: [내용], 단점: [내용]`;
 
-규칙:
-- 이 제품 고유의 특징에 근거한 구체적인 장점 1가지 (수치, 성능 포지션, 설계 특성 등 포함)
-- 이 제품의 실제 한계나 단점 1가지 (구체적으로)
-- \"성능이 좋다\", \"가격이 합리적이다\", \"가성비가 뛰어나다\" 같은 모든 제품에 해당하는 범용 표현 절대 금지
-- 반드시 이 모델명에만 해당하는 내용으로 작성
-형식(다른 텍스트 없이): 장점: [내용], 단점: [내용]`;
-
-  const specPrompt = `${partName}의 핵심 사양을 한 줄로 정리하세요.
-
-CPU이면: 코어/스레드 수, 베이스/부스트 클럭(GHz), L3 캐시(MB), TDP(W), 소켓
-GPU이면: VRAM 용량과 규격, 부스트 클럭(MHz), TDP(W), 출력 단자 종류
-메모리면: 용량(GB), DDR 규격, 속도(MHz), CAS 레이턴시
-저장장치면: 용량, 인터페이스(NVMe/SATA), 순차읽기/쓰기 속도(MB/s)
-메인보드면: 소켓, 칩셋, 지원 메모리 규격, 폼팩터
-파워면: 정격 출력(W), 80PLUS 등급, 모듈러 여부
-쿨러면: 방식(공낙/수낙), 팔 크기/개수, 지원 소켓, TDP 지원
-케이스면: 폼팩터, 지원 메인보드 크기, 팔/라이저 슬롯 수
-
-쉼표로 구분하여 한 줄로만 작성 (줄바바싸 없음)`;
+  const specPrompt = `${partName}의 핵심 사양을 한 줄로 정리하세요.\n\nCPU이면: 코어/스레드 수, 베이스/부스트 클럭(GHz), L3 캐시(MB), TDP(W), 소켓\nGPU이면: VRAM 용량과 규격, 부스트 클럭(MHz), TDP(W), 출력 단자 종류\n메모리면: 용량(GB), DDR 규격, 속도(MHz), CAS 레이턴시\n저장장치면: 용량, 인터페이스(NVMe/SATA), 순차읽기/쓰기 속도(MB/s)\n메인보드면: 소켓, 칩셋, 지원 메모리 규격, 폼팩터\n파워면: 정격 출력(W), 80PLUS 등급, 모듈러 여부\n쿨러면: 방식(공낙/수낙), 팔 크기/개수, 지원 소켓, TDP 지원\n케이스면: 폼팩터, 지원 메인보드 크기, 팔/라이저 슬롯 수\n\n쉼표로 구분하여 한 줄로만 작성 (줄바바싸 없음)`;
 
   return { reviewPrompt, specPrompt };
 }
@@ -268,7 +249,7 @@ async function callGptInfo(partName, model) {
   };
 }
 
-// 부품 한줄평 + 사양 요약 (gpt-4o-mini 고정)
+// 부품 한줄평 + 사양 요약 (gpt-5.4 — MongoDB 캐시로 부품당 1회만 호출)
 app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, res) => {
   const { partName } = req.body;
 
@@ -286,7 +267,7 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
   } catch (_) {}
 
   try {
-    const { review, specSummary } = await callGptInfo(partName.trim(), "gpt-4o-mini");
+    const { review, specSummary } = await callGptInfo(partName.trim(), "gpt-5.4");
     res.json({ review, specSummary });
   } catch (error) {
     logger.error(`GPT 통합 요청 실패: ${error.message}`);
