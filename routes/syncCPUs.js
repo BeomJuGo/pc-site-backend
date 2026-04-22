@@ -4,6 +4,7 @@ import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, BLOCK_HOSTS, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 
 const router = express.Router();
 const MIN_PASSMARK_SCORE_FOR_SAVE = 10000;
@@ -580,6 +581,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 }
 
 router.post("/sync-cpus", async (req, res) => {
+  if (!acquireLock("cpu")) return res.status(409).json({ error: "SYNC_IN_PROGRESS", running: getRunning() });
   try {
     const maxPages = parseInt(req.body?.pages || req.body?.maxPages) || 15;
     const benchPages = parseInt(req.body?.benchPages) || 10;
@@ -597,7 +599,7 @@ router.post("/sync-cpus", async (req, res) => {
         console.log("\uD83C\uDF89 CPU \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
         console.error("\u274c \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
-      }
+      } finally { releaseLock("cpu"); }
     });
   } catch (err) {
     console.error("\u274c sync-cpus \uc2e4\ud328", err);

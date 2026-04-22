@@ -4,6 +4,7 @@ import { getDB } from "../db.js";
 import { launchBrowser, setupPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 
 const router = express.Router();
 
@@ -277,6 +278,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
 }
 
 router.post("/sync-case", async (req, res) => {
+  if (!acquireLock("case")) return res.status(409).json({ error: "SYNC_IN_PROGRESS", running: getRunning() });
   try {
     const maxPages = parseInt(req.body?.pages || req.body?.maxPages) || 10;
     const ai = req.body?.ai !== false;
@@ -293,7 +295,7 @@ router.post("/sync-case", async (req, res) => {
         console.log("\uD83C\uDF89 \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (e) {
         console.error("\u274C \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc624\ub958:", e);
-      }
+      } finally { releaseLock("case"); }
     });
   } catch (e) {
     console.error("\u274C \ucf00\uc774\uc2a4 \ub3d9\uae30\ud654 \uc624\ub958:", e);

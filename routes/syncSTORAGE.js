@@ -4,6 +4,7 @@ import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 
 const router = express.Router();
 
@@ -350,6 +351,7 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
 }
 
 router.post("/sync-storage", async (req, res) => {
+  if (!acquireLock("storage")) return res.status(409).json({ error: "SYNC_IN_PROGRESS", running: getRunning() });
   try {
     const maxPages = parseInt(req.body?.pages || req.body?.maxPages) || 3;
     const ai = req.body?.ai !== false;
@@ -381,7 +383,7 @@ router.post("/sync-storage", async (req, res) => {
         console.log("\uD83C\uDF89 \uc2a4\ud1a0\ub9ac\uc9c0 \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
         console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
-      }
+      } finally { releaseLock("storage"); }
     });
   } catch (err) {
     console.error("\u274C sync-storage \uc2e4\ud328", err);

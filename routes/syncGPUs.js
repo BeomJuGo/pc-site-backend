@@ -5,6 +5,7 @@ import * as cheerio from "cheerio";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
@@ -410,6 +411,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
 }
 
 router.post("/sync-gpus", async (req, res) => {
+  if (!acquireLock("gpu")) return res.status(409).json({ error: "SYNC_IN_PROGRESS", running: getRunning() });
   const maxPages = Number(req?.body?.pages) || 5;
   const ai = req.body?.ai !== false;
   const force = req.body?.force === true;
@@ -426,7 +428,7 @@ router.post("/sync-gpus", async (req, res) => {
       console.log("\uD83C\uDF89 \ubaa8\ub4e0 GPU \uc815\ubcf4 \uc800\uc7a5 \uc644\ub8cc");
     } catch (err) {
       console.error("\u274C GPU \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
-    }
+    } finally { releaseLock("gpu"); }
   });
 });
 
