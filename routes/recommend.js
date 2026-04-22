@@ -6,7 +6,6 @@ import { loadParts, extractBoardFormFactor, isCaseCompatible } from "../utils/re
 import logger from "../utils/logger.js";
 import { validate } from "../middleware/validate.js";
 import { recommendSchema } from "../schemas/recommend.js";
-import { makeAiCacheKey, getOrComputeRecommendation } from "../utils/aiCache.js";
 import { upgradeAdvisorSchema } from "../schemas/recommend.js";
 import { getCache, setCache } from "../utils/responseCache.js";
 
@@ -17,6 +16,7 @@ const router = express.Router();
 const buildingInProgress = new Set();
 
 const BUDGET_SET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CACHED_PURPOSES = ["가성비", "게임용", "작업용"];
 
 const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 주어진 부품 목록(실제 DB 데이터)에서만 선택하여 예산에 맞는 호환 가능한 PC 견적을 작성하세요.
@@ -28,7 +28,8 @@ const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
-- 총 가격이 반드시 예산의 90~100% 범위 내여야 함. 예산을 초과하는 선택은 절대 금지`;
+- 용도에 맞게 부품 비율 조정: 게임용=GPU 비중 예산 50% 이상, 작업용=CPU 비중 예산 40% 이상, 가성비=성능/가격 균형
+- 시스템 총 가격이 반드시 예산의 90~100% 범위 내여야 함. 예산을 초과하는 선택은 절대 금지`;
 
 /* ==================== util ==================== */
 
@@ -194,7 +195,25 @@ function checkBottleneck(cpuScore, gpuScore, purpose, userBudget) {
   return r >= ratio.min && r <= ratio.max;
 }
 
-/* ==================== 코드 기반 견적 (POST /api/recommend 전용) ==================== */
+/* ==================== DB 캐시 조회 헬퍼 ==================== */
+
+async function getCachedBudgetSet(db, budget, purpose) {
+  const roundedBudget = Math.round(budget / 100000) * 100000;
+  const clampedBudget = Math.max(500000, Math.min(3000000, roundedBudget));
+  const memKey = `recommend:budget-set:${clampedBudget}:${purpose}`;
+  let cached = getCache(memKey);
+  if (cached?.parts) return { cached, clampedBudget };
+  try {
+    const doc = await db.collection("cached_sets").findOne({ _id: `budget-set:${clampedBudget}:${purpose}` });
+    if (doc?.result?.parts) {
+      setCache(memKey, doc.result, 10 * 60 * 1000);
+      return { cached: doc.result, clampedBudget };
+    }
+  } catch (_) {}
+  return { cached: null, clampedBudget };
+}
+
+/* ==================== 코드 기반 견적 (fallback) ==================== */
 
 async function buildCompatibleSet(budget, purpose, db) {
   const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
@@ -311,29 +330,6 @@ async function buildCompatibleSet(budget, purpose, db) {
   return results.sort((a, b) => (b.score / b.totalPrice) - (a.score / a.totalPrice))[0];
 }
 
-function formatBudgetSetResult(best, budget, purpose) {
-  return {
-    budget, purpose,
-    totalPrice: best.totalPrice,
-    computedAt: new Date().toISOString(),
-    parts: {
-      cpu:         { name: best.cpu.name,     price: best.cpu.price,     image: best.cpu.image,     category: "cpu" },
-      gpu:         { name: best.gpu.name,     price: best.gpu.price,     image: best.gpu.image,     category: "gpu" },
-      motherboard: { name: best.board.name,   price: best.board.price,   image: best.board.image,   category: "motherboard" },
-      memory:      { name: best.memory.name,  price: best.memory.price,  image: best.memory.image,  category: "memory" },
-      psu:         { name: best.psu.name,     price: best.psu.price,     image: best.psu.image,     category: "psu" },
-      cooler:      { name: best.cooler.name,  price: best.cooler.price,  image: best.cooler.image,  category: "cooler" },
-      storage:     { name: best.storage.name, price: best.storage.price, image: best.storage.image, category: "storage" },
-      case:        { name: best.case.name,    price: best.case.price,    image: best.case.image,    category: "case" },
-    },
-    compatibility: {
-      socket: `${best.cpuSocket} ↔ ${extractBoardSocket(best.board)}`,
-      ddr:    `${best.boardDdr} ↔ ${extractDdrType(best.memory.name)}`,
-      power:  `시스템 소비 ${best.totalTdp}W → PSU ${extractTdp(best.psu.name || best.psu.info || "")}W`,
-    },
-  };
-}
-
 /* ==================== AI 기반 budget-set 생성 (gpt-5.4, 주 1회) ==================== */
 
 async function buildCompatibleSetWithAI(budget, purpose, db) {
@@ -347,7 +343,6 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  // 예산 비율 기반 가격 상한 — 각 카테고리 선택지를 예산 범위 내로 제한
   const cpuMax = budget * 0.40;
   const gpuMax = budget * 0.50;
   const boardMax = Math.max(budget * 0.15, 50000);
@@ -446,7 +441,6 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
 
   const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
 
-  // AI가 예산을 5% 이상 초과하면 오류 처리 — refresh-all 루프에서 skip됨
   if (totalPrice > budget * 1.05) {
     throw new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원`);
   }
@@ -510,7 +504,6 @@ router.get("/budget-set", async (req, res) => {
                 if (!fresh?.parts) return;
                 await saveBudgetSetToDb(db, budget, purpose, fresh);
                 setCache(memKey, fresh, 10 * 60 * 1000);
-                logger.info(`budget-set AI 백그라운드 갱신 완료: ${fresh.totalPrice?.toLocaleString()}원`);
               })
               .catch(e => logger.error(`budget-set AI 백그라운드 갱신 실패: ${e.message}`))
               .finally(() => buildingInProgress.delete(bgKey));
@@ -523,13 +516,11 @@ router.get("/budget-set", async (req, res) => {
     const bgKey = `${budget}:${purpose}`;
     if (!buildingInProgress.has(bgKey)) {
       buildingInProgress.add(bgKey);
-      logger.info(`budget-set 없음 — AI 백그라운드 계산 시작: ${budget.toLocaleString()}원 / ${purpose}`);
       buildCompatibleSetWithAI(budget, purpose, db)
         .then(async (result) => {
           if (!result?.parts) return;
           await saveBudgetSetToDb(db, budget, purpose, result);
           setCache(memKey, result, 10 * 60 * 1000);
-          logger.info(`budget-set AI 초기 계산 완료: ${result.totalPrice?.toLocaleString()}원`);
         })
         .catch(e => logger.error(`budget-set AI 초기 계산 실패: ${e.message}`))
         .finally(() => buildingInProgress.delete(bgKey));
@@ -560,7 +551,6 @@ router.post("/budget-set/refresh", async (req, res) => {
     await saveBudgetSetToDb(db, budget, purpose, result);
     const memKey = `recommend:budget-set:${budget}:${purpose}`;
     setCache(memKey, result, 10 * 60 * 1000);
-    logger.info(`budget-set AI 갱신 완료: ${budget.toLocaleString()}원/${purpose} → ${result.totalPrice?.toLocaleString()}원`);
     res.json({ status: "ok", budget, purpose, totalPrice: result.totalPrice, summary: result.summary });
   } catch (e) {
     logger.error(`budget-set AI 갱신 실패 ${budget}/${purpose}: ${e.message}`);
@@ -568,77 +558,39 @@ router.post("/budget-set/refresh", async (req, res) => {
   }
 });
 
+// 3 purposes × 26 budgets = 78 AI 호출 (주 1회 GitHub Actions)
 router.post("/budget-set/refresh-all", async (req, res) => {
   if (!checkAdminKey(req, res)) return;
-  const purpose = req.body?.purpose || "가성비";
+  const purposes = CACHED_PURPOSES;
   const budgets = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
-  res.json({ status: "started", total: budgets.length, purpose });
+  res.json({ status: "started", total: budgets.length * purposes.length, purposes });
 
   (async () => {
     const db = getDB();
     if (!db) return;
     let success = 0, fail = 0;
-    for (const budget of budgets) {
-      try {
-        const result = await buildCompatibleSetWithAI(budget, purpose, db);
-        await saveBudgetSetToDb(db, budget, purpose, result);
-        const memKey = `recommend:budget-set:${budget}:${purpose}`;
-        setCache(memKey, result, 10 * 60 * 1000);
-        logger.info(`budget-set AI 완료: ${budget.toLocaleString()}원 → ${result.totalPrice?.toLocaleString()}원`);
-        success++;
-      } catch (err) {
-        logger.error(`budget-set AI 실패: ${budget.toLocaleString()}원 — ${err.message}`);
-        fail++;
+    for (const purpose of purposes) {
+      for (const budget of budgets) {
+        try {
+          const result = await buildCompatibleSetWithAI(budget, purpose, db);
+          await saveBudgetSetToDb(db, budget, purpose, result);
+          const memKey = `recommend:budget-set:${budget}:${purpose}`;
+          setCache(memKey, result, 10 * 60 * 1000);
+          logger.info(`budget-set AI 완료: ${budget.toLocaleString()}원 / ${purpose} → ${result.totalPrice?.toLocaleString()}원`);
+          success++;
+        } catch (err) {
+          logger.error(`budget-set AI 실패: ${budget.toLocaleString()}원 / ${purpose} — ${err.message}`);
+          fail++;
+        }
+        await sleep(2000);
       }
-      await sleep(2000);
     }
     logger.info(`budget-set refresh-all 완료: 성공 ${success}개, 실패 ${fail}개`);
   })();
 });
 
-/* ==================== AI 견적 평가 (gpt-5.4-mini) ==================== */
-async function generateBuildEvaluation(build, purpose, budget) {
-  if (!OPENAI_API_KEY) return { evaluation: "", strengths: [], recommendations: [] };
-  const parts = build.parts || {};
-  const partsList = [
-    `CPU: ${parts.cpu?.name || ""} (${parts.cpu?.price?.toLocaleString() || 0}원)`,
-    `GPU: ${parts.gpu?.name || ""} (${parts.gpu?.price?.toLocaleString() || 0}원)`,
-    `메인보드: ${parts.motherboard?.name || ""} (${parts.motherboard?.price?.toLocaleString() || 0}원)`,
-    `메모리: ${parts.memory?.name || ""} (${parts.memory?.price?.toLocaleString() || 0}원)`,
-    `PSU: ${parts.psu?.name || ""} (${parts.psu?.price?.toLocaleString() || 0}원)`,
-    `쿨러: ${parts.cooler?.name || ""} (${parts.cooler?.price?.toLocaleString() || 0}원)`,
-    `스토리지: ${parts.storage?.name || ""} (${parts.storage?.price?.toLocaleString() || 0}원)`,
-    `케이스: ${parts.case?.name || ""} (${parts.case?.price?.toLocaleString() || 0}원)`,
-  ].join("\n");
-  const compat = build.compatibility || {};
-  const prompt = `${build.label} 견적 (총 ${build.totalPrice?.toLocaleString() || 0}원).\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n\n부품:\n${partsList}\n\n호환성: 소켓 ${compat.socket || ""}, 메모리 ${compat.ddr || ""}, 전력 ${compat.power || ""}\n\nJSON만: {"evaluation":"<200자>","strengths":[],"recommendations":[]}`;
-  const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
-  for (let i = 0; i < 2; i++) {
-    try {
-      const resp = await Promise.race([
-        fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "gpt-5.4-mini", temperature: 0.6, messages: [{ role: "system", content: "PC 견적 전문가. JSON만 출력." }, { role: "user", content: prompt }] }),
-        }),
-        timeout(config.apiTimeouts.aiEvaluation),
-      ]);
-      if (!resp.ok) { const e = await resp.json().catch(() => ({})); if (resp.status === 429 && e?.error?.code === "insufficient_quota") break; continue; }
-      const data = await resp.json();
-      const raw = data?.choices?.[0]?.message?.content || "";
-      const s = raw.indexOf("{"), e = raw.lastIndexOf("}") + 1;
-      if (s === -1 || e === 0) continue;
-      const p = JSON.parse(raw.slice(s, e));
-      return { evaluation: p.evaluation?.trim() || "", strengths: Array.isArray(p.strengths) ? p.strengths : [], recommendations: Array.isArray(p.recommendations) ? p.recommendations : [] };
-    } catch (e) {
-      logger.error(`AI 평가 실패 ${i + 1}/2: ${e.message}`);
-      if (i < 1) await sleep(1000);
-    }
-  }
-  return { evaluation: "", strengths: [], recommendations: [], error: "OpenAI API 오류" };
-}
+/* ==================== AI 견적 추천 (캐시 우선, fallback: 코드 알고리즘) ==================== */
 
-/* ==================== AI 견적 추천 ==================== */
 router.post("/", validate(recommendSchema), async (req, res) => {
   try {
     const { budget, purpose } = req.body;
@@ -646,6 +598,30 @@ router.post("/", validate(recommendSchema), async (req, res) => {
     const db = getDB();
     if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "데이터베이스 연결에 실패했습니다." });
 
+    // 1. DB 캐시 조회 (가성비/게임용/작업용, 100k 단위 반올림, 500k~3000k)
+    if (CACHED_PURPOSES.includes(purpose)) {
+      const { cached, clampedBudget } = await getCachedBudgetSet(db, budget, purpose);
+      if (cached?.parts) {
+        logger.info(`추천 캐시 히트: ${clampedBudget.toLocaleString()}원 / ${purpose}`);
+        return res.json({
+          builds: [{
+            label: "AI 추천",
+            totalPrice: cached.totalPrice,
+            parts: cached.parts,
+            summary: cached.summary,
+            aiEvaluation: cached.summary || "",
+            aiStrengths: [],
+            aiRecommendations: [],
+          }],
+          recommended: "AI 추천",
+          message: `${purpose} 용도로 ${clampedBudget.toLocaleString()}원 AI 추천 견적입니다.`,
+          reasons: [`${purpose} 용도에 최적화`, `예산 ${budget.toLocaleString()}원`, "AI 사전 생성 견적"],
+        });
+      }
+      logger.info(`추천 캐시 미스: ${clampedBudget.toLocaleString()}원 / ${purpose} — 코드 알고리즘 fallback`);
+    }
+
+    // 2. fallback: 코드 기반 알고리즘
     const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
     const weights = {
       "사무용": { cpu: 0.4, gpu: 0.2, cpuBR: 0.25, gpuBR: 0.15 },
@@ -779,18 +755,18 @@ router.post("/", validate(recommendSchema), async (req, res) => {
       if (next) uniqueBuilds.push({ label: uniqueBuilds.length === 1 ? "균형" : "고성능", ...next }); else break;
     }
 
-    const buildsWithAI = await Promise.all(uniqueBuilds.map(async (b) => {
-      const bd = {
-        label: b.label, totalPrice: b.totalPrice, score: Math.round(b.score),
-        parts: { cpu: { name: b.cpu.name, price: b.cpu.price, image: b.cpu.image }, gpu: { name: b.gpu.name, price: b.gpu.price, image: b.gpu.image }, memory: { name: b.memory.name, price: b.memory.price, image: b.memory.image }, motherboard: { name: b.board.name, price: b.board.price, image: b.board.image }, psu: { name: b.psu.name, price: b.psu.price, image: b.psu.image }, cooler: { name: b.cooler.name, price: b.cooler.price, image: b.cooler.image }, storage: { name: b.storage.name, price: b.storage.price, image: b.storage.image }, case: { name: b.case.name, price: b.case.price, image: b.case.image } },
-        compatibility: { socket: `${b.cpuSocket} ↔ ${extractBoardSocket(b.board)}`, ddr: `${b.boardDdr} ↔ ${extractDdrType(b.memory.name)}`, power: `${b.totalTdp}W → ${extractTdp(b.psu.name)}W`, formFactor: `${b.boardFormFactor} ↔ ${b.case.specs?.formFactor?.join("/") || "ATX"}` },
-      };
-      const aiKey = makeAiCacheKey({ budget, purpose, label: b.label, cpuName: b.cpu.name, gpuName: b.gpu.name });
-      const ai = await getOrComputeRecommendation(aiKey, () => generateBuildEvaluation(bd, purpose, budget));
-      return { ...bd, aiEvaluation: ai.evaluation || "", aiStrengths: ai.strengths || [], aiRecommendations: ai.recommendations || [], aiError: ai.error || null };
+    const buildsFormatted = uniqueBuilds.map((b) => ({
+      label: b.label,
+      totalPrice: b.totalPrice,
+      score: Math.round(b.score),
+      parts: { cpu: { name: b.cpu.name, price: b.cpu.price, image: b.cpu.image }, gpu: { name: b.gpu.name, price: b.gpu.price, image: b.gpu.image }, memory: { name: b.memory.name, price: b.memory.price, image: b.memory.image }, motherboard: { name: b.board.name, price: b.board.price, image: b.board.image }, psu: { name: b.psu.name, price: b.psu.price, image: b.psu.image }, cooler: { name: b.cooler.name, price: b.cooler.price, image: b.cooler.image }, storage: { name: b.storage.name, price: b.storage.price, image: b.storage.image }, case: { name: b.case.name, price: b.case.price, image: b.case.image } },
+      compatibility: { socket: `${b.cpuSocket} ↔ ${extractBoardSocket(b.board)}`, ddr: `${b.boardDdr} ↔ ${extractDdrType(b.memory.name)}`, power: `${b.totalTdp}W → ${extractTdp(b.psu.name)}W`, formFactor: `${b.boardFormFactor} ↔ ${b.case.specs?.formFactor?.join("/") || "ATX"}` },
+      aiEvaluation: "",
+      aiStrengths: [],
+      aiRecommendations: [],
     }));
 
-    res.json({ builds: buildsWithAI, recommended: uniqueBuilds[1]?.label || uniqueBuilds[0]?.label, message: `${purpose} 용도로 ${uniqueBuilds.length}가지 조합을 추천합니다!`, reasons: [`${purpose} 용도에 최적화`, `예산 ${budget.toLocaleString()}원`, `${results.length}개 조합 중 최적`] });
+    res.json({ builds: buildsFormatted, recommended: uniqueBuilds[1]?.label || uniqueBuilds[0]?.label, message: `${purpose} 용도로 ${uniqueBuilds.length}가지 조합을 추천합니다!`, reasons: [`${purpose} 용도에 최적화`, `예산 ${budget.toLocaleString()}원`, `${results.length}개 조합 중 최적`] });
   } catch (error) {
     logger.error(`추천 오류: ${error.message}`);
     const isProd = process.env.NODE_ENV === "production";
