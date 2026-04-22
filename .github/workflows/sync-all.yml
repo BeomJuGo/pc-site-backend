@@ -1,0 +1,162 @@
+name: Sync All Parts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+
+    steps:
+      - name: Sync CPUs
+        shell: bash
+        run: |
+          echo "▶ CPU 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-cpus" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 10, "benchPages": 6, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ CPU 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync GPUs
+        shell: bash
+        run: |
+          echo "▶ GPU 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-gpus" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 10, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ GPU 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync Motherboards
+        shell: bash
+        run: |
+          echo "▶ 메인보드 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-motherboards" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 8, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ 메인보드 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync Memory
+        shell: bash
+        run: |
+          echo "▶ 메모리 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-memory" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 8, "limit": 60, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ 메모리 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync PSU
+        shell: bash
+        run: |
+          echo "▶ PSU 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-psu" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 8, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ PSU 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync Coolers
+        shell: bash
+        run: |
+          echo "▶ 쿨러 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-cooler" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 8, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ 쿨러 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync Storage
+        shell: bash
+        run: |
+          echo "▶ 스토리지 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-storage" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 8, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ 스토리지 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
+
+      - name: Wait between syncs
+        run: sleep 30
+
+      - name: Sync Cases
+        shell: bash
+        run: |
+          echo "▶ 케이스 동기화 시작"
+          for i in 1 2 3; do
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "$BACKEND_URL/api/admin/sync-case" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
+              -d '{"pages": 8, "ai": true, "force": false}' \
+              --max-time 600) || true
+            echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+            [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ] && echo "✅ 케이스 완료" && break
+            echo "⚠️ 재시도 $i/3..." && sleep 20
+          done
