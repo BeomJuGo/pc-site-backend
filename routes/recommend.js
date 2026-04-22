@@ -350,12 +350,12 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const gpuMax = purpose === "작업용" ? budget * 0.22 : budget * 0.40;
   const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= cpuMax).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
   const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= gpuMax).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
-  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= budget * 0.08).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= budget * 0.08).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= budget * 0.07).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= budget * 0.05).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= budget * 0.08).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= budget * 0.07).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 70000)).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 50000)).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.07, 50000)).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.05, 30000)).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.08, 60000)).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= Math.max(budget * 0.07, 45000)).sort((a, b) => b.price - a.price).slice(0, 15);
 
   const userPrompt = [
     `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
