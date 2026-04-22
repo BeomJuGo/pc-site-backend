@@ -28,12 +28,14 @@ const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
-- 용도에 맞게 부품 비율 조정: 게임용=GPU 비중 높이기, 작업용=CPU 비중 높이기, 가성비=성능/가격 균형
-예산 활용 규칙 (반드시 준수):
-- 총 가격이 예산의 80~100% 범위여야 함. 예산을 초과하는 선택은 절대 금지
-- 총 가격이 예산의 80% 미만이면 오답임 — 더 고사양 부품으로 교체하여 예산을 최대한 활용할 것
-- 예산이 100만원이면 총 가격은 최소 80만원 이상이어야 함
-- 예산이 200만원이면 총 가격은 최소 160만원 이상이어야 함`;
+용도별 부품 비율 지침:
+- 게임용: GPU에 예산의 40~50% 배분, CPU는 25~35%
+- 작업용: CPU에 예산의 35~45% 배분, GPU는 20~30%
+- 가성비: CPU와 GPU에 균형 있게 배분
+예산 활용 규칙 (절대 준수):
+- 총 가격은 예산의 90~110% 범위여야 함
+- 총 가격이 예산의 90% 미만이면 오답 — 더 고사양 부품으로 교체할 것
+- 총 가격이 예산의 110% 초과도 오답 — 더 저렴한 부품으로 교체할 것`;
 
 /* ==================== util ==================== */
 
@@ -69,7 +71,7 @@ function extractCpuSocket(cpu) {
   m = text.match(/(AM[45]|sTRX4|TR4|SP3|LGA\s*[\d-]+|LGA\d{3,4})/i);
   if (m) return normalizeSocket(m[1]);
   if (/인텔|INTEL/i.test(text)) {
-    if (/14세대|13세대|12세대|\b(14|13|12)\s*GEN|랙터레이크|RAPTOR|앨더레이크|ALDER/i.test(combined)) return "LGA1700";
+    if (/14세대|13세대|12세대|\b(14|13|12)\s*GEN|낙터레이크|RAPTOR|앨더레이크|ALDER/i.test(combined)) return "LGA1700";
     if (/11세대|10세대|\b(11|10)\s*GEN|로켓레이크|ROCKET|코멧레이크|COMET/i.test(combined)) return "LGA1200";
     if (/9세대|8세대|\b(9|8)\s*GEN|커피레이크|COFFEE/i.test(combined)) return "LGA1151";
     const mm = combined.match(/\b(1[0-4]\d{3}[A-Z]*)\b/);
@@ -347,23 +349,15 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  const cpuMax = budget * 0.40;
-  const gpuMax = budget * 0.50;
-  const boardMax = Math.max(budget * 0.15, 50000);
-  const memMax = Math.max(budget * 0.12, 30000);
-  const psuMax = Math.max(budget * 0.12, 40000);
-  const coolerMax = Math.max(budget * 0.08, 20000);
-  const storageMax = Math.max(budget * 0.15, 50000);
-  const caseMax = Math.max(budget * 0.10, 30000);
-
-  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= cpuMax).sort((a, b) => (getCpuScore(b) / (b.price || 1)) - (getCpuScore(a) / (a.price || 1))).slice(0, 25);
-  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= gpuMax).sort((a, b) => (getGpuScore(b) / (b.price || 1)) - (getGpuScore(a) / (a.price || 1))).slice(0, 25);
-  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= boardMax).sort((a, b) => a.price - b.price).slice(0, 15);
-  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= memMax).sort((a, b) => a.price - b.price).slice(0, 15);
-  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= psuMax).sort((a, b) => a.price - b.price).slice(0, 12);
-  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= coolerMax).sort((a, b) => a.price - b.price).slice(0, 12);
-  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= storageMax).sort((a, b) => a.price - b.price).slice(0, 12);
-  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= caseMax).sort((a, b) => a.price - b.price).slice(0, 12);
+  // budget-ratio 제한 없이 예산 이하 전체 부품 제공, AI가 용도에 맞게 자유롭게 선택
+  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
+  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
+  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= budget).sort((a, b) => b.price - a.price).slice(0, 15);
 
   const userPrompt = [
     `예산: ${budget.toLocaleString()}원`,
@@ -445,11 +439,11 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
 
   const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
 
-  if (totalPrice > budget * 1.05) {
-    throw new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원`);
+  if (totalPrice > budget * 1.10) {
+    throw new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원의 110%`);
   }
-  if (totalPrice < budget * 0.70) {
-    throw new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 70%`);
+  if (totalPrice < budget * 0.90) {
+    throw new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 90%`);
   }
 
   return {
