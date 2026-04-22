@@ -36,6 +36,8 @@ if (missingEnv.length > 0) {
 
 const app = express();
 app.set("etag", "strong");
+// Render.com은 리버스 프록시 뒤에 있으므로 trust proxy 설정 필요
+app.set("trust proxy", 1);
 const allowedOrigins = config.allowedOrigins;
 
 app.use(helmet());
@@ -231,12 +233,12 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${config.openaiApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-5.4-mini", messages: [{ role: "user", content: reviewPrompt }], max_tokens: 150, temperature: 0.7 }),
+        body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: reviewPrompt }], max_tokens: 150, temperature: 0.7 }),
       }),
       fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${config.openaiApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "gpt-5.4-mini", messages: [{ role: "user", content: specPrompt }], max_tokens: 150, temperature: 0.7 }),
+        body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: specPrompt }], max_tokens: 150, temperature: 0.7 }),
       }),
     ]);
 

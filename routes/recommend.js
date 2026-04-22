@@ -16,7 +16,6 @@ const router = express.Router();
 
 const buildingInProgress = new Set();
 
-// budget-set AI 전환 상수
 const BUDGET_SET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
@@ -28,7 +27,7 @@ const BUDGET_SET_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다.
 - 메모리 DDR 규격 일치
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상
 - 쿨러 소켓 CPU와 일치
-- 케이스 퍴폼팩터 메인보드와 일치
+- 케이스 폼팩터 메인보드와 일치
 - 총 가격이 예산의 90~100% 범위 내`;
 
 /* ==================== util ==================== */
@@ -195,7 +194,7 @@ function checkBottleneck(cpuScore, gpuScore, purpose, userBudget) {
   return r >= ratio.min && r <= ratio.max;
 }
 
-/* ==================== 코드 기반 견적 (개별 쫐천 POST /api/recommend 에서만 사용) ==================== */
+/* ==================== 코드 기반 견적 (POST /api/recommend 전용) ==================== */
 
 async function buildCompatibleSet(budget, purpose, db) {
   const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
@@ -335,7 +334,7 @@ function formatBudgetSetResult(best, budget, purpose) {
   };
 }
 
-/* ==================== AI 기반 budget-set 생성 ==================== */
+/* ==================== AI 기반 budget-set 생성 (gpt-5.4, 주 1회) ==================== */
 
 async function buildCompatibleSetWithAI(budget, purpose, db) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
@@ -392,13 +391,13 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
-      model: "gpt-5.4-mini",
+      model: "gpt-5.4",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: BUDGET_SET_SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 1500,
+      max_completion_tokens: 1500,
     }),
     signal: AbortSignal.timeout(60000),
   });
@@ -416,7 +415,6 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
     throw new Error("AI 응답에 parts 객체가 없음");
   }
 
-  // 이미지 URL을 DB에서 조회
   const partNames = Object.values(parsed.parts).map(p => p?.name).filter(Boolean);
   const dbParts = partNames.length > 0
     ? await db.collection("parts").find({ name: { $in: partNames } }, { projection: { name: 1, image: 1 } }).toArray()
@@ -462,9 +460,8 @@ function checkAdminKey(req, res) {
   return true;
 }
 
-/* ==================== 호환 세트 (MongoDB 영속 캐시) ==================== */
+/* ==================== 호환 세트 엔드포인트 ==================== */
 
-// GET /api/recommend/budget-set
 router.get("/budget-set", async (req, res) => {
   const VALID_PURPOSES = ["게임용", "작업용", "사무용", "가성비"];
   const budget = Math.max(300000, Math.min(10000000, Number(req.query.budget) || 1500000));
@@ -508,7 +505,6 @@ router.get("/budget-set", async (req, res) => {
       }
     }
 
-    // DB 없음 또는 무효 문서: AI 백그라운드 계산 후 503
     const bgKey = `${budget}:${purpose}`;
     if (!buildingInProgress.has(bgKey)) {
       buildingInProgress.add(bgKey);
@@ -535,7 +531,6 @@ router.get("/budget-set", async (req, res) => {
   }
 });
 
-// POST /api/recommend/budget-set/refresh (단일 수동 갱신, ADMIN 인증 필요)
 router.post("/budget-set/refresh", async (req, res) => {
   if (!checkAdminKey(req, res)) return;
   const db = getDB();
@@ -558,7 +553,6 @@ router.post("/budget-set/refresh", async (req, res) => {
   }
 });
 
-// POST /api/recommend/budget-set/refresh-all (전체 26개 티어 일괄 AI 갱신, ADMIN 인증 필요)
 router.post("/budget-set/refresh-all", async (req, res) => {
   if (!checkAdminKey(req, res)) return;
   const purpose = req.body?.purpose || "가성비";
@@ -587,7 +581,7 @@ router.post("/budget-set/refresh-all", async (req, res) => {
   })();
 });
 
-/* ==================== AI 견적 평가 ==================== */
+/* ==================== AI 견적 평가 (gpt-5.4-mini) ==================== */
 async function generateBuildEvaluation(build, purpose, budget) {
   if (!OPENAI_API_KEY) return { evaluation: "", strengths: [], recommendations: [] };
   const parts = build.parts || {};
@@ -602,7 +596,7 @@ async function generateBuildEvaluation(build, purpose, budget) {
     `케이스: ${parts.case?.name || ""} (${parts.case?.price?.toLocaleString() || 0}원)`,
   ].join("\n");
   const compat = build.compatibility || {};
-  const prompt = `${build.label} 견적 (싙 ${build.totalPrice?.toLocaleString() || 0}원).\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n\n부품:\n${partsList}\n\n호환성: 소켓 ${compat.socket || ""}, 메모리 ${compat.ddr || ""}, 전력 ${compat.power || ""}\n\nJSON만: {"evaluation":"<200자>","strengths":[],"recommendations":[]}`;
+  const prompt = `${build.label} 견적 (총 ${build.totalPrice?.toLocaleString() || 0}원).\n용도: ${purpose}\n예산: ${budget.toLocaleString()}원\n\n부품:\n${partsList}\n\n호환성: 소켓 ${compat.socket || ""}, 메모리 ${compat.ddr || ""}, 전력 ${compat.power || ""}\n\nJSON만: {"evaluation":"<200자>","strengths":[],"recommendations":[]}`;
   const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
   for (let i = 0; i < 2; i++) {
     try {
@@ -789,7 +783,6 @@ router.post("/", validate(recommendSchema), async (req, res) => {
   }
 });
 
-// POST /api/recommend/upgrade
 router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
   const { currentBuild, budget, purpose = "게임용" } = req.body;
   try {
@@ -797,7 +790,7 @@ router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {
     const [currentCpu, currentGpu] = await Promise.all([findPartForUpgrade(db, "cpu", currentBuild.cpu), findPartForUpgrade(db, "gpu", currentBuild.gpu)]);
     const cpuScore = currentCpu?.benchmarkScore?.passmarkscore || 0;
     const gpuScore = currentGpu?.benchmarkScore?.["3dmarkscore"] || 0;
-    logger.info(`업그레이드: CPU="${currentCpu?.name || "미인식}"}"(${cpuScore}), GPU="${currentGpu?.name || "미인식}"}"(${gpuScore})`);
+    logger.info(`업그레이드: CPU="${currentCpu?.name || "미인식"}"(${cpuScore}), GPU="${currentGpu?.name || "미인식"}"(${gpuScore})`);
     const upgradeTargets = resolveUpgradeTargets(purpose, cpuScore, gpuScore, currentBuild);
     const suggestions = (await Promise.all(upgradeTargets.map(async (target) => {
       const sk = target.category === "cpu" ? "benchmarkScore.passmarkscore" : "benchmarkScore.3dmarkscore";
