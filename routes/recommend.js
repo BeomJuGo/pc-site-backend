@@ -345,15 +345,17 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
   const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
 
-  // 각 카테고리별 pool 상한: AI가 자유롭게 배분하되, 개별 부품이 총예산을 혼자 소진하는 것만 방지
-  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= budget * 0.45).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
-  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= budget * 0.60).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
-  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= budget * 0.20).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= budget * 0.20).sort((a, b) => b.price - a.price).slice(0, 20);
-  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= budget * 0.15).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= budget * 0.12).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= budget * 0.20).sort((a, b) => b.price - a.price).slice(0, 15);
-  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= budget * 0.15).sort((a, b) => b.price - a.price).slice(0, 15);
+  // purpose별 pool 상한: 최댓값 합산이 105% 이내가 되도록 설정 (게임용 GPU 우선, 작업용 CPU 우선)
+  const cpuMax = purpose === "작업용" ? budget * 0.35 : budget * 0.22;
+  const gpuMax = purpose === "작업용" ? budget * 0.22 : budget * 0.40;
+  const sortedCpus = [...cpus].filter(p => p.price > 0 && p.price <= cpuMax).sort((a, b) => getCpuScore(b) - getCpuScore(a)).slice(0, 30);
+  const sortedGpus = [...gpus].filter(p => p.price > 0 && p.price <= gpuMax).sort((a, b) => getGpuScore(b) - getGpuScore(a)).slice(0, 30);
+  const sortedBoards = [...boards].filter(p => p.price > 0 && p.price <= budget * 0.08).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedMems = [...memories].filter(p => p.price > 0 && p.price <= budget * 0.08).sort((a, b) => b.price - a.price).slice(0, 20);
+  const sortedPsus = [...psus].filter(p => p.price > 0 && p.price <= budget * 0.07).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCoolers = [...coolers].filter(p => p.price > 0 && p.price <= budget * 0.05).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedStorages = [...storages].filter(p => p.price > 0 && p.price <= budget * 0.08).sort((a, b) => b.price - a.price).slice(0, 15);
+  const sortedCases = [...cases].filter(p => p.price > 0 && p.price <= budget * 0.07).sort((a, b) => b.price - a.price).slice(0, 15);
 
   const userPrompt = [
     `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
@@ -386,70 +388,99 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
     ...sortedCases.map(fmtSimple),
   ].join("\n");
 
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-5.4",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: BUDGET_SET_SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      max_completion_tokens: 1500,
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
-
-  if (!resp.ok) {
-    const errBody = await resp.json().catch(() => ({}));
-    throw new Error(`OpenAI API 오류 ${resp.status}: ${errBody?.error?.message || ""}`);
-  }
-
-  const data = await resp.json();
-  const raw = data?.choices?.[0]?.message?.content || "";
-  const parsed = JSON.parse(raw);
-
-  if (!parsed.parts || typeof parsed.parts !== "object") {
-    throw new Error("AI 응답에 parts 객체가 없음");
-  }
-
-  const partNames = Object.values(parsed.parts).map(p => p?.name).filter(Boolean);
-  const dbParts = partNames.length > 0
-    ? await db.collection("parts").find({ name: { $in: partNames } }, { projection: { name: 1, image: 1 } }).toArray()
-    : [];
-  const imageMap = Object.fromEntries(dbParts.map(p => [p.name, p.image]));
+  const messages = [
+    { role: "system", content: BUDGET_SET_SYSTEM_PROMPT },
+    { role: "user", content: userPrompt },
+  ];
 
   const PART_KEYS = ["cpu", "gpu", "motherboard", "memory", "psu", "cooler", "storage", "case"];
-  const enrichedParts = {};
-  for (const key of PART_KEYS) {
-    const p = parsed.parts[key];
-    if (p?.name) {
-      enrichedParts[key] = { name: p.name, price: p.price || 0, image: imageMap[p.name] || null, category: key };
+  const MAX_ATTEMPTS = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-5.4",
+        response_format: { type: "json_object" },
+        messages,
+        max_completion_tokens: 1500,
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(`OpenAI API 오류 ${resp.status}: ${errBody?.error?.message || ""}`);
     }
+
+    const data = await resp.json();
+    const raw = data?.choices?.[0]?.message?.content || "";
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      lastError = new Error("AI 응답 JSON 파싱 실패");
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: "응답이 유효한 JSON이 아닙니다. 다시 시도하세요." });
+      continue;
+    }
+
+    if (!parsed.parts || typeof parsed.parts !== "object") {
+      lastError = new Error("AI 응답에 parts 객체가 없음");
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: "응답 형식이 올바르지 않습니다. parts 객체를 포함하여 다시 시도하세요." });
+      continue;
+    }
+
+    const enrichedParts = {};
+    for (const key of PART_KEYS) {
+      const p = parsed.parts[key];
+      if (p?.name) enrichedParts[key] = { name: p.name, price: p.price || 0, image: null, category: key };
+    }
+
+    if (Object.keys(enrichedParts).length < 5) {
+      lastError = new Error(`AI가 불충분한 부품 수 반환: ${Object.keys(enrichedParts).length}개`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: "8개 부품을 모두 포함하여 다시 시도하세요." });
+      continue;
+    }
+
+    const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
+
+    if (totalPrice > budget * 1.10) {
+      lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원의 110%`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `총 가격 ${totalPrice.toLocaleString()}원이 예산 ${budget.toLocaleString()}원의 110%(${Math.round(budget*1.1).toLocaleString()}원)를 초과합니다. 더 저렴한 부품으로 교체하여 합계가 ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원이 되도록 수정하세요.` });
+      continue;
+    }
+    if (totalPrice < budget * 0.90) {
+      lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 90%`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `총 가격 ${totalPrice.toLocaleString()}원이 예산 ${budget.toLocaleString()}원의 90%(${Math.round(budget*0.9).toLocaleString()}원)에 미달합니다. 더 고사양 부품으로 교체하여 합계가 ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원이 되도록 수정하세요.` });
+      continue;
+    }
+
+    // 이미지 조회는 검증 통과 후 한 번만
+    const partNames = Object.values(enrichedParts).map(p => p.name);
+    const dbParts = await db.collection("parts").find({ name: { $in: partNames } }, { projection: { name: 1, image: 1 } }).toArray();
+    const imageMap = Object.fromEntries(dbParts.map(p => [p.name, p.image]));
+    for (const key of PART_KEYS) {
+      if (enrichedParts[key]) enrichedParts[key].image = imageMap[enrichedParts[key].name] || null;
+    }
+
+    return {
+      budget,
+      purpose,
+      totalPrice,
+      computedAt: new Date().toISOString(),
+      parts: enrichedParts,
+      summary: parsed.summary || "",
+    };
   }
 
-  if (Object.keys(enrichedParts).length < 5) {
-    throw new Error(`AI가 불충분한 부품 수 반환: ${Object.keys(enrichedParts).length}개`);
-  }
-
-  const totalPrice = parsed.totalPrice || Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
-
-  if (totalPrice > budget * 1.10) {
-    throw new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원의 110%`);
-  }
-  if (totalPrice < budget * 0.90) {
-    throw new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 90%`);
-  }
-
-  return {
-    budget,
-    purpose,
-    totalPrice,
-    computedAt: new Date().toISOString(),
-    parts: enrichedParts,
-    summary: parsed.summary || "",
-  };
+  throw lastError || new Error(`${MAX_ATTEMPTS}회 시도 후 예산 범위 미충족`);
 }
 
 async function saveBudgetSetToDb(db, budget, purpose, result) {
