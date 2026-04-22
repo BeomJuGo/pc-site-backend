@@ -5,6 +5,15 @@ const SEARCH_TREND_URL = "https://openapi.naver.com/v1/datalab/search";
 // 카테고리별 브랜드 검색어 그룹
 // 검색어트렌드 API: 1회 요청당 최대 5개 그룹 비교
 const BRAND_KEYWORD_GROUPS = {
+  cpu: [
+    { groupName: "AMD", keywords: ["amd 라이젠", "라이젠 cpu", "ryzen 프로세서"] },
+    { groupName: "Intel", keywords: ["인텔 코어", "intel core", "인텔 cpu"] },
+  ],
+  gpu: [
+    { groupName: "NVIDIA", keywords: ["엔비디아 그래픽카드", "nvidia rtx", "지포스 rtx"] },
+    { groupName: "AMD", keywords: ["amd 라데온", "radeon rx", "라데온 그래픽카드"] },
+    { groupName: "Intel", keywords: ["인텔 arc 그래픽카드", "intel arc gpu"] },
+  ],
   memory: [
     { groupName: "삼성", keywords: ["삼성 메모리", "삼성 램", "samsung ddr"] },
     { groupName: "SK하이닉스", keywords: ["sk하이닉스 메모리", "하이닉스 램", "hynix 램"] },
