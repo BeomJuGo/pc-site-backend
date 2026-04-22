@@ -45,11 +45,14 @@ export const config = {
   },
 };
 
-console.log('✅ 환경 변수 검증 완료');
-console.log(`   - MongoDB URI: ${config.mongodbUri ? '설정됨' : '미설정'}`);
-console.log(`   - OpenAI API Key: ${config.openaiApiKey ? '설정됨' : '미설정 (AI 기능 비활성화)'}`);
-console.log(`   - Admin API Key: ${config.adminApiKey ? '설정됨' : '미설정 (⚠️ Admin 엔드포인트 보호 안됨)'}`);
-console.log(`   - 포트: ${config.port}`);
-console.log(`   - 환경: ${config.nodeEnv}`);
+// 개발 환경에서만 설정 정보 출력 (프로덕션 로그 노출 방지)
+if (config.nodeEnv !== 'production') {
+  console.log('✅ 환경 변수 검증 완료');
+  console.log(`   - MongoDB URI: ${config.mongodbUri ? '설정됨' : '미설정'}`);
+  console.log(`   - OpenAI API Key: ${config.openaiApiKey ? '설정됨' : '미설정 (AI 기능 비활성화)'}`);
+  console.log(`   - Admin API Key: ${config.adminApiKey ? '설정됨' : '미설정 (⚠️ Admin 엔드포인트 보호 안됨)'}`);
+  console.log(`   - 포트: ${config.port}`);
+  console.log(`   - 환경: ${config.nodeEnv}`);
+}
 
 export default config;
