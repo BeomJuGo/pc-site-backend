@@ -54,6 +54,24 @@ router.post("/cleanup-db", async (req, res) => {
   res.json({ status: "ok", ...results });
 });
 
+/* ==================== priceHistory 전체 초기화 + 오늘 가격으로 재설정 ==================== */
+
+router.post("/reset-price-history", async (req, res) => {
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DB 연결 실패" });
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 모든 priceHistory 배열을 비우고, price > 0인 경우 오늘 가격 1개만 남김
+  const r = await db.collection("parts").updateMany(
+    {},
+    [{ $set: { priceHistory: { $cond: [{ $gt: ["$price", 0] }, [{ date: today, price: "$price" }], []] } } }]
+  );
+
+  logger.info(`reset-price-history 완료: ${r.modifiedCount}개 부품 초기화`);
+  res.json({ status: "ok", reset: r.modifiedCount, today });
+});
+
 /* ==================== 모든 부품 가격을 네이버쇼핑 API로 업데이트 ==================== */
 
 router.post("/update-all-prices", async (req, res) => {
