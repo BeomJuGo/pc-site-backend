@@ -2,13 +2,13 @@ import logger from "./logger.js";
 
 const API_URL = "https://openapi.naver.com/v1/search/shop.json";
 
-export async function searchNaverShopping(query, display = 20) {
+export async function searchNaverShopping(query, display = 20, sort = "sim") {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
 
   try {
-    const url = `${API_URL}?query=${encodeURIComponent(query)}&display=${display}&sort=sim`;
+    const url = `${API_URL}?query=${encodeURIComponent(query)}&display=${display}&sort=${sort}`;
     const res = await fetch(url, {
       headers: {
         "X-Naver-Client-Id": clientId,

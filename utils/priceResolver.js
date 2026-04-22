@@ -7,7 +7,8 @@ import logger from "./logger.js";
  */
 export async function fetchNaverPrice(partName) {
   try {
-    const data = await searchNaverShopping(partName, 5);
+    // sort=asc: 가격 오름차순으로 20개 조회 → 최저가가 관련도 하위에 있어도 확실히 포착
+    const data = await searchNaverShopping(partName, 20, "asc");
     const items = parseNaverItems(data);
     if (!items.length || !items[0].price || items[0].price <= 0) return 0;
     return items[0].price;
