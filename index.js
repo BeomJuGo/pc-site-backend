@@ -133,8 +133,12 @@ function requireAdminKey(req, res, next) {
   next();
 }
 
+// 요청 로깅: /api/health 및 정적 자산 제외하여 불필요한 I/O 최소화
+const SKIP_LOG_PATHS = new Set(["/api/health", "/favicon.ico"]);
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path} from ${req.headers.origin || "same-origin"}`);
+  if (!SKIP_LOG_PATHS.has(req.path)) {
+    logger.info(`${req.method} ${req.path} from ${req.headers.origin || "same-origin"}`);
+  }
   next();
 });
 
