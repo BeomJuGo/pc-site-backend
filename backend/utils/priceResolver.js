@@ -70,13 +70,26 @@ export async function fetchNaverPrice(partName) {
       return { price: 0, mallCount: 0 };
     }
 
-    // 가격 오름차순 정렬 후 outlier 제거
+    // 가격 오름차순 정렬 후 robust aggregation
     const sorted = validItems.slice().sort((a, b) => a.price - b.price);
-    let price = sorted[0].price;
-    if (sorted.length >= 3 && sorted[0].price < sorted[1].price * 0.5) {
-      // 최저가가 2번째 최저가의 절반 미만 → 이상치로 간주하고 2번째 값 사용
-      logger.info(`fetchNaverPrice: 이상치 제거 (${partName}) ${sorted[0].price} → ${sorted[1].price}`);
-      price = sorted[1].price;
+    let price;
+    if (sorted.length >= 3) {
+      // 최저 2개 아이템이 모두 3번째보다 현저히 낮으면 두 개가 다 이상치(예: 중고 2개)일 가능성
+      // 안정성을 위해 3번째 최저가와 비교:
+      //  - sorted[0] >= sorted[2]*0.7 이면 sorted[0] 사용 (정상 범위)
+      //  - sorted[1] >= sorted[2]*0.7 이면 sorted[1] 사용 (한 개만 이상치)
+      //  - 둘 다 너무 낮으면 sorted[2] 사용 (두 개 이상치)
+      if (sorted[0].price >= sorted[2].price * 0.7) {
+        price = sorted[0].price;
+      } else if (sorted[1].price >= sorted[2].price * 0.7) {
+        logger.info(`fetchNaverPrice: 이상치1 제거 (${partName}) ${sorted[0].price} → ${sorted[1].price}`);
+        price = sorted[1].price;
+      } else {
+        logger.info(`fetchNaverPrice: 이상치2 제거 (${partName}) ${sorted[0].price}/${sorted[1].price} → ${sorted[2].price}`);
+        price = sorted[2].price;
+      }
+    } else {
+      price = sorted[0].price;
     }
     const mallCount = new Set(validItems.map((item) => item.mallName).filter(Boolean)).size;
     return { price, mallCount };
