@@ -2,6 +2,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
 import { fetchAllBrandWeights } from "../utils/naverDatalab.js";
+import { invalidatePrefix } from "../utils/responseCache.js";
 import logger from "../utils/logger.js";
 
 const router = express.Router();
@@ -127,6 +128,8 @@ router.post("/update-all-prices", async (req, res) => {
       await sleep(200);
     }
     logger.info(`update-all-prices 완료: 성공 ${updated}개, 건너뜀 ${skipped}개, 실패 ${failed}개 (총 ${parts.length}개)`);
+    invalidatePrefix("prices:");
+    logger.info("prices: 캐시 무효화 완료");
   });
 });
 
@@ -191,6 +194,14 @@ router.post("/update-all-specs", async (req, res) => {
     }
     logger.info(`update-all-specs 완료: 성공 ${updated}개, 실패 ${failed}개 (총 ${parts.length}개)`);
   });
+});
+
+/* ==================== 가격 캐시 즉시 무효화 ==================== */
+
+router.post("/clear-prices-cache", (req, res) => {
+  invalidatePrefix("prices:");
+  logger.info("prices: 캐시 수동 무효화 완료");
+  res.json({ status: "ok", message: "prices: 캐시가 모두 삭제되었습니다" });
 });
 
 /* ==================== 브랜드 인기도 가중치 업데이트 (Naver DataLab) ==================== */
