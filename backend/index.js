@@ -263,9 +263,9 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
         { projection: { review: 1, specSummary: 1, info: 1, category: 1 } }
       );
       category = part?.category || null;
-      // DB에 이미 review + specSummary 있으면 반환
-      if (part?.review && (part.specSummary || part.info)) {
-        return res.json({ review: part.review, specSummary: part.specSummary || part.info });
+      // specSummary(새 구조화 형식)가 있어야 캐시로 인정 — info만 있는 구형 데이터는 재생성
+      if (part?.review && part?.specSummary) {
+        return res.json({ review: part.review, specSummary: part.specSummary });
       }
     }
   } catch (_) {}
