@@ -344,7 +344,7 @@ async function buildCompatibleSet(budget, purpose, db) {
 
 /* ==================== AI 기반 budget-set 생성 (gpt-5.4, 주 1회) ==================== */
 
-async function buildCompatibleSetWithAI(budget, purpose, db) {
+export async function buildCompatibleSetWithAI(budget, purpose, db) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
 
   const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
@@ -546,7 +546,7 @@ async function buildCompatibleSetWithAI(budget, purpose, db) {
   throw lastError || new Error(`${MAX_ATTEMPTS}회 시도 후 예산 범위 미충족`);
 }
 
-async function saveBudgetSetToDb(db, budget, purpose, result) {
+export async function saveBudgetSetToDb(db, budget, purpose, result) {
   const _id = `budget-set:${budget}:${purpose}`;
   await db.collection("cached_sets").replaceOne({ _id }, { _id, budget, purpose, result, computedAt: new Date() }, { upsert: true });
 }

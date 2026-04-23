@@ -8,32 +8,24 @@ on:
 jobs:
   check-alerts:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
-      - name: Trigger price alert check
-        shell: bash
-        run: |
-          set -e
-          echo "POST ${{ secrets.BACKEND_URL }}/api/admin/check-price-alerts"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
-          for i in 1 2 3; do
-            echo "Attempt $i..."
-            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-              -X POST "${{ secrets.BACKEND_URL }}/api/admin/check-price-alerts" \
-              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}") || true
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
 
-            echo "HTTP $http_code"
-            cat /tmp/resp.txt || true
-
-            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-              echo "✅ Alert check triggered"
-              exit 0
-            fi
-
-            echo "⚠️ Failed (HTTP $http_code). Retrying in 10s..."
-            sleep 10
-          done
-
-          echo "❌ All retries failed"
-          exit 1
+      - name: Check price alerts
+        run: node scripts/check-alerts.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}

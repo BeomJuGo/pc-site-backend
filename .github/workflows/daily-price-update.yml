@@ -8,43 +8,27 @@ on:
 jobs:
   update-prices:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     concurrency:
       group: daily-price-update
       cancel-in-progress: false
 
     steps:
-      - name: Trim price history older than 90 days
-        shell: bash
-        run: |
-          http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-            -X POST "${{ secrets.BACKEND_URL }}/api/admin/cleanup-db" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}") || true
-          echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
-      - name: Update all part prices via Naver Shopping API
-        shell: bash
-        run: |
-          set -e
-          for i in 1 2 3; do
-            echo "Attempt $i..."
-            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-              -X POST "${{ secrets.BACKEND_URL }}/api/admin/update-all-prices" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}") || true
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
 
-            echo "HTTP $http_code"
-            cat /tmp/resp.txt || true
-
-            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-              echo "✅ Price update triggered successfully"
-              exit 0
-            fi
-
-            echo "⚠️ Failed (HTTP $http_code). Retrying in 20s..."
-            sleep 20
-          done
-
-          echo "❌ All retries failed"
-          exit 1
+      - name: Update all part prices
+        run: node scripts/update-prices.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}

@@ -8,34 +8,26 @@ on:
 jobs:
   refresh-budget-set:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 120
     concurrency:
       group: refresh-budget-set
       cancel-in-progress: false
 
-    env:
-      BACKEND_URL: https://pc-site-backend.onrender.com
-
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
       - name: Refresh all AI budget sets
-        shell: bash
-        run: |
-          set -e
-          echo "POST $BACKEND_URL/api/recommend/budget-set/refresh-all"
-
-          http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-            -X POST "$BACKEND_URL/api/recommend/budget-set/refresh-all" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
-            --max-time 30) || true
-
-          echo "HTTP $http_code"
-          cat /tmp/resp.txt || true
-
-          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-            echo "✅ refresh-all started successfully (runs in background)"
-            exit 0
-          fi
-
-          echo "❌ Failed (HTTP $http_code)"
-          exit 1
+        run: node scripts/refresh-budget-sets.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
