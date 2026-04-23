@@ -1,10 +1,8 @@
-import { useState } from "react";
-import axios from "axios";
-import PartCard from "../components/PartCard";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import PartCard from "../components/PartCard";
 
-const PURPOSES = ["게임용", "작업용", "문서용"];
-const BUDGETS = [500000, 700000, 1000000, 1500000, 2000000, 3000000];
+const BUDGETS = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
 
 const PART_LABELS = {
   cpu: "CPU",
@@ -28,45 +26,69 @@ const PART_COLORS = {
   case: "bg-slate-700/40 text-slate-300 border-slate-600/50",
 };
 
+const MAX_POLL = 6;
+const POLL_INTERVAL = 10000;
+
 export default function Recommend() {
   const [budget, setBudget] = useState(1000000);
-  const [customBudget, setCustomBudget] = useState("");
-  const [purpose, setPurpose] = useState("게임용");
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [pollCount, setPollCount] = useState(0);
+  const [waitMsg, setWaitMsg] = useState("");
+  const pollRef = useRef(null);
   const navigate = useNavigate();
 
-  const effectiveBudget = customBudget ? Number(customBudget) : budget;
+  useEffect(() => () => clearTimeout(pollRef.current), []);
 
-  const handleRecommend = async () => {
-    if (!effectiveBudget || effectiveBudget < 300000) {
-      setError("예산을 30만원 이상 입력해주세요.");
-      return;
+  const fetchV2 = async (selectedBudget, attempt = 0) => {
+    try {
+      const res = await fetch(`/api/recommend/budget-set-v2?budget=${selectedBudget}`);
+      if (res.ok) {
+        const data = await res.json();
+        const parts = {};
+        for (const [key, part] of Object.entries(data.parts || {})) {
+          if (part) parts[key] = { ...part, category: part.category || key };
+        }
+        setResults({ parts, totalPrice: data.totalPrice, summary: data.summary });
+        setLoading(false);
+        setPollCount(0);
+        setWaitMsg("");
+        return;
+      }
+      if (res.status === 503) {
+        const nextAttempt = attempt + 1;
+        if (nextAttempt > MAX_POLL) {
+          setError("견적 준비에 시간이 걸리고 있습니다. 잠시 후 다시 시도해주세요.");
+          setLoading(false);
+          setPollCount(0);
+          setWaitMsg("");
+          return;
+        }
+        setPollCount(nextAttempt);
+        setWaitMsg(`AI가 견적을 생성 중입니다... (${nextAttempt}/${MAX_POLL})`);
+        pollRef.current = setTimeout(() => fetchV2(selectedBudget, nextAttempt), POLL_INTERVAL);
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `서버 오류 (${res.status})`);
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      setError(e.message || "추천 요청에 실패했습니다.");
+      setLoading(false);
+      setPollCount(0);
+      setWaitMsg("");
     }
+  };
+
+  const handleRecommend = () => {
+    clearTimeout(pollRef.current);
     setLoading(true);
     setError(null);
     setResults(null);
-    try {
-      const res = await axios.post("/api/recommend", {
-        budget: effectiveBudget,
-        purpose,
-      });
-      const builds = res.data.builds || [];
-      const recommendedLabel = res.data.recommended;
-      const build = builds.find((b) => b.label === recommendedLabel) || builds[0];
-      if (!build) throw new Error("추천 결과를 받지 못했습니다.");
-      // attach category to each part so PartCard hooks work
-      const parts = {};
-      for (const [key, part] of Object.entries(build.parts || {})) {
-        if (part) parts[key] = { ...part, category: part.category || key };
-      }
-      setResults({ parts, totalPrice: build.totalPrice, summary: build.summary });
-    } catch (e) {
-      setError(e.response?.data?.error || e.message || "추천 요청에 실패했습니다.");
-      console.error(e);
-    }
-    setLoading(false);
+    setPollCount(0);
+    setWaitMsg("AI 견적을 불러오는 중...");
+    fetchV2(budget, 0);
   };
 
   const navigableCats = ["cpu", "gpu", "motherboard", "memory", "storage"];
@@ -75,63 +97,30 @@ export default function Recommend() {
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white mb-2">✨ AI PC 견적 추천</h1>
-        <p className="text-slate-400">예산과 용도를 선택하면 AI가 최적의 부품 조합을 추천합니다.</p>
+        <p className="text-slate-400">예산을 선택하면 AI가 최고 가성비 부품 조합을 추천합니다.</p>
       </div>
 
-      {/* 설정 패널 */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 mb-6 backdrop-blur-sm">
-        {/* 용도 선택 */}
         <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-300 mb-2">용도</label>
-          <div className="flex gap-2 flex-wrap">
-            {PURPOSES.map((p) => (
+          <label className="block text-sm font-medium text-slate-300 mb-3">예산 선택</label>
+          <div className="flex flex-wrap gap-1.5">
+            {BUDGETS.map((b) => (
               <button
-                key={p}
-                onClick={() => setPurpose(p)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
-                  purpose === p
+                key={b}
+                onClick={() => setBudget(b)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                  budget === b
                     ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white border-transparent shadow"
                     : "bg-slate-700/50 text-slate-300 border-slate-600 hover:bg-slate-700"
                 }`}
               >
-                {p === "게임용" ? "🎮 게임용" : p === "작업용" ? "💼 작업용" : "📄 문서용"}
+                {(b / 10000).toFixed(0)}만
               </button>
             ))}
           </div>
-        </div>
-
-        {/* 예산 선택 */}
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-300 mb-2">예산</label>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {BUDGETS.map((b) => (
-              <button
-                key={b}
-                onClick={() => { setBudget(b); setCustomBudget(""); }}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
-                  budget === b && !customBudget
-                    ? "bg-blue-600 text-white border-blue-500"
-                    : "bg-slate-700/50 text-slate-300 border-slate-600 hover:bg-slate-700"
-                }`}
-              >
-                {(b / 10000).toFixed(0)}만원
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2 items-center">
-            <input
-              type="number"
-              placeholder="직접 입력 (원)"
-              value={customBudget}
-              onChange={(e) => setCustomBudget(e.target.value)}
-              className="flex-1 px-3 py-2 bg-slate-700 border border-slate-500 rounded-lg text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              step={100000}
-              min={300000}
-            />
-            {customBudget && (
-              <span className="text-sm text-slate-400">{Number(customBudget).toLocaleString()}원</span>
-            )}
-          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            선택된 예산: <span className="text-slate-300 font-medium">{budget.toLocaleString()}원</span>
+          </p>
         </div>
 
         {error && (
@@ -148,15 +137,20 @@ export default function Recommend() {
           {loading ? (
             <span className="flex items-center justify-center gap-2">
               <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              AI 추천 중... (10~30초 소요)
+              {waitMsg || "불러오는 중..."}
             </span>
           ) : (
-            `✨ ${effectiveBudget.toLocaleString()}원 / ${purpose} 추천 받기`
+            `✨ ${(budget / 10000).toFixed(0)}만원 견적 추천받기`
           )}
         </button>
+
+        {loading && pollCount > 0 && (
+          <p className="mt-2 text-xs text-slate-500 text-center">
+            첫 요청 시 AI 생성에 최대 1분이 소요될 수 있습니다
+          </p>
+        )}
       </div>
 
-      {/* 결과 */}
       {results && (
         <div className="space-y-3">
           {results.summary && (
@@ -171,7 +165,7 @@ export default function Recommend() {
               if (!part) return null;
               return (
                 <div key={key} className="border-b border-slate-700/50 last:border-b-0">
-                  <div className={`px-4 pt-3 pb-1 flex items-center gap-2`}>
+                  <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS[key]}`}>
                       {label}
                     </span>
@@ -197,7 +191,7 @@ export default function Recommend() {
           </div>
 
           <button
-            onClick={() => setResults(null)}
+            onClick={() => { setResults(null); setError(null); }}
             className="w-full py-2 text-sm text-slate-400 hover:text-white border border-slate-700 rounded-xl hover:border-slate-500 transition-colors"
           >
             다시 추천받기

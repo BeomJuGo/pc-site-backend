@@ -1,0 +1,34 @@
+name: Weekly Budget Set V2 Refresh
+
+on:
+  schedule:
+    # 매주 월요일 07:00 KST = 일요일 22:00 UTC
+    - cron: "0 22 * * 0"
+  workflow_dispatch:
+
+jobs:
+  refresh-budget-set-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: refresh-budget-set-v2
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Refresh V2 AI budget sets
+        run: node scripts/refresh-budget-sets-v2.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

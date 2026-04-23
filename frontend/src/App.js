@@ -17,6 +17,7 @@ const Privacy = lazy(() => import("./pages/Privacy"));
 const About = lazy(() => import("./pages/About"));
 const Guide = lazy(() => import("./pages/Guide"));
 const Terms = lazy(() => import("./pages/Terms"));
+const PCBuilder = lazy(() => import("./pages/PCBuilder"));
 
 function PageLoader() {
   return (
@@ -56,6 +57,7 @@ export default function App() {
                   <Route path="/terms" element={<Terms />} />
                   <Route path="/about" element={<About />} />
                   <Route path="/guide" element={<Guide />} />
+                  <Route path="/pc-builder" element={<PCBuilder />} />
                 </Routes>
               </Suspense>
             </ErrorBoundary>

@@ -117,6 +117,12 @@ export default function Header() {
           </Link>
 
           <NavLink
+            to="/pc-builder"
+            className="hidden md:inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg bg-slate-700/80 text-slate-200 hover:bg-slate-600/80 transition-all border border-slate-600"
+          >
+            🛠️ 견적
+          </NavLink>
+          <NavLink
             to="/ai-recommend"
             className="hidden md:inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600 transition-all shadow"
           >
@@ -191,6 +197,9 @@ export default function Header() {
           <div className="border-t border-slate-700 pt-3 flex flex-wrap gap-2">
             <NavLink to="/guide" className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors" onClick={closeMenu}>
               📖 가이드
+            </NavLink>
+            <NavLink to="/pc-builder" className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 transition-all border border-slate-600" onClick={closeMenu}>
+              🛠️ 직접 견적 짜기
             </NavLink>
             <NavLink to="/ai-recommend" className="px-5 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600 transition-all shadow" onClick={closeMenu}>
               ✨ AI 추천 받기

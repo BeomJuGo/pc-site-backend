@@ -6,7 +6,7 @@ import { loadParts, extractBoardFormFactor, isCaseCompatible } from "../utils/re
 import { getPopularityScore } from "../utils/naverDatalab.js";
 import logger from "../utils/logger.js";
 import { validate } from "../middleware/validate.js";
-import { recommendSchema } from "../schemas/recommend.js";
+import { recommendSchema, recommendV2Schema } from "../schemas/recommend.js";
 import { upgradeAdvisorSchema } from "../schemas/recommend.js";
 import { getCache, setCache } from "../utils/responseCache.js";
 
@@ -15,6 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const router = express.Router();
 
 const buildingInProgress = new Set();
+const buildingInProgressV2 = new Set();
 
 const BUDGET_SET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CACHED_PURPOSES = ["게임용", "작업용"];
@@ -551,6 +552,254 @@ export async function saveBudgetSetToDb(db, budget, purpose, result) {
   await db.collection("cached_sets").replaceOne({ _id }, { _id, budget, purpose, result, computedAt: new Date() }, { upsert: true });
 }
 
+/* ==================== V2: 목적 없는 가성비 극대화 AI 견적 ==================== */
+
+const BUDGET_SET_V2_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다. DB에 등록된 부품 목록에서만 선택하여 예산에서 최고의 가성비를 제공하는 호환 가능한 PC 견적을 작성하세요.
+반드시 JSON만 출력하고 다른 텍스트는 절대 포함하지 마세요.
+
+GPU는 선택 사항입니다:
+- 예산이 충분하면 GPU를 포함하세요.
+- 예산이 부족하거나 GPU를 추가하면 총 가격이 초과될 경우, 내장 그래픽이 탑재된 CPU(AMD 라이젠 G시리즈, 인텔 내장그래픽 포함 CPU)를 선택하고 GPU는 제외하세요.
+- GPU 없이 구성할 때 출력 형식의 gpu 필드는 생략합니다.
+
+선택 전략:
+- 메인보드/메모리/저장장치/케이스/쿨러/파워는 제공된 인기 순위 목록에서 선택하세요.
+- CPU와 GPU는 예산 내 최고 성능/가격비(벤치마크점수÷가격)를 제공하는 부품을 선택하세요.
+- 보조 부품 합계 후 남은 예산은 CPU 또는 GPU 업그레이드에 최대한 활용하세요.
+
+출력 형식: {"parts":{"cpu":{"name":"...","price":숫자},"gpu":{"name":"...","price":숫자},"motherboard":{"name":"...","price":숫자},"memory":{"name":"...","price":숫자},"psu":{"name":"...","price":숫자},"cooler":{"name":"...","price":숫자},"storage":{"name":"...","price":숫자},"case":{"name":"...","price":숫자}},"totalPrice":숫자,"summary":"한줄설명"}
+
+호환성 규칙:
+- CPU 소켓과 메인보드 소켓 일치
+- 메모리 DDR 규격 일치
+- PSU 출력 = CPU TDP + GPU TDP + 100W 이상 (GPU 없으면 CPU TDP + 100W)
+- 쿨러 소켓 CPU와 일치
+- 케이스 폼팩터 메인보드와 일치
+
+예산 규칙 (절대 준수):
+- 총 가격은 예산의 90~110% 범위여야 함
+- 총 가격이 예산의 90% 미만이면 오답 — 더 고사양 부품으로 교체할 것
+- 총 가격이 예산의 110% 초과도 오답 — 더 저렴한 부품으로 교체하거나 GPU를 제외할 것`;
+
+const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export async function buildCompatibleSetWithAIV2(budget, db) {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
+
+  const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
+
+  const brandWeightDocs = await db.collection("brand_weights").find().toArray().catch(() => []);
+  const brandWeightMap = Object.fromEntries(brandWeightDocs.map((d) => [d.category, d.weights || {}]));
+
+  const fmtCpu = (p) => `${p.name} | ${p.price.toLocaleString()}원 | 소켓:${extractCpuSocket(p)} | TDP:${extractTdp(p.info || "")}W`;
+  const fmtGpu = (p) => `${p.name} | ${p.price.toLocaleString()}원 | TDP:${extractTdp(p.info || "")}W`;
+  const fmtBoard = (p) => `${p.name} | ${p.price.toLocaleString()}원 | 소켓:${extractBoardSocket(p)}`;
+  const fmtMem = (p) => `${p.name} | ${p.price.toLocaleString()}원 | ${extractMemoryCapacity(p)}GB`;
+  const fmtSimple = (p) => `${p.name} | ${p.price.toLocaleString()}원`;
+
+  const lowBudget = budget < 700000;
+
+  // CPU: 가성비순 (점수/가격 내림차순), 점수 없는 CPU는 저예산 fallback으로 추가
+  const sortedCpus = [...cpus]
+    .filter(p => p.price > 0 && p.price <= budget && getCpuScore(p) > 0)
+    .sort((a, b) => (getCpuScore(b) / b.price) - (getCpuScore(a) / a.price))
+    .slice(0, 40);
+  if (sortedCpus.length < 10) {
+    const extra = [...cpus]
+      .filter(p => p.price > 0 && p.price <= budget && getCpuScore(p) === 0)
+      .sort((a, b) => a.price - b.price)
+      .slice(0, 20 - sortedCpus.length);
+    sortedCpus.push(...extra);
+  }
+
+  // GPU: 가성비순 (3DMark/가격 내림차순)
+  const sortedGpus = [...gpus]
+    .filter(p => p.price > 0 && p.price <= budget * 0.55 && getGpuScore(p) > 0)
+    .sort((a, b) => (getGpuScore(b) / b.price) - (getGpuScore(a) / a.price))
+    .slice(0, 30);
+
+  // 보조 부품: 인기도순 상위 10개, 저예산시 가격 상한 완화
+  const boardBudget = lowBudget ? budget * 0.14 : Math.max(budget * 0.10, 80000);
+  const boardsFiltered = [...boards].filter(p => p.price > 0 && p.price <= boardBudget * (lowBudget ? 2.5 : 1.5));
+  const amdBoards = boardsFiltered.filter(b => /am[45]|b[45][56][05]|x[45][67][05]|a[46][25]0/i.test(b.name))
+    .sort((a, b) => getPopularityScore(b, "motherboard", brandWeightMap) - getPopularityScore(a, "motherboard", brandWeightMap)).slice(0, 5);
+  const intelBoards = boardsFiltered.filter(b => /lga|z[67][89]0|b[78][56]0|h[78][17]0|z[45]90|b[45][56]0/i.test(b.name))
+    .sort((a, b) => getPopularityScore(b, "motherboard", brandWeightMap) - getPopularityScore(a, "motherboard", brandWeightMap)).slice(0, 5);
+  const sortedBoards = [...new Map([...amdBoards, ...intelBoards].map(p => [p._id.toString(), p])).values()];
+
+  const memBudget = lowBudget ? budget * 0.12 : Math.max(budget * 0.08, 55000);
+  const memsFiltered = [...memories].filter(p => p.price > 0 && p.price <= memBudget * (lowBudget ? 2.5 : 2.0));
+  const ddr4Mems = memsFiltered.filter(m => /ddr4/i.test(m.name))
+    .sort((a, b) => getPopularityScore(b, "memory", brandWeightMap) - getPopularityScore(a, "memory", brandWeightMap)).slice(0, 5);
+  const ddr5Mems = memsFiltered.filter(m => /ddr5/i.test(m.name))
+    .sort((a, b) => getPopularityScore(b, "memory", brandWeightMap) - getPopularityScore(a, "memory", brandWeightMap)).slice(0, 5);
+  const sortedMems = [...new Map([...ddr4Mems, ...ddr5Mems].map(p => [p._id.toString(), p])).values()];
+
+  const sortByPopularity = (arr, category, priceCap) =>
+    arr.filter(p => p.price > 0 && p.price <= priceCap)
+      .sort((a, b) => getPopularityScore(b, category, brandWeightMap) - getPopularityScore(a, category, brandWeightMap))
+      .slice(0, 10);
+
+  const sortedPsus = sortByPopularity(psus, "psu", Math.max(budget * (lowBudget ? 0.12 : 0.08), 55000));
+  const sortedCoolers = sortByPopularity(coolers, "cooler", Math.max(budget * (lowBudget ? 0.08 : 0.05), 35000));
+  const sortedStorages = sortByPopularity(storages, "storage", Math.max(budget * (lowBudget ? 0.12 : 0.08), 60000));
+  const sortedCases = sortByPopularity(cases, "case", Math.max(budget * (lowBudget ? 0.10 : 0.07), 50000));
+
+  const userPrompt = [
+    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
+    "",
+    "[사용 가능한 부품 목록 — 반드시 이 목록에서만 선택]",
+    "",
+    "=== CPU (가성비순) ===",
+    ...sortedCpus.map(fmtCpu),
+    "",
+    "=== GPU (가성비순) ===",
+    ...sortedGpus.map(fmtGpu),
+    "",
+    "=== 메인보드 (인기순) ===",
+    ...sortedBoards.map(fmtBoard),
+    "",
+    "=== 메모리 (인기순) ===",
+    ...sortedMems.map(fmtMem),
+    "",
+    "=== PSU (인기순) ===",
+    ...sortedPsus.map(fmtSimple),
+    "",
+    "=== 쿨러 (인기순) ===",
+    ...sortedCoolers.map(fmtSimple),
+    "",
+    "=== 스토리지 (인기순) ===",
+    ...sortedStorages.map(fmtSimple),
+    "",
+    "=== 케이스 (인기순) ===",
+    ...sortedCases.map(fmtSimple),
+  ].join("\n");
+
+  const messages = [
+    { role: "system", content: BUDGET_SET_V2_SYSTEM_PROMPT },
+    { role: "user", content: userPrompt },
+  ];
+
+  const PART_KEYS = ["cpu", "gpu", "motherboard", "memory", "psu", "cooler", "storage", "case"];
+  const REQUIRED_KEYS = ["cpu", "motherboard", "memory", "psu", "storage", "case"];
+  const MAX_ATTEMPTS = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-5.4",
+        response_format: { type: "json_object" },
+        temperature: 0,
+        messages,
+        max_completion_tokens: 1500,
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(`OpenAI API 오류 ${resp.status}: ${errBody?.error?.message || ""}`);
+    }
+
+    const data = await resp.json();
+    const raw = data?.choices?.[0]?.message?.content || "";
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      lastError = new Error("AI 응답 JSON 파싱 실패");
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: "응답이 유효한 JSON이 아닙니다. 다시 시도하세요." });
+      continue;
+    }
+
+    if (!parsed.parts || typeof parsed.parts !== "object") {
+      lastError = new Error("AI 응답에 parts 객체가 없음");
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: "응답 형식이 올바르지 않습니다. parts 객체를 포함하여 다시 시도하세요." });
+      continue;
+    }
+
+    const enrichedParts = {};
+    for (const key of PART_KEYS) {
+      const p = parsed.parts[key];
+      if (p?.name) enrichedParts[key] = { name: p.name, price: p.price || 0, image: null, category: key };
+    }
+
+    const missingRequired = REQUIRED_KEYS.filter(k => !enrichedParts[k]);
+    if (missingRequired.length > 0) {
+      lastError = new Error(`AI가 필수 부품 누락: ${missingRequired.join(", ")}`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `다음 필수 부품이 누락되었습니다: ${missingRequired.join(", ")}. GPU는 생략 가능하지만 나머지는 반드시 포함하세요.` });
+      continue;
+    }
+
+    const partNamesForLookup = Object.values(enrichedParts).map(p => p.name);
+    const dbPartsForPrice = await db.collection("parts").find(
+      { name: { $in: partNamesForLookup } },
+      { projection: { name: 1, price: 1, image: 1 } }
+    ).toArray();
+    const dbPriceMap = Object.fromEntries(dbPartsForPrice.map(p => [p.name, p]));
+
+    const hallucinated = [];
+    for (const key of PART_KEYS) {
+      if (!enrichedParts[key]) continue;
+      const dbPart = dbPriceMap[enrichedParts[key].name];
+      if (dbPart) {
+        enrichedParts[key].price = dbPart.price || enrichedParts[key].price;
+        enrichedParts[key].image = dbPart.image || null;
+      } else {
+        hallucinated.push(`${key}: ${enrichedParts[key].name}`);
+        delete enrichedParts[key];
+      }
+    }
+    if (hallucinated.length > 0) {
+      lastError = new Error(`AI가 DB에 없는 부품 선택: ${hallucinated.join(", ")}`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `다음 부품은 DB에 존재하지 않습니다: ${hallucinated.join(", ")}. 반드시 제공된 부품 목록에서 정확한 이름으로만 선택하세요.` });
+      continue;
+    }
+
+    const totalPrice = Object.values(enrichedParts).reduce((s, p) => s + (p.price || 0), 0);
+    const breakdown = Object.entries(enrichedParts)
+      .map(([k, v]) => `${k}: ${v.name} (${v.price.toLocaleString()}원)`)
+      .join(", ");
+
+    if (totalPrice > budget * 1.10) {
+      lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원`);
+      const over = (totalPrice - Math.round(budget * 1.1)).toLocaleString();
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
+      continue;
+    }
+    if (totalPrice < budget * 0.90) {
+      lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원`);
+      const gap = (Math.round(budget * 0.9) - totalPrice).toLocaleString();
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. CPU 또는 GPU를 더 고사양으로 교체하세요.` });
+      continue;
+    }
+
+    return {
+      budget,
+      totalPrice,
+      computedAt: new Date().toISOString(),
+      parts: enrichedParts,
+      summary: parsed.summary || "",
+    };
+  }
+
+  throw lastError || new Error(`${MAX_ATTEMPTS}회 시도 후 예산 범위 미충족`);
+}
+
+async function saveBudgetSetV2ToDb(db, budget, result) {
+  const _id = `budget-set-v2:${budget}`;
+  await db.collection("cached_sets_v2").replaceOne({ _id }, { _id, budget, result, computedAt: new Date() }, { upsert: true });
+}
+
 function checkAdminKey(req, res) {
   const key = req.headers["authorization"]?.replace("Bearer ", "");
   if (!config.adminApiKey || key !== config.adminApiKey) {
@@ -863,6 +1112,107 @@ router.post("/", validate(recommendSchema), async (req, res) => {
     const isProd = process.env.NODE_ENV === "production";
     res.status(500).json({ error: "RECOMMENDATION_ERROR", message: isProd ? "추천 생성 중 오류가 발생했습니다." : error.message });
   }
+});
+
+/* ==================== V2 엔드포인트 ==================== */
+
+// GET /api/recommend/budget-set-v2?budget=1500000
+router.get("/budget-set-v2", validate(recommendV2Schema, "query"), async (req, res) => {
+  const budget = Number(req.query.budget);
+  const memKey = `recommend:budget-set-v2:${budget}`;
+  const memHit = getCache(memKey);
+  if (memHit?.parts) return res.json(memHit);
+
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "DB 연결 실패" });
+
+  try {
+    const doc = await db.collection("cached_sets_v2").findOne({ _id: `budget-set-v2:${budget}` });
+
+    if (doc?.result?.parts) {
+      const age = Date.now() - new Date(doc.computedAt).getTime();
+      setCache(memKey, doc.result, 10 * 60 * 1000);
+      if (age > BUDGET_SET_V2_TTL_MS && !buildingInProgressV2.has(budget)) {
+        buildingInProgressV2.add(budget);
+        logger.info(`budget-set-v2 stale (${Math.round(age / 86400000)}d) — 백그라운드 갱신`);
+        buildCompatibleSetWithAIV2(budget, db)
+          .then(async (fresh) => {
+            if (!fresh?.parts) return;
+            await saveBudgetSetV2ToDb(db, budget, fresh);
+            setCache(memKey, fresh, 10 * 60 * 1000);
+          })
+          .catch(e => logger.error(`budget-set-v2 백그라운드 갱신 실패: ${e.message}`))
+          .finally(() => buildingInProgressV2.delete(budget));
+      }
+      return res.json(doc.result);
+    }
+
+    if (!buildingInProgressV2.has(budget)) {
+      buildingInProgressV2.add(budget);
+      buildCompatibleSetWithAIV2(budget, db)
+        .then(async (result) => {
+          if (!result?.parts) return;
+          await saveBudgetSetV2ToDb(db, budget, result);
+          setCache(memKey, result, 10 * 60 * 1000);
+        })
+        .catch(e => logger.error(`budget-set-v2 초기 계산 실패: ${e.message}`))
+        .finally(() => buildingInProgressV2.delete(budget));
+    }
+
+    return res.status(503).json({
+      error: "NOT_READY",
+      message: "호환 세트를 준비 중입니다. 잠시 후 다시 시도해주세요.",
+      retryAfter: 60,
+    });
+  } catch (err) {
+    logger.error(`budget-set-v2 오류: ${err.message}`);
+    res.status(500).json({ error: "추천 생성 실패" });
+  }
+});
+
+router.post("/budget-set-v2/refresh", async (req, res) => {
+  if (!checkAdminKey(req, res)) return;
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DB 연결 실패" });
+
+  const budget = parseInt(req.body?.budget) || 1500000;
+  try {
+    logger.info(`budget-set-v2 갱신 시작: ${budget.toLocaleString()}원`);
+    const result = await buildCompatibleSetWithAIV2(budget, db);
+    await saveBudgetSetV2ToDb(db, budget, result);
+    setCache(`recommend:budget-set-v2:${budget}`, result, 10 * 60 * 1000);
+    res.json({ status: "ok", budget, totalPrice: result.totalPrice, summary: result.summary });
+  } catch (e) {
+    logger.error(`budget-set-v2 갱신 실패 ${budget}: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 26 budgets (500k~3000k, 100k 단위) — 주 1회 GitHub Actions
+router.post("/budget-set-v2/refresh-all", async (req, res) => {
+  if (!checkAdminKey(req, res)) return;
+  const budgets = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
+  res.json({ status: "started", total: budgets.length });
+
+  (async () => {
+    const db = getDB();
+    if (!db) return;
+    let success = 0, fail = 0;
+    for (const budget of budgets) {
+      try {
+        const result = await buildCompatibleSetWithAIV2(budget, db);
+        await saveBudgetSetV2ToDb(db, budget, result);
+        setCache(`recommend:budget-set-v2:${budget}`, result, 10 * 60 * 1000);
+        logger.info(`budget-set-v2 완료: ${budget.toLocaleString()}원 → ${result.totalPrice?.toLocaleString()}원`);
+        success++;
+      } catch (err) {
+        logger.error(`budget-set-v2 실패: ${budget.toLocaleString()}원 — ${err.message}`);
+        fail++;
+      }
+      await sleep(2000);
+    }
+    logger.info(`budget-set-v2 refresh-all 완료: 성공 ${success}개, 실패 ${fail}개`);
+  })();
 });
 
 router.post("/upgrade", validate(upgradeAdvisorSchema), async (req, res) => {

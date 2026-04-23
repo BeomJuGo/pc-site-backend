@@ -24,6 +24,15 @@ export const upgradeAdvisorSchema = z.object({
     .optional(),
 });
 
+export const recommendV2Schema = z.object({
+  budget: z.coerce
+    .number({ invalid_type_error: "budget은 숫자여야 합니다." })
+    .int()
+    .min(500000, "최소 예산은 500,000원입니다.")
+    .max(3000000, "최대 예산은 3,000,000원입니다.")
+    .refine((v) => v % 100000 === 0, "budget은 10만원 단위여야 합니다."),
+});
+
 export const recommendSchema = z.object({
   budget: z
     .number({ required_error: "budget이 필요합니다.", invalid_type_error: "budget은 숫자여야 합니다." })

@@ -149,7 +149,7 @@ export default function Home() {
                   AI 추천을 통해 최적의 PC 구성을 찾아보세요
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
                   size="lg"
                   variant="secondary"
@@ -157,6 +157,13 @@ export default function Home() {
                   onClick={() => window.location.href = "/ai-recommend"}
                 >
                   ✨ AI 추천 받기
+                </Button>
+                <Button
+                  size="lg"
+                  className="text-lg px-8 py-4 bg-slate-800/80 text-white border border-white/30 hover:bg-slate-700/80 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
+                  onClick={() => window.location.href = "/pc-builder"}
+                >
+                  🛠️ 직접 견적 짜기
                 </Button>
               </CardContent>
             </Card>
