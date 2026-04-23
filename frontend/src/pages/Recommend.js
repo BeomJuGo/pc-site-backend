@@ -18,7 +18,11 @@ export default function Recommend() {
         budget: Number(budget),
         purpose,
       });
-      setResults(res.data.recommended);
+      const builds = res.data.builds || [];
+      const recommendedLabel = res.data.recommended;
+      const build = builds.find((b) => b.label === recommendedLabel) || builds[0];
+      if (!build) throw new Error("추천 결과 없음");
+      setResults({ ...build.parts, totalPrice: build.totalPrice });
     } catch (e) {
       alert("추천 실패");
       console.error(e);
@@ -60,35 +64,33 @@ export default function Recommend() {
 
       {results && (
         <div className="divide-y divide-slate-200 border rounded-lg bg-white">
-          <PartCard
-            part={results.cpu}
-            onClick={() =>
-              results.cpu &&
-              navigate(`/detail/${results.cpu.category || "cpu"}/${encodeURIComponent(results.cpu.name)}`)
-            }
-          />
-          <PartCard
-            part={results.gpu}
-            onClick={() =>
-              results.gpu &&
-              navigate(`/detail/${results.gpu.category || "gpu"}/${encodeURIComponent(results.gpu.name)}`)
-            }
-          />
-          <PartCard
-            part={results.memory}
-            onClick={() =>
-              results.memory &&
-              navigate(`/detail/${results.memory.category || "memory"}/${encodeURIComponent(results.memory.name)}`)
-            }
-          />
-          <PartCard
-            part={results.mainboard || results.motherboard}
-            onClick={() => {
-              const mb = results.mainboard || results.motherboard;
-              if (mb)
-                navigate(`/detail/${mb.category || "motherboard"}/${encodeURIComponent(mb.name)}`);
-            }}
-          />
+          {[
+            { key: "cpu", label: "CPU", fallback: "cpu" },
+            { key: "gpu", label: "GPU", fallback: "gpu" },
+            { key: "motherboard", label: "메인보드", fallback: "motherboard" },
+            { key: "memory", label: "메모리", fallback: "memory" },
+            { key: "storage", label: "스토리지", fallback: "storage" },
+            { key: "psu", label: "파워", fallback: "psu" },
+            { key: "cooler", label: "쿨러", fallback: "cooler" },
+            { key: "case", label: "케이스", fallback: "case" },
+          ].map(({ key, label, fallback }) => {
+            const part = results[key];
+            if (!part) return null;
+            const navigableCats = ["cpu", "gpu", "motherboard", "memory"];
+            return (
+              <div key={key}>
+                <div className="px-3 pt-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</div>
+                <PartCard
+                  part={part}
+                  onClick={
+                    navigableCats.includes(key)
+                      ? () => navigate(`/detail/${part.category || fallback}/${encodeURIComponent(part.name)}`)
+                      : undefined
+                  }
+                />
+              </div>
+            );
+          })}
           <div className="px-3 py-3 text-right text-[15px] font-semibold text-slate-900">
             총합: {Number(results.totalPrice || 0).toLocaleString()}원
           </div>
