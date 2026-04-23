@@ -3,6 +3,7 @@ import { getDB } from "../db.js";
 import { fetchNaverPrice } from "../utils/priceResolver.js";
 import { fetchAllBrandWeights } from "../utils/naverDatalab.js";
 import { invalidatePrefix } from "../utils/responseCache.js";
+import { callGptInfo } from "../utils/gptInfo.js";
 import logger from "../utils/logger.js";
 
 const router = express.Router();
@@ -133,56 +134,38 @@ router.post("/update-all-prices", async (req, res) => {
   });
 });
 
-/* ==================== 모든 부품 spec GPT-5.4 재생성 ==================== */
-
-const SPEC_PROMPTS = {
-  cpu: (name) => `PC 부품 "${name}" (CPU)의 핵심 스펙을 한국어로 2문장 이내로 간결하게 설명하세요. 코어/스레드 수, 클럭속도, TDP, 소켓, 내장그래픽 여부를 포함하세요.`,
-  gpu: (name) => `PC 부품 "${name}" (GPU)의 핵심 스펙을 한국어로 2문장 이내로 간결하게 설명하세요. VRAM 용량/종류, 부스트 클럭, TDP, 인터페이스를 포함하세요.`,
-  memory: (name) => `PC 부품 "${name}" (RAM)의 핵심 스펙을 한국어로 1~2문장으로 설명하세요. DDR 세대, 속도(MHz), 용량(GB), CL 레이턴시를 포함하세요.`,
-  motherboard: (name) => `PC 부품 "${name}" (메인보드)의 핵심 스펙을 한국어로 2문장 이내로 설명하세요. 소켓, 칩셋, 폼팩터, 메모리 슬롯/규격을 포함하세요.`,
-  storage: (name) => `PC 부품 "${name}" (저장장치)의 핵심 스펙을 한국어로 1~2문장으로 설명하세요. 용량, 인터페이스(NVMe/SATA), 읽기/쓰기 속도를 포함하세요.`,
-  psu: (name) => `PC 부품 "${name}" (파워서플라이)의 핵심 스펙을 한국어로 1~2문장으로 설명하세요. 출력(W), 80Plus 등급, 모듈러 여부를 포함하세요.`,
-  case: (name) => `PC 부품 "${name}" (케이스)의 핵심 스펙을 한국어로 1~2문장으로 설명하세요. 폼팩터 지원, 드라이브 베이, 쿨링 지원을 포함하세요.`,
-  cooler: (name) => `PC 부품 "${name}" (CPU 쿨러)의 핵심 스펙을 한국어로 1~2문장으로 설명하세요. 냉각 방식, 지원 소켓, TDP, 팬 크기를 포함하세요.`,
-};
-
-async function generateSpecInfo(name, category) {
-  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
-  const promptFn = SPEC_PROMPTS[category] || ((n) => `PC 부품 "${n}"의 핵심 스펙을 한국어로 2문장 이내로 설명하세요.`);
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-5.4",
-      messages: [{ role: "user", content: promptFn(name) }],
-      max_completion_tokens: 200,
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!resp.ok) throw new Error(`OpenAI ${resp.status}`);
-  const data = await resp.json();
-  return data?.choices?.[0]?.message?.content?.trim() || "";
-}
+/* ==================== 모든 부품 spec + 한줄평 GPT-5.4 재생성 ==================== */
 
 router.post("/update-all-specs", async (req, res) => {
   const db = getDB();
   if (!db) return res.status(500).json({ error: "DB 연결 실패" });
 
   const category = req.body?.category || null;
+  const overwrite = req.body?.overwrite === true; // 기존 데이터 덮어쓰기 여부
   const filter = category ? { category } : {};
-  const parts = await db.collection("parts").find(filter, { projection: { _id: 1, name: 1, category: 1 } }).toArray();
+  const parts = await db.collection("parts").find(filter, { projection: { _id: 1, name: 1, category: 1, review: 1, specSummary: 1 } }).toArray();
 
-  res.json({ status: "started", total: parts.length, category: category || "전체" });
+  res.json({ status: "started", total: parts.length, category: category || "전체", overwrite });
 
   setImmediate(async () => {
-    let updated = 0, failed = 0;
+    let updated = 0, skipped = 0, failed = 0;
     for (const part of parts) {
+      // overwrite 옵션이 없으면 이미 review + specSummary 있는 부품은 건너뜀
+      if (!overwrite && part.review && part.specSummary) {
+        skipped++;
+        continue;
+      }
       try {
-        const info = await generateSpecInfo(part.name, part.category);
-        if (info) {
+        const { review, specSummary } = await callGptInfo(
+          part.name,
+          part.category,
+          "gpt-5.4",
+          OPENAI_API_KEY
+        );
+        if (review && specSummary) {
           await db.collection("parts").updateOne(
             { _id: part._id },
-            { $set: { info, specUpdatedAt: new Date().toISOString() } }
+            { $set: { review, specSummary, specUpdatedAt: new Date().toISOString() } }
           );
           updated++;
         }
@@ -190,9 +173,9 @@ router.post("/update-all-specs", async (req, res) => {
         logger.error(`spec 업데이트 실패: ${part.name} — ${err.message}`);
         failed++;
       }
-      await sleep(300);
+      await sleep(400);
     }
-    logger.info(`update-all-specs 완료: 성공 ${updated}개, 실패 ${failed}개 (총 ${parts.length}개)`);
+    logger.info(`update-all-specs 완료: 성공 ${updated}개, 건너뜀 ${skipped}개, 실패 ${failed}개 (총 ${parts.length}개)`);
   });
 });
 

@@ -10,6 +10,7 @@ import logger from "./utils/logger.js";
 import { validate } from "./middleware/validate.js";
 import { naverPriceQuerySchema, gptInfoSchema } from "./schemas/parts.js";
 import { validateNaverPrice } from "./utils/priceValidator.js";
+import { callGptInfo } from "./utils/gptInfo.js";
 
 import syncCPUsRouter from "./routes/syncCPUs.js";
 import syncGPUsRouter from "./routes/syncGPUs.js";
@@ -245,73 +246,41 @@ app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req
   }
 });
 
-// ============================================================
-// GPT 부품 정보 프롬프트 빌더
-// ============================================================
-function buildGptPrompts(partName) {
-  const reviewPrompt = `당신은 PC 부품 전문 리뷰어입니다. 반드시 이 특정 제품(${partName})에만 해당하는 한줄평을 작성하세요.\n\n규칙:\n- 이 제품 고유의 특징에 근거한 구체적인 장점 1가지 (수치, 성능 포지션, 설계 특성 등 포함)\n- 이 제품의 실제 한계나 단점 1가지 (구체적으로)\n- \"성능이 좋다\", \"가격이 합리적이다\", \"가성비가 뛰어나다\" 같은 모든 제품에 해당하는 범용 표현 절대 금지\n- 반드시 이 모델명에만 해당하는 내용으로 작성\n형식(다른 텍스트 없이): 장점: [내용], 단점: [내용]`;
+// callGptInfo는 utils/gptInfo.js에서 import
 
-  const specPrompt = `${partName}의 핵심 사양을 한 줄로 정리하세요.\n\nCPU이면: 코어/스레드 수, 베이스/부스트 클럭(GHz), L3 캐시(MB), TDP(W), 소켓\nGPU이면: VRAM 용량과 규격, 부스트 클럭(MHz), TDP(W), 출력 단자 종류\n메모리면: 용량(GB), DDR 규격, 속도(MHz), CAS 레이턴시\n저장장치면: 용량, 인터페이스(NVMe/SATA), 순차읽기/쓰기 속도(MB/s)\n메인보드면: 소켓, 칩셋, 지원 메모리 규격, 폼팩터\n파워면: 정격 출력(W), 80PLUS 등급, 모듈러 여부\n쿨러면: 방식(공낙/수낙), 팔 크기/개수, 지원 소켓, TDP 지원\n케이스면: 폼팩터, 지원 메인보드 크기, 팔/라이저 슬롯 수\n\n쉼표로 구분하여 한 줄로만 작성 (줄바바싸 없음)`;
-
-  return { reviewPrompt, specPrompt };
-}
-
-async function callGptInfo(partName, model) {
-  const { reviewPrompt, specPrompt } = buildGptPrompts(partName);
-  const useCompletionTokens = model !== "gpt-4o-mini";
-  const tokenParam = useCompletionTokens ? { max_completion_tokens: 200 } : { max_tokens: 200 };
-
-  const [reviewRes, specRes] = await Promise.all([
-    fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.openaiApiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: reviewPrompt }], temperature: 0.4, ...tokenParam }),
-    }),
-    fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.openaiApiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: specPrompt }], temperature: 0.2, ...tokenParam }),
-    }),
-  ]);
-
-  const reviewData = await reviewRes.json();
-  const specData = await specRes.json();
-
-  if (!reviewRes.ok) throw new Error(reviewData?.error?.message || `review API 오류 ${reviewRes.status}`);
-  if (!specRes.ok) throw new Error(specData?.error?.message || `spec API 오류 ${specRes.status}`);
-
-  return {
-    review: reviewData.choices?.[0]?.message?.content?.trim() || "한줄평 생성 실패",
-    specSummary: specData.choices?.[0]?.message?.content?.trim() || "사양 요약 실패",
-    usage: {
-      reviewTokens: reviewData.usage?.total_tokens || 0,
-      specTokens: specData.usage?.total_tokens || 0,
-    },
-  };
-}
-
-// 부품 한줄평 + 사양 요약 (gpt-5.4 — MongoDB 캐시로 부품당 1회만 호출)
+// 부품 한줄평 + 사양 요약 (gpt-5.4 — MongoDB에 캐시, 부품당 1회 생성)
 app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, res) => {
   const { partName } = req.body;
+  const name = partName.trim();
+
+  const db = getDB();
+  let category = null;
 
   try {
-    const db = getDB();
     if (db) {
-      const cached = await db.collection("parts").findOne(
-        { name: partName.trim() },
-        { projection: { review: 1, info: 1, specSummary: 1 } }
+      const part = await db.collection("parts").findOne(
+        { name },
+        { projection: { review: 1, specSummary: 1, info: 1, category: 1 } }
       );
-      if (cached?.review && (cached.info || cached.specSummary)) {
-        return res.json({ review: cached.review, specSummary: cached.specSummary || cached.info });
+      category = part?.category || null;
+      // DB에 이미 review + specSummary 있으면 반환
+      if (part?.review && (part.specSummary || part.info)) {
+        return res.json({ review: part.review, specSummary: part.specSummary || part.info });
       }
     }
   } catch (_) {}
 
   try {
-    const { review, specSummary } = await callGptInfo(partName.trim(), "gpt-5.4");
+    const { review, specSummary } = await callGptInfo(name, category, "gpt-5.4", config.openaiApiKey);
+    // DB에 저장 (이후 요청은 캐시 반환)
+    if (db) {
+      db.collection("parts")
+        .updateOne({ name }, { $set: { review, specSummary, specUpdatedAt: new Date().toISOString() } })
+        .catch((e) => logger.error(`gpt-info DB 저장 실패: ${e.message}`));
+    }
     res.json({ review, specSummary });
   } catch (error) {
-    logger.error(`GPT 통합 요청 실패: ${error.message}`);
+    logger.error(`GPT 정보 요청 실패: ${error.message}`);
     res.status(500).json({ error: "GPT 정보 요청 실패" });
   }
 });
@@ -322,12 +291,21 @@ app.post("/api/gpt-info-compare", requireAdminKey, async (req, res) => {
   if (!partName || typeof partName !== "string" || partName.trim().length < 1) {
     return res.status(400).json({ error: "partName이 필요합니다." });
   }
+  const db = getDB();
+  let category = null;
+  try {
+    if (db) {
+      const part = await db.collection("parts").findOne({ name: partName.trim() }, { projection: { category: 1 } });
+      category = part?.category || null;
+    }
+  } catch (_) {}
+
   const MODELS = ["gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4"];
   try {
     const results = await Promise.all(
       MODELS.map(async (model) => {
         try {
-          const result = await callGptInfo(partName.trim(), model);
+          const result = await callGptInfo(partName.trim(), category, model, config.openaiApiKey);
           return { model, ...result, error: null };
         } catch (e) {
           return { model, review: null, specSummary: null, usage: null, error: e.message };

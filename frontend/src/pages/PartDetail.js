@@ -36,6 +36,7 @@ export default function PartDetail() {
   // GPT 한줄평 on-demand
   const [gptLoading, setGptLoading] = useState(false);
   const [gptReview, setGptReview] = useState(null);
+  const [gptSpecSummary, setGptSpecSummary] = useState(null);
 
   // 다나와 링크
   const [danawaLoading, setDanawaLoading] = useState(false);
@@ -80,6 +81,7 @@ export default function PartDetail() {
     try {
       const data = await fetchGptInfo(part.name);
       setGptReview(data?.review || "AI 한줄평을 가져올 수 없습니다.");
+      if (data?.specSummary) setGptSpecSummary(data.specSummary);
     } catch {
       setGptReview("AI 한줄평 생성에 실패했습니다.");
     } finally {
@@ -207,20 +209,20 @@ export default function PartDetail() {
         </div>
       </div>
 
-      {part.info && (
-        <div className="mt-6">
-          <h3 className="text-lg font-bold text-white mb-3">상세 정보</h3>
-          <div className="border border-slate-600 rounded-xl p-5 bg-slate-800/30 backdrop-blur-sm">
-            <pre className="whitespace-pre-wrap text-base text-slate-200 leading-relaxed font-medium">{part.info}</pre>
-          </div>
-        </div>
-      )}
-
-      {part.specSummary && (
+      {(gptSpecSummary || part.specSummary || part.info) && (
         <div className="mt-6">
           <h3 className="text-lg font-bold text-white mb-3">주요 사양</h3>
           <div className="border border-slate-600 rounded-xl p-5 bg-slate-800/30 backdrop-blur-sm">
-            <pre className="whitespace-pre-wrap text-base text-slate-200 leading-relaxed font-medium">{part.specSummary}</pre>
+            <p className="text-base text-slate-200 leading-relaxed font-medium">
+              {(gptSpecSummary || part.specSummary || part.info)
+                .split("/")
+                .map((seg, i) => (
+                  <span key={i} className="inline-block">
+                    {i > 0 && <span className="text-slate-500 mx-1">/</span>}
+                    {seg.trim()}
+                  </span>
+                ))}
+            </p>
           </div>
         </div>
       )}
