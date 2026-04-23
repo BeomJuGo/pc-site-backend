@@ -5,7 +5,8 @@ import { getCache, setCache } from "../utils/responseCache.js";
 import { setCacheHeaders } from "../middleware/httpCache.js";
 import { validate } from "../middleware/validate.js";
 import { searchNaverShopping, parseNaverItems } from "../utils/naverShopping.js";
-import { filterValidNaverItems, validateNaverPrice } from "../utils/priceValidator.js";
+import { validateNaverPrice } from "../utils/priceValidator.js";
+import { applyStrictFilters, selectRobustLowest } from "../utils/priceResolver.js";
 import { priceCheckSchema } from "../schemas/parts.js";
 import logger from "../utils/logger.js";
 
@@ -28,10 +29,16 @@ async function getPriceData(category, name) {
   ]);
 
   const rawItems = naverData?.items ?? [];
-  const validRawItems = filterValidNaverItems(name, rawItems);
-  const naverMalls = parseNaverItems({ ...naverData, items: validRawItems });
-  const lowestNaver = naverMalls[0]?.price ?? null;
-  const lowestMall = naverMalls[0]?.mallName ?? null;
+  // 목록 가격과 동일한 강한 5단계 검증 적용 (토큰 + 중고/리퍼 + 브랜드 매칭)
+  const parsed = parseNaverItems(naverData);
+  const validItems = applyStrictFilters(name, parsed);
+  const sorted = validItems.slice().sort((a, b) => a.price - b.price);
+
+  // 이상치 제거 후 최저가 결정 (목록 업데이트와 동일 로직)
+  const { price: lowestNaver, outlierRemoved } = selectRobustLowest(sorted);
+  // 표시용 malls 리스트에서도 이상치로 판정된 아이템들 제거해 일관성 유지
+  const displayMalls = sorted.slice(outlierRemoved);
+  const lowestMall = displayMalls[0]?.mallName ?? null;
   const validation = validateNaverPrice(name, rawItems, stored?.price ?? null);
 
   const result = {
@@ -39,12 +46,12 @@ async function getPriceData(category, name) {
     category,
     storedPrice: stored?.price ?? null,
     lastUpdated: stored?.updatedAt ?? null,
-    naverMalls: naverMalls.slice(0, 10),
-    lowestPrice: lowestNaver,
+    naverMalls: displayMalls.slice(0, 10),
+    lowestPrice: lowestNaver || null,
     lowestMall,
-    priceGap: stored?.price && lowestNaver != null ? stored.price - lowestNaver : null,
-    inStock: naverMalls.length > 0,
-    mallCount: naverMalls.length,
+    priceGap: stored?.price && lowestNaver > 0 ? stored.price - lowestNaver : null,
+    inStock: displayMalls.length > 0,
+    mallCount: displayMalls.length,
     validation,
     checkedAt: new Date().toISOString(),
   };
