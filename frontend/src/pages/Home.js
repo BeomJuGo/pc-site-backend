@@ -91,14 +91,14 @@ export default function Home() {
               {CATEGORIES.map((cat, i) => (
                 <Card
                   key={i}
-                  className="group hover:shadow-xl transition-all duration-500 cursor-pointer bg-white/80 backdrop-blur-sm border-slate-200/50 hover:bg-white hover:scale-105 hover:-translate-y-2 animate-fade-in-up hover-lift"
+                  className="group hover:shadow-xl transition-all duration-500 cursor-pointer bg-slate-800/50 backdrop-blur-sm border-slate-700/50 hover:bg-slate-700/60 hover:scale-105 hover:-translate-y-2 animate-fade-in-up hover-lift"
                   style={{ animationDelay: `${i * 100}ms` }}
                   onClick={() => window.location.href = cat.href}
                 >
                   <CardHeader className="text-center pb-4">
                     <div className="text-5xl mb-3 group-hover:scale-110 transition-transform duration-300">{cat.icon}</div>
-                    <CardTitle className="text-xl font-bold text-slate-800 group-hover:text-slate-900">{cat.title}</CardTitle>
-                    <CardDescription className="text-slate-600 font-medium">{cat.description}</CardDescription>
+                    <CardTitle className="text-xl font-bold text-white">{cat.title}</CardTitle>
+                    <CardDescription className="text-slate-300 font-medium">{cat.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="text-center pt-0">
                     <Button
@@ -125,13 +125,13 @@ export default function Home() {
               {FEATURES.map((feature, i) => (
                 <Card
                   key={i}
-                  className="text-center bg-white/70 backdrop-blur-sm border-slate-200/50 hover:bg-white hover:shadow-xl transition-all duration-500 hover:scale-105 animate-fade-in-up hover-lift"
+                  className="text-center bg-slate-800/50 backdrop-blur-sm border-slate-700/50 hover:bg-slate-700/60 hover:shadow-xl transition-all duration-500 hover:scale-105 animate-fade-in-up hover-lift"
                   style={{ animationDelay: `${i * 200}ms` }}
                 >
                   <CardHeader>
                     <div className="text-4xl mb-3">{feature.icon}</div>
-                    <CardTitle className="text-xl font-bold text-slate-800">{feature.title}</CardTitle>
-                    <CardDescription className="text-base text-slate-600 font-medium">{feature.description}</CardDescription>
+                    <CardTitle className="text-xl font-bold text-white">{feature.title}</CardTitle>
+                    <CardDescription className="text-base text-slate-300 font-medium">{feature.description}</CardDescription>
                   </CardHeader>
                 </Card>
               ))}
