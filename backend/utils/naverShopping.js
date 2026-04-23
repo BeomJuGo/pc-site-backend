@@ -2,13 +2,13 @@ import logger from "./logger.js";
 
 const API_URL = "https://openapi.naver.com/v1/search/shop.json";
 
-export async function searchNaverShopping(query, display = 20) {
+export async function searchNaverShopping(query, display = 20, sort = "sim") {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
 
   try {
-    const url = `${API_URL}?query=${encodeURIComponent(query)}&display=${display}&sort=sim`;
+    const url = `${API_URL}?query=${encodeURIComponent(query)}&display=${display}&sort=${sort}`;
     const res = await fetch(url, {
       headers: {
         "X-Naver-Client-Id": clientId,
@@ -30,7 +30,7 @@ export async function searchNaverShopping(query, display = 20) {
 export function parseNaverItems(data) {
   if (!data?.items?.length) return [];
   return data.items
-    .filter((item) => item.lprice && parseInt(item.lprice) > 0)
+    .filter((item) => item.lprice && parseInt(item.lprice) >= 1000)
     .map((item) => ({
       mallName: item.mallName || "기타",
       title: item.title.replace(/<[^>]*>/g, "").trim(),

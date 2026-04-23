@@ -1,0 +1,100 @@
+name: Sync All Parts
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+    concurrency:
+      group: sync-all
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Sync CPUs
+        run: node scripts/sync-cpus.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "10"
+          BENCH_PAGES: "6"
+          AI: "true"
+
+      - name: Sync GPUs
+        run: node scripts/sync-gpus.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "5"
+          AI: "true"
+
+      - name: Sync Motherboards
+        run: node scripts/sync-motherboard.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "3"
+          AI: "true"
+
+      - name: Sync Memory
+        run: node scripts/sync-memory.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "3"
+          AI: "true"
+
+      - name: Sync PSU
+        run: node scripts/sync-psu.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "3"
+          AI: "true"
+
+      - name: Sync Coolers
+        run: node scripts/sync-cooler.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "3"
+          AI: "true"
+
+      - name: Sync Storage
+        run: node scripts/sync-storage.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "3"
+          AI: "true"
+
+      - name: Sync Cases
+        run: node scripts/sync-case.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "8"
+          AI: "true"
+
+      - name: Done
+        run: echo "🎉 전체 sync 완료"

@@ -3,6 +3,8 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, BLOCK_HOSTS, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 
 const router = express.Router();
 const MIN_PASSMARK_SCORE_FOR_SAVE = 10000;
@@ -90,7 +92,7 @@ async function fetchAiOneLiner({ name, spec }) {
         method: "POST",
         headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-5.4",
           temperature: 0.4,
           messages: [
             { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
@@ -545,21 +547,24 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       review = tag;
     }
 
-    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name) };
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(cpu.name);
+    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: naverPrice, mallCount: mallCount || 0 };
     const hasExistingBench = old?.benchScore && old.benchScore > 0;
     if (!hasExistingBench) update.benchScore = benchScore;
     if (review) update.review = review;
 
     if (old) {
-      await col.updateOne({ _id: old._id }, { $set: update, $unset: { specSummary: "" } });
+      const today = new Date().toISOString().slice(0, 10);
+      const ops = { $set: update, $unset: { specSummary: "" } };
+      if (naverPrice > 0 && naverPrice !== old.price) {
+        const priceHistory = old.priceHistory || [];
+        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
+      }
+      await col.updateOne({ _id: old._id }, ops);
       updated++;
     } else {
-      const today = new Date().toISOString().slice(0, 10);
-      await col.insertOne({
-        name: cpu.name, ...update,
-        price: cpu.price || 0,
-        priceHistory: cpu.price > 0 ? [{ date: today, price: cpu.price }] : [],
-      });
+      const priceHistory = naverPrice > 0 ? [{ date: new Date().toISOString().slice(0, 10), price: naverPrice }] : [];
+      await col.insertOne({ name: cpu.name, ...update, priceHistory });
       inserted++;
     }
     if (ai) await sleep(200);
@@ -576,6 +581,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 }
 
 router.post("/sync-cpus", async (req, res) => {
+  if (!acquireLock("cpu")) return res.status(409).json({ error: "SYNC_IN_PROGRESS", running: getRunning() });
   try {
     const maxPages = parseInt(req.body?.pages || req.body?.maxPages) || 15;
     const benchPages = parseInt(req.body?.benchPages) || 10;
@@ -593,7 +599,7 @@ router.post("/sync-cpus", async (req, res) => {
         console.log("\uD83C\uDF89 CPU \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
         console.error("\u274c \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
-      }
+      } finally { releaseLock("cpu"); }
     });
   } catch (err) {
     console.error("\u274c sync-cpus \uc2e4\ud328", err);
@@ -610,5 +616,4 @@ export async function runSync({ pages = 15, benchPages = 10, ai = true, force = 
   invalidatePartsCache();
   console.log("🎉 CPU 동기화 완료");
 }
-
 export default router;

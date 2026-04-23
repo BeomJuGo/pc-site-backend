@@ -9,12 +9,17 @@ import { valueRankQuerySchema, budgetPicksQuerySchema, batchQuerySchema, searchQ
 
 const router = express.Router();
 
+// 사용자 입력 Regex 특수문자 이스케이프 (ReDoS 방어)
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function findPartByName(db, category, rawName) {
   const decoded = decodeURIComponent(rawName);
   let part = await db.collection("parts").findOne({ category, name: decoded });
   if (part) return part;
   const cleanName = decoded.split("(")[0].trim();
-  const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = escapeRegex(cleanName);
   part = await db.collection("parts").findOne({ category, name: { $regex: `^${escaped}`, $options: "i" } });
   if (part) return part;
   return db.collection("parts").findOne({ category, name: { $regex: escaped, $options: "i" } });
@@ -44,7 +49,8 @@ router.get("/", setCacheHeaders(60), async (req, res) => {
     const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 100));
     const skip = (pageNum - 1) * limitNum;
     const [parts, total] = await Promise.all([
-      db.collection("parts").find(query).skip(skip).limit(limitNum).toArray(),
+      // priceHistory 제외: 목록 조회 시 불필요한 대용량 필드 차단
+      db.collection("parts").find(query).project({ priceHistory: 0 }).skip(skip).limit(limitNum).toArray(),
       db.collection("parts").countDocuments(query),
     ]);
     res.set("X-Total-Count", String(total));
@@ -70,9 +76,10 @@ router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60),
 
     const searchTerms = [q, manufacturer].filter(Boolean);
     if (searchTerms.length === 1) {
-      filter.name = { $regex: searchTerms[0].trim(), $options: "i" };
+      // escapeRegex로 ReDoS 방어
+      filter.name = { $regex: escapeRegex(searchTerms[0].trim()), $options: "i" };
     } else if (searchTerms.length === 2) {
-      filter.$and = searchTerms.map((t) => ({ name: { $regex: t.trim(), $options: "i" } }));
+      filter.$and = searchTerms.map((t) => ({ name: { $regex: escapeRegex(t.trim()), $options: "i" } }));
     }
 
     if (priceMin || priceMax) {
@@ -270,7 +277,7 @@ router.get("/:category/:name/trend", async (req, res) => {
   }
 });
 
-// 가격 히스토리: GET /api/parts/:category/:name/history
+// GET /api/parts/:category/:name/history
 router.get("/:category/:name/history", async (req, res) => {
   const { category, name } = req.params;
   try {
@@ -283,7 +290,7 @@ router.get("/:category/:name/history", async (req, res) => {
   }
 });
 
-// 상세 정보: GET /api/parts/:category/:name
+// GET /api/parts/:category/:name
 router.get("/:category/:name", setCacheHeaders(60), async (req, res) => {
   const { category, name } = req.params;
   try {

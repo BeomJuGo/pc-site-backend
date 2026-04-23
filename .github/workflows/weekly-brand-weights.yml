@@ -1,0 +1,32 @@
+name: Weekly Brand Weights Update
+
+on:
+  schedule:
+    - cron: "0 16 * * 1"   # 매주 월요일 KST 01:00 (UTC 16:00)
+  workflow_dispatch:
+
+jobs:
+  update-brand-weights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      BACKEND_URL: https://pc-site-backend.onrender.com
+
+    steps:
+      - name: Update brand popularity weights via Naver DataLab
+        shell: bash
+        run: |
+          http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST "$BACKEND_URL/api/admin/update-brand-weights" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}") || true
+
+          echo "HTTP $http_code — $(cat /tmp/resp.txt || true)"
+
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "✅ Brand weights update triggered"
+          else
+            echo "❌ Failed (HTTP $http_code)"
+            exit 1
+          fi

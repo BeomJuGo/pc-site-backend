@@ -25,8 +25,22 @@ export async function getBrowserConfig() {
 
   if (isCloudEnv) {
     chromium.setGraphicsMode = false;
+    const extraArgs = [
+      '--single-process',              // 프로세스 공유로 메모리 절약
+      '--disable-dev-shm-usage',       // /dev/shm 대신 /tmp 사용 (컨테이너 필수)
+      '--js-flags=--max-old-space-size=256', // JS 힙 제한 256MB
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--disable-extensions',
+      '--disable-sync',
+      '--no-first-run',
+    ];
+    const mergedArgs = [
+      ...chromium.args,
+      ...extraArgs.filter(a => !chromium.args.some(e => e.startsWith(a.split('=')[0]))),
+    ];
     return {
-      args: chromium.args,
+      args: mergedArgs,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
@@ -66,6 +80,31 @@ export async function getBrowserConfig() {
 export async function launchBrowser() {
   const config = await getBrowserConfig();
   return await puppeteer.launch(config);
+}
+
+// 브라우저가 Network.enable 타임아웃 등으로 뻗었을 때 재시작 가능한 래퍼
+export async function withBrowserPage(fn, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let browser;
+    try {
+      browser = await launchBrowser();
+      const page = await browser.newPage();
+      const result = await fn(browser, page);
+      return result;
+    } catch (err) {
+      const isProtocolError = err.message?.includes('Network.enable') || err.message?.includes('Protocol error') || err.message?.includes('Target closed');
+      if (isProtocolError && attempt < retries) {
+        console.warn(`⚠️ 브라우저 프로토콜 오류 (시도 ${attempt + 1}/${retries + 1}), 재시작...`);
+        await sleep(3000);
+      } else {
+        throw err;
+      }
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+    }
+  }
 }
 
 /**

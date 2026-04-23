@@ -4,6 +4,8 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
+import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
@@ -276,7 +278,7 @@ async function fetchAiOneLiner({ name, spec }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gpt-5.4",
           temperature: 0.4,
           messages: [
             { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
@@ -363,6 +365,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
+    const { price: naverPrice, mallCount } = await fetchNaverPrice(p.name);
     const hasExistingBench = old?.benchmarkScore?.["3dmarkscore"] && old.benchmarkScore["3dmarkscore"] > 0;
     const benchmarkScore = hasExistingBench
       ? old.benchmarkScore
@@ -371,6 +374,8 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     const update = {
       category: "gpu",
       image: p.image,
+      price: naverPrice || 0,
+      mallCount: mallCount || 0,
       manufacturer: extractManufacturer(p.name),
       review,
       specSummary,
@@ -378,14 +383,19 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     };
 
     if (old) {
-      await col.updateOne({ _id: old._id }, { $set: update });
+      const ops = { $set: update };
+      if (naverPrice > 0 && naverPrice !== old.price) {
+        const priceHistory = old.priceHistory || [];
+        const already = priceHistory.some(ph => ph.date === today);
+        if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
+      }
+      await col.updateOne({ _id: old._id }, ops);
       console.log("\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8\ub428:", p.name);
     } else {
       await col.insertOne({
         name: p.name,
         ...update,
-        price: p.price || 0,
-        priceHistory: p.price > 0 ? [{ date: today, price: p.price }] : [],
+        priceHistory: naverPrice > 0 ? [{ date: today, price: naverPrice }] : [],
       });
       console.log("\uD83C\uDD95 \uc0bd\uc785\ub428:", p.name);
     }
@@ -401,6 +411,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
 }
 
 router.post("/sync-gpus", async (req, res) => {
+  if (!acquireLock("gpu")) return res.status(409).json({ error: "SYNC_IN_PROGRESS", running: getRunning() });
   const maxPages = Number(req?.body?.pages) || 5;
   const ai = req.body?.ai !== false;
   const force = req.body?.force === true;
@@ -417,7 +428,7 @@ router.post("/sync-gpus", async (req, res) => {
       console.log("\uD83C\uDF89 \ubaa8\ub4e0 GPU \uc815\ubcf4 \uc800\uc7a5 \uc644\ub8cc");
     } catch (err) {
       console.error("\u274C GPU \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
-    }
+    } finally { releaseLock("gpu"); }
   });
 });
 
@@ -428,5 +439,4 @@ export async function runSync({ pages = 5, ai = true, force = false } = {}) {
   invalidatePartsCache();
   console.log("🎉 GPU 동기화 완료");
 }
-
 export default router;
