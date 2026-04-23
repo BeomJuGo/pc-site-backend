@@ -79,9 +79,11 @@ export async function fetchNaverPrice(partName) {
       //  - sorted[0] >= sorted[2]*0.7 이면 sorted[0] 사용 (정상 범위)
       //  - sorted[1] >= sorted[2]*0.7 이면 sorted[1] 사용 (한 개만 이상치)
       //  - 둘 다 너무 낮으면 sorted[2] 사용 (두 개 이상치)
-      if (sorted[0].price >= sorted[2].price * 0.7) {
+      // 임계값 0.8: 3번째 최저가의 80% 미만이면 이상치로 간주
+      const floor = sorted[2].price * 0.8;
+      if (sorted[0].price >= floor) {
         price = sorted[0].price;
-      } else if (sorted[1].price >= sorted[2].price * 0.7) {
+      } else if (sorted[1].price >= floor) {
         logger.info(`fetchNaverPrice: 이상치1 제거 (${partName}) ${sorted[0].price} → ${sorted[1].price}`);
         price = sorted[1].price;
       } else {
