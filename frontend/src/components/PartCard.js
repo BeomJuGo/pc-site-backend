@@ -36,16 +36,17 @@ export default function PartCard({ part, onClick }) {
   return (
     <div
       onClick={onClick}
-      className="w-full cursor-pointer border border-slate-200 rounded-lg px-4 py-5 hover:bg-slate-50 transition bg-white shadow-sm relative group"
+      className="w-full cursor-pointer px-4 py-4 hover:bg-slate-700/30 transition-colors relative group"
     >
+      {/* Hover action buttons */}
       <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
         <button
           onClick={handleFavorite}
           title={favorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
           className={`p-1.5 rounded-md transition-colors ${
             favorited
-              ? "bg-pink-100 text-pink-500"
-              : "bg-slate-100 text-slate-400 hover:text-pink-500 hover:bg-pink-50"
+              ? "bg-pink-900/60 text-pink-400"
+              : "bg-slate-700/60 text-slate-400 hover:text-pink-400 hover:bg-pink-900/40"
           }`}
         >
           <svg className="w-4 h-4" fill={favorited ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
@@ -57,8 +58,8 @@ export default function PartCard({ part, onClick }) {
           title={comparing ? "비교 제거" : "비교에 추가 (최대 3개)"}
           className={`p-1.5 rounded-md transition-colors ${
             comparing
-              ? "bg-blue-100 text-blue-500"
-              : "bg-slate-100 text-slate-400 hover:text-blue-500 hover:bg-blue-50"
+              ? "bg-blue-900/60 text-blue-400"
+              : "bg-slate-700/60 text-slate-400 hover:text-blue-400 hover:bg-blue-900/40"
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,32 +68,33 @@ export default function PartCard({ part, onClick }) {
         </button>
       </div>
 
-      <div className="flex items-center gap-5">
-        <div className="w-20 h-20 flex-shrink-0 rounded bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
+      <div className="flex items-center gap-4">
+        <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-slate-700/50 border border-slate-600/50 flex items-center justify-center overflow-hidden">
           {part.image && !part.image.includes("noImg") && !part.image.includes("noData") ? (
             <img
               src={part.image}
               alt={name}
               className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
               onError={(e) => {
                 e.target.style.display = "none";
-                e.target.nextSibling?.classList.remove("hidden");
+                if (e.target.nextSibling) e.target.nextSibling.classList.remove("hidden");
               }}
             />
           ) : (
-            <span className="text-xs text-slate-400">NO IMAGE</span>
+            <span className="text-xs text-slate-500">NO IMG</span>
           )}
-          <span className="text-xs text-slate-400 hidden">NO IMAGE</span>
+          <span className="text-xs text-slate-500 hidden">NO IMG</span>
         </div>
         <div className="flex-1 min-w-0 pr-16">
-          <h3 className="text-lg font-semibold text-slate-900 break-words leading-snug">{name}</h3>
+          <h3 className="text-[15px] font-semibold text-slate-100 break-words leading-snug">{name}</h3>
           {part.review && (
-            <p className="mt-2 text-sm text-slate-600 break-words leading-relaxed">{part.review}</p>
+            <p className="mt-1 text-[12px] text-slate-400 truncate leading-relaxed">{part.review}</p>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          <div className="text-xl font-bold text-slate-900">{priceText}</div>
-          {subScore && <div className="text-sm text-slate-500 font-medium">{subScore}</div>}
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <div className="text-[16px] font-bold text-white">{priceText}</div>
+          {subScore && <div className="text-[12px] text-slate-400">{subScore}</div>}
         </div>
       </div>
     </div>
