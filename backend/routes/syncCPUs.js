@@ -3,8 +3,8 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, BLOCK_HOSTS, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { fetchNaverPrice } from "../utils/priceResolver.js";
 import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
+import { callGptInfo } from "../utils/gptInfo.js";
 
 const router = express.Router();
 const MIN_PASSMARK_SCORE_FOR_SAVE = 10000;
@@ -83,35 +83,10 @@ function matchCpuNames(danawaName, benchmarkName) {
   return coreTokens1.every(t => norm2.includes(t)) && coreTokens2.every(t => norm1.includes(t));
 }
 
-async function fetchAiOneLiner({ name, spec }) {
-  if (!OPENAI_API_KEY) return { review: "", info: "" };
-  const prompt = `CPU "${name}"(스펙: ${spec})의 한줄평과 상세 스펙 설명을 JSON으로 작성: {"review":"<100자 이내>", "info":"<코어/스레드/클럭/캐시/TDP/소켓/지원 기능 등을 한 문단으로 요약>"}`;
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gpt-5.4",
-          temperature: 0.4,
-          messages: [
-            { role: "system", content: "너는 PC 부품 전문가야. JSON만 출력해." },
-            { role: "user", content: prompt },
-          ],
-        }),
-      });
-      const data = await res.json();
-      const raw = data?.choices?.[0]?.message?.content || "";
-      const start = raw.indexOf("{");
-      const end = raw.lastIndexOf("}") + 1;
-      const parsed = JSON.parse(raw.slice(start, end));
-      return { review: parsed.review?.trim() || "", info: parsed.info?.trim() || "" };
-    } catch (e) {
-      await sleep(800 * Math.pow(2, i));
-    }
-  }
-  return { review: "", info: "" };
-}
+const isValidSpec = (s) =>
+  typeof s === "string" &&
+  (s.match(/\//g) || []).length >= 2 &&
+  (/:\s/.test(s) || /^(AMD|NVIDIA|Intel)/i.test(s));
 
 function extractSocket(name = "", spec = "") {
   const combined = `${name} ${spec}`;
@@ -515,16 +490,18 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 
     let review = old?.review?.trim() ? old.review : "";
     let info = hasDetailedSpec ? crawledSpec : (old?.info?.trim() || baseInfo);
+    let specSummary = old?.specSummary || "";
 
     if (ai) {
-      const needsReview = !old?.review || old.review.trim() === "";
-      const oldInfoTrimmed = old?.info?.trim() || "";
-      const needsInfo = force || oldInfoTrimmed === "" || (hasDetailedSpec && oldInfoTrimmed !== crawledSpec) || (!hasDetailedSpec && oldInfoTrimmed === baseInfo.trim());
-      if (needsReview || needsInfo) {
-        const aiRes = await fetchAiOneLiner({ name: cpu.name, spec: hasDetailedSpec ? crawledSpec : cpu.spec });
-        if (aiRes.review) review = aiRes.review;
-        if (aiRes.info && aiRes.info.trim().length > info.length) info = aiRes.info;
-        else if (hasDetailedSpec) info = crawledSpec;
+      const needsAI = force || !old?.review || !isValidSpec(old?.specSummary);
+      if (needsAI) {
+        try {
+          const aiRes = await callGptInfo(cpu.name, "cpu", "gpt-5.4", OPENAI_API_KEY);
+          if (aiRes.review) review = aiRes.review;
+          if (aiRes.specSummary) specSummary = aiRes.specSummary;
+        } catch (e) {
+          console.error(`AI \uC0DD\uC131 \uC2E4\uD328: ${cpu.name} \u2014 ${e.message}`);
+        }
       }
     } else {
       review = old?.review || review;
@@ -547,30 +524,22 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       review = tag;
     }
 
-    const { price: naverPrice, mallCount } = await fetchNaverPrice(cpu.name);
-    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: naverPrice, mallCount: mallCount || 0 };
+    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name) };
     const hasExistingBench = old?.benchScore && old.benchScore > 0;
     if (!hasExistingBench) update.benchScore = benchScore;
     if (review) update.review = review;
+    if (specSummary) update.specSummary = specSummary;
 
     if (old) {
-      const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update, $unset: { specSummary: "" } };
-      if (naverPrice > 0 && naverPrice !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
     } else {
-      const priceHistory = naverPrice > 0 ? [{ date: new Date().toISOString().slice(0, 10), price: naverPrice }] : [];
-      await col.insertOne({ name: cpu.name, ...update, priceHistory });
+      const today = new Date().toISOString().slice(0, 10);
+      await col.insertOne({ name: cpu.name, ...update, price: cpu.price, mallCount: 0, priceHistory: cpu.price > 0 ? [{ date: today, price: cpu.price }] : [] });
       inserted++;
     }
-    if (ai) await sleep(200);
+    if (ai) await sleep(400);
   }
-
-  await col.updateMany({ category: "cpu", specSummary: { $exists: true } }, { $unset: { specSummary: "" } });
 
   const currentNames = new Set(cpus.map((c) => c.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);

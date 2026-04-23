@@ -4,9 +4,9 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
-import { fetchNaverPrice } from "../utils/priceResolver.js";
 import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
+import { callGptInfo } from "../utils/gptInfo.js";
 
 const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -261,48 +261,10 @@ const extractManufacturer = (name = "") => {
   return "";
 };
 
-async function fetchAiOneLiner({ name, spec }) {
-  if (!OPENAI_API_KEY) {
-    console.log("\u26A0\uFE0F OPENAI_API_KEY \ubbf8\uc124\uc815");
-    return { review: "", specSummary: "" };
-  }
-
-  const prompt = `GPU(\uadf8\ub798\ud53d\uce74\ub4dc) "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<VRAM/\ud074\ub7ed/\ucfe0\ub2e4\ucf54\uc5b4/\uc804\ub825>"}`;
-
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-5.4",
-          temperature: 0.4,
-          messages: [
-            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
-            { role: "user", content: prompt },
-          ],
-        }),
-      });
-
-      const data = await res.json();
-      const raw = data?.choices?.[0]?.message?.content || "";
-      const start = raw.indexOf("{");
-      const end = raw.lastIndexOf("}") + 1;
-      const parsed = JSON.parse(raw.slice(start, end));
-
-      return {
-        review: parsed.review?.trim() || "",
-        specSummary: parsed.specSummary?.trim() || "",
-      };
-    } catch (e) {
-      await sleep(800 * Math.pow(2, i));
-    }
-  }
-  return { review: "", specSummary: "" };
-}
+const isValidSpec = (s) =>
+  typeof s === "string" &&
+  (s.match(/\//g) || []).length >= 2 &&
+  (/:\s/.test(s) || /^(AMD|NVIDIA|Intel)/i.test(s));
 
 async function saveToDB(gpus, danawaProducts, options = {}) {
   const { ai = true, force = false } = options;
@@ -329,23 +291,20 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     const key = normalizeGpuKey(p.name);
     const score = key ? (scoreByKey.get(key) || 0) : 0;
 
-    let review = "";
-    let specSummary = p.spec || "";
+    let review = old?.review || "";
+    let specSummary = old?.specSummary || p.spec || "";
 
     if (ai) {
-      const needsReview = !old?.review || old.review.trim() === "";
-      const needsSpecSummary = !old?.specSummary || old.specSummary.trim() === "";
-      if (needsReview || needsSpecSummary || force) {
-        const aiRes = await fetchAiOneLiner({ name: p.name, spec: p.spec || "" });
-        review = aiRes.review || old?.review || "";
-        specSummary = aiRes.specSummary || old?.specSummary || p.spec || "";
-      } else {
-        review = old.review || "";
-        specSummary = old.specSummary || p.spec || "";
+      const needsAI = force || !old?.review || !isValidSpec(old?.specSummary);
+      if (needsAI) {
+        try {
+          const aiRes = await callGptInfo(p.name, "gpu", "gpt-5.4", OPENAI_API_KEY);
+          if (aiRes.review) review = aiRes.review;
+          if (aiRes.specSummary) specSummary = aiRes.specSummary;
+        } catch (e) {
+          console.error(`AI \uC0DD\uC131 \uC2E4\uD328: ${p.name} \u2014 ${e.message}`);
+        }
       }
-    } else {
-      review = old?.review || "";
-      specSummary = old?.specSummary || p.spec || "";
     }
 
     if (!review || review.trim() === "") {
@@ -364,8 +323,6 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
       review = tag;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const { price: naverPrice, mallCount } = await fetchNaverPrice(p.name);
     const hasExistingBench = old?.benchmarkScore?.["3dmarkscore"] && old.benchmarkScore["3dmarkscore"] > 0;
     const benchmarkScore = hasExistingBench
       ? old.benchmarkScore
@@ -374,8 +331,6 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     const update = {
       category: "gpu",
       image: p.image,
-      price: naverPrice || 0,
-      mallCount: mallCount || 0,
       manufacturer: extractManufacturer(p.name),
       review,
       specSummary,
@@ -383,24 +338,21 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     };
 
     if (old) {
-      const ops = { $set: update };
-      if (naverPrice > 0 && naverPrice !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        const already = priceHistory.some(ph => ph.date === today);
-        if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
-      console.log("\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8\ub428:", p.name);
+      await col.updateOne({ _id: old._id }, { $set: update });
+      console.log("\uD83D\uDD01 \uC5C5\uB370\uC774\uD2B8\uB428:", p.name);
     } else {
+      const today = new Date().toISOString().slice(0, 10);
       await col.insertOne({
         name: p.name,
         ...update,
-        priceHistory: naverPrice > 0 ? [{ date: today, price: naverPrice }] : [],
+        price: p.price,
+        mallCount: 0,
+        priceHistory: p.price > 0 ? [{ date: today, price: p.price }] : [],
       });
-      console.log("\uD83C\uDD95 \uc0bd\uc785\ub428:", p.name);
+      console.log("\uD83C\uDD95 \uC0BD\uC785\uB428:", p.name);
     }
 
-    if (ai) await sleep(200);
+    if (ai) await sleep(400);
   }
 
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);

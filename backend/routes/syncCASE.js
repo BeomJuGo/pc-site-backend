@@ -3,7 +3,7 @@ import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, sleep } from "../utils/browser.js";
 import { invalidatePartsCache } from "../utils/recommend-helpers.js";
-import { fetchNaverPrice } from "../utils/priceResolver.js";
+import { callGptInfo } from "../utils/gptInfo.js";
 import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 
 const router = express.Router();
@@ -11,49 +11,10 @@ const router = express.Router();
 const DANAWA_CASE_URL = "https://prod.danawa.com/list/?cate=112775";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-async function fetchAiOneLiner({ name, spec }) {
-  if (!OPENAI_API_KEY) {
-    console.log("\u26a0\ufe0f OPENAI_API_KEY \ubbf8\uc124\uc815");
-    return { review: "", specSummary: "" };
-  }
-
-  const prompt = `\ucf00\uc774\uc2a4 "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ud0c0\uc785/\ud3fc\ud329\ud130/\ud06c\uae30/\ud655\uc7a5\uc131>"}`;
-
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-5.4",
-          temperature: 0.4,
-          messages: [
-            { role: "system", content: "\ub108\ub294 PC \ubd80\ud488 \uc804\ubb38\uac00\uc57c. JSON\ub9cc \ucd9c\ub825\ud574." },
-            { role: "user", content: prompt },
-          ],
-        }),
-      });
-
-      const data = await res.json();
-      const raw = data?.choices?.[0]?.message?.content?.trim() || "";
-      const cleaned = raw.replace(/```json\n?|```\n?/g, "").trim();
-      const parsed = JSON.parse(cleaned);
-
-      return {
-        review: parsed.review || "",
-        specSummary: parsed.specSummary || spec,
-      };
-    } catch (e) {
-      console.log(`   \u26a0\ufe0f OpenAI \uc7ac\uc2dc\ub3c4 ${i + 1}/3 \uc2e4\ud328:`, e.message);
-      if (i < 2) await sleep(1000);
-    }
-  }
-
-  return { review: "", specSummary: "" };
-}
+const isValidSpec = (s) =>
+  typeof s === "string" &&
+  (s.match(/\//g) || []).length >= 2 &&
+  (/:\s/.test(s) || /^(AMD|NVIDIA|Intel)/i.test(s));
 
 function parseCaseSpecs(name = "", specText = "") {
   const combined = `${name} ${specText}`.toUpperCase();
@@ -225,46 +186,34 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
 
       const existing = await col.findOne({ category: "case", name: caseItem.name });
 
-      let review = "", specSummary = "";
+      let review = existing?.review || "";
+      let specSummary = existing?.specSummary || specs.info;
 
       if (ai) {
-        if (!existing?.review || force) {
-          console.log(`\n\uD83E\uDD16 AI \ud55c\uc904\ud3c9 \uc0dd\uc131 \uc911: ${caseItem.name.slice(0, 40)}...`);
-          const aiResult = await fetchAiOneLiner({ name: caseItem.name, spec: specs.info });
-          review = aiResult.review || existing?.review || "";
-          specSummary = aiResult.specSummary || existing?.specSummary || specs.info;
-          if (aiResult.review) { aiSuccess++; console.log(`   \u2705 AI \uc131\uacf5: "${aiResult.review.slice(0, 50)}..."`); }
-          else { aiFail++; console.log(`   \u26a0\ufe0f AI \uc2e4\ud328 (\uae30\ubcf8\uac12 \uc0ac\uc6a9)`); }
-        } else {
-          review = existing.review;
-          specSummary = existing.specSummary || specs.info;
+        const needsAI = force || !existing?.review || !isValidSpec(existing?.specSummary);
+        if (needsAI) {
+          try {
+            const aiRes = await callGptInfo(caseItem.name, "case", "gpt-5.4", OPENAI_API_KEY);
+            if (aiRes.review) review = aiRes.review;
+            if (aiRes.specSummary) specSummary = aiRes.specSummary;
+          } catch (e) {
+          console.error(`AI \uC0DD\uC131 \uC2E4\uD328: ${caseItem.name} \u2014 ${e.message}`);
+          }
         }
-      } else {
-        review = existing?.review || "";
-        specSummary = existing?.specSummary || specs.info;
       }
 
-      const { price: naverPrice, mallCount } = await fetchNaverPrice(caseItem.name);
       const update = {
         category: "case", manufacturer, info: specs.info, image: caseItem.image, specs,
-        price: naverPrice || 0, mallCount: mallCount || 0,
         ...(ai ? { review, specSummary } : {}),
       };
 
       if (existing) {
-        const today = new Date().toISOString().slice(0, 10);
-        const ops = { $set: update };
-        if (naverPrice > 0 && naverPrice !== existing.price) {
-          const priceHistory = existing.priceHistory || [];
-          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
-        }
-        await col.updateOne({ _id: existing._id }, ops);
+        await col.updateOne({ _id: existing._id }, { $set: update });
         updated++;
         console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       } else {
         const today = new Date().toISOString().slice(0, 10);
-        const priceHistory = naverPrice > 0 ? [{ date: today, price: naverPrice }] : [];
-        await col.insertOne({ name: caseItem.name, ...update, priceHistory });
+        await col.insertOne({ name: caseItem.name, ...update, price: caseItem.price, mallCount: 0, priceHistory: caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [] });
         inserted++;
         console.log(`\u2728 \uc2e0\uaddc \ucd94\uac00: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       }
