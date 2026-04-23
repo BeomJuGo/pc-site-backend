@@ -525,8 +525,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
     }
 
     const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name) };
-    const hasExistingBench = old?.benchScore && old.benchScore > 0;
-    if (!hasExistingBench) update.benchScore = benchScore;
+    if (benchScore > 0) update.benchmarkScore = { passmarkscore: benchScore };
     if (review) update.review = review;
     if (specSummary) update.specSummary = specSummary;
 
