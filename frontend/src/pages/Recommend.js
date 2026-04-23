@@ -14,7 +14,7 @@ export default function Recommend() {
     if (!budget) return alert("예산을 입력해주세요.");
     setLoading(true);
     try {
-      const res = await axios.post("https://pc-site-backend.onrender.com/api/recommend", {
+      const res = await axios.post("/api/recommend", {
         budget: Number(budget),
         purpose,
       });

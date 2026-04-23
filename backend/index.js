@@ -358,10 +358,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server for Render/traditional hosting; Vercel uses the exported app directly
-const PORT = config.port;
-app.listen(PORT, () => {
-  logger.info(`서버 실행 중: 포트 ${PORT}`);
-});
+// Start server only outside Vercel (Render, local dev)
+if (!process.env.VERCEL) {
+  const PORT = config.port;
+  app.listen(PORT, () => {
+    logger.info(`서버 실행 중: 포트 ${PORT}`);
+  });
+}
 
 export default app;

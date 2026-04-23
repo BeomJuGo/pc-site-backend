@@ -1,4 +1,4 @@
-const BASE_URL = "https://pc-site-backend.onrender.com";
+const BASE_URL = process.env.REACT_APP_API_URL ?? "";
 
 export const cleanName = (raw) => raw?.split("\n")[0].split("(")[0].trim();
 export const nameToSlug = (name) => encodeURIComponent(cleanName(name || ""));
