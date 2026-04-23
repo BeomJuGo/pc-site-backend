@@ -263,8 +263,9 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
         { projection: { review: 1, specSummary: 1, info: 1, category: 1 } }
       );
       category = part?.category || null;
-      // specSummary(새 구조화 형식)가 있어야 캐시로 인정 — info만 있는 구형 데이터는 재생성
-      if (part?.review && part?.specSummary) {
+      // specSummary(새 구조화 형식)가 있어야 캐시로 인정 — "항목명: 값" 형식("/")이 3개 이상 있어야 유효
+      const isValidSpec = (s) => typeof s === "string" && (s.match(/\//g) || []).length >= 2;
+      if (part?.review && isValidSpec(part?.specSummary)) {
         return res.json({ review: part.review, specSummary: part.specSummary });
       }
     }
@@ -272,8 +273,9 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
 
   try {
     const { review, specSummary } = await callGptInfo(name, category, "gpt-5.4", config.openaiApiKey);
-    // DB에 저장 (이후 요청은 캐시 반환)
-    if (db) {
+    // 형식이 유효할 때만 DB에 저장 (숫자만 나열된 불량 스펙은 캐시 안 함)
+    const isValidSpec = (s) => typeof s === "string" && (s.match(/\//g) || []).length >= 2;
+    if (db && isValidSpec(specSummary)) {
       db.collection("parts")
         .updateOne({ name }, { $set: { review, specSummary, specUpdatedAt: new Date().toISOString() } })
         .catch((e) => logger.error(`gpt-info DB 저장 실패: ${e.message}`));

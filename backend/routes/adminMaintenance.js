@@ -213,4 +213,30 @@ router.post("/update-brand-weights", async (req, res) => {
   });
 });
 
+/* ==================== 불량 스펙 캐시 정리 (슬래시 2개 미만인 specSummary 삭제) ==================== */
+
+router.post("/clear-bad-specs", async (req, res) => {
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DB 연결 실패" });
+
+  const category = req.body?.category || null;
+  const filter = category ? { category, specSummary: { $exists: true } } : { specSummary: { $exists: true } };
+  const parts = await db.collection("parts").find(filter, { projection: { _id: 1, name: 1, specSummary: 1 } }).toArray();
+
+  let cleared = 0;
+  for (const part of parts) {
+    const slashes = (part.specSummary?.match(/\//g) || []).length;
+    if (slashes < 2) {
+      await db.collection("parts").updateOne(
+        { _id: part._id },
+        { $unset: { specSummary: "", review: "" } }
+      );
+      cleared++;
+    }
+  }
+
+  logger.info(`clear-bad-specs 완료: ${cleared}개 삭제 (총 ${parts.length}개 검사)`);
+  res.json({ status: "ok", cleared, total: parts.length, category: category || "전체" });
+});
+
 export default router;
