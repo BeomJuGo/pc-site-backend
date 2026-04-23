@@ -3,11 +3,38 @@ import { filterValidNaverItems, extractCriticalTokens } from "./priceValidator.j
 import logger from "./logger.js";
 
 // 중고·리퍼·고장품 등 제외 키워드
-const JUNK_KEYWORDS = ["중고", "리퍼", "refurb", "고장", "파손", "부품용", "as용", "A/S용"];
+const JUNK_KEYWORDS = ["중고", "리퍼", "refurb", "고장", "파손", "부품용", "as용", "A/S용", "수리용"];
+
+// 부품명에서 추출할 브랜드/시리즈 지시어 (매치 요구 강화를 위해)
+const BRAND_TERMS = [
+  "amd", "intel", "nvidia",
+  "라이젠", "ryzen", "r3", "r5", "r7", "r9",
+  "지포스", "geforce", "rtx", "gtx",
+  "라데온", "radeon",
+  "코어", "core", "i3", "i5", "i7", "i9", "ultra",
+  "제온", "xeon",
+  "ddr3", "ddr4", "ddr5",
+  "nvme", "sata",
+];
 
 function isJunkListing(title) {
   const lower = String(title || "").toLowerCase();
   return JUNK_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+}
+
+/**
+ * 부품명에 포함된 브랜드/시리즈 지시어들을 반환.
+ * 필터에서 "모든 브랜드 토큰 중 최소 1개가 Naver 제목에 포함" 되는 것을 강제한다.
+ */
+function brandTokensInName(partName) {
+  const lower = String(partName || "").toLowerCase();
+  return BRAND_TERMS.filter((t) => lower.includes(t));
+}
+
+function hasAnyBrandToken(title, brandTokens) {
+  if (brandTokens.length === 0) return true; // 지시어 없으면 통과
+  const lower = String(title || "").toLowerCase();
+  return brandTokens.some((t) => lower.includes(t));
 }
 
 /**
@@ -24,9 +51,13 @@ export async function fetchNaverPrice(partName) {
     if (!items.length) return { price: 0, mallCount: 0 };
 
     const tokens = extractCriticalTokens(partName);
+    const brandTokens = brandTokensInName(partName);
     let validItems = tokens.length > 0 ? filterValidNaverItems(partName, items) : items;
     // 중고·리퍼·고장 제외
     validItems = validItems.filter((item) => !isJunkListing(item.title));
+    // 브랜드/시리즈 지시어 중 하나는 반드시 제목에 포함돼야 함
+    // (예: "1700"만 있는 제네릭 listings 제외, "라이젠/ryzen/r7" 등 포함 필요)
+    validItems = validItems.filter((item) => hasAnyBrandToken(item.title, brandTokens));
     if (!validItems.length) {
       logger.warn(`fetchNaverPrice: 유효 아이템 없음 (${partName}) — 건너뜀`);
       return { price: 0, mallCount: 0 };
