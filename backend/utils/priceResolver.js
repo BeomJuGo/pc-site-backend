@@ -81,7 +81,7 @@ export function selectRobustLowest(sorted) {
  */
 export async function fetchNaverPrice(partName) {
   try {
-    const data = await searchNaverShopping(partName, 20, "sim");
+    const data = await searchNaverShopping(partName, 40, "lprice");
     const items = parseNaverItems(data);
     if (!items.length) return { price: 0, mallCount: 0 };
 

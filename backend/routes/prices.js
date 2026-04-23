@@ -25,7 +25,7 @@ async function getPriceData(category, name) {
       { category, name },
       { projection: { name: 1, price: 1, updatedAt: 1, category: 1 } }
     ),
-    searchNaverShopping(name, 20),
+    searchNaverShopping(name, 40, "lprice"),
   ]);
 
   const rawItems = naverData?.items ?? [];
