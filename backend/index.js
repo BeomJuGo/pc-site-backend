@@ -264,7 +264,11 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
       );
       category = part?.category || null;
       // specSummary(새 구조화 형식)가 있어야 캐시로 인정 — "항목명: 값" 형식("/")이 3개 이상 있어야 유효
-      const isValidSpec = (s) => typeof s === "string" && (s.match(/\//g) || []).length >= 2;
+      // 유효한 스펙: 슬래시 2개 이상 AND ("항목명: 값" 콜론 패턴 존재 OR 브랜드 접두어로 시작)
+      const isValidSpec = (s) =>
+        typeof s === "string" &&
+        (s.match(/\//g) || []).length >= 2 &&
+        (/:\s/.test(s) || /^(AMD|NVIDIA|Intel|인텔|DDR[345]|NVMe|SATA|소켓|정격)/i.test(s));
       if (part?.review && isValidSpec(part?.specSummary)) {
         return res.json({ review: part.review, specSummary: part.specSummary });
       }
