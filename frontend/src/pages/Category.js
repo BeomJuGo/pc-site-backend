@@ -161,6 +161,13 @@ export default function Category() {
       if (sortBy === "price-desc") return bP - aP;
       if (sortBy === "score") return bS - aS;
       if (sortBy === "3dmark") return b3d - a3d;
+      if (sortBy === "value") {
+        const aScore = category === "gpu" ? a3d : aS;
+        const bScore = category === "gpu" ? b3d : bS;
+        const aV = aP > 0 && aScore > 0 ? aScore / aP : 0;
+        const bV = bP > 0 && bScore > 0 ? bScore / bP : 0;
+        return bV - aV;
+      }
       return String(a.name).localeCompare(String(b.name));
     });
 
@@ -221,6 +228,7 @@ export default function Category() {
         >
           <option value="price">가격 낮은순</option>
           <option value="price-desc">가격 높은순</option>
+          {(category === "cpu" || category === "gpu") && <option value="value">가성비순</option>}
           {category === "gpu" && <option value="3dmark">3DMark 점수순</option>}
           {category === "cpu" && <option value="score">PassMark 점수순</option>}
           <option value="name">이름순</option>

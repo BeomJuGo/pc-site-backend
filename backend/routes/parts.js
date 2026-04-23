@@ -39,20 +39,37 @@ function computeTrend(priceHistory, days) {
   return { days, min, max, avg, first: prices[0], last: prices.at(-1), change, count: prices.length };
 }
 
-// GET /api/parts?category=cpu&page=1&limit=50
+const VALUE_SORT_SCORE = { cpu: "passmarkscore", gpu: "3dmarkscore" };
+
+// GET /api/parts?category=cpu&page=1&limit=50&sort=value_desc
 router.get("/", setCacheHeaders(60), async (req, res) => {
-  const { category, page, limit } = req.query;
+  const { category, page, limit, sort } = req.query;
   try {
     const db = getDB();
     const query = category ? { category } : {};
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 100));
     const skip = (pageNum - 1) * limitNum;
+
     const [parts, total] = await Promise.all([
-      // priceHistory 제외: 목록 조회 시 불필요한 대용량 필드 차단
-      db.collection("parts").find(query).project({ priceHistory: 0 }).skip(skip).limit(limitNum).toArray(),
+      (() => {
+        const scoreKey = category && VALUE_SORT_SCORE[category];
+        if (sort === "value_desc" && scoreKey) {
+          const scoreField = `$benchmarkScore.${scoreKey}`;
+          return db.collection("parts").aggregate([
+            { $match: { ...query, price: { $gt: 0 }, benchmarkScore: { $exists: true } } },
+            { $addFields: { _vs: { $cond: [{ $gt: [{ $ifNull: [scoreField, 0] }, 0] }, { $divide: [scoreField, "$price"] }, 0] } } },
+            { $sort: { _vs: -1 } },
+            { $skip: skip },
+            { $limit: limitNum },
+            { $project: { priceHistory: 0, _vs: 0 } },
+          ]).toArray();
+        }
+        return db.collection("parts").find(query).project({ priceHistory: 0 }).skip(skip).limit(limitNum).toArray();
+      })(),
       db.collection("parts").countDocuments(query),
     ]);
+
     res.set("X-Total-Count", String(total));
     res.set("X-Page", String(pageNum));
     res.set("X-Total-Pages", String(Math.ceil(total / limitNum)));

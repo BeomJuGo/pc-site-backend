@@ -342,7 +342,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server only outside Vercel (Render, local dev)
+// Start server only outside Vercel (local dev)
 if (!process.env.VERCEL) {
   const PORT = config.port;
   app.listen(PORT, () => {
