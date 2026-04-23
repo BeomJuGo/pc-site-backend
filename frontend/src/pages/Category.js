@@ -45,19 +45,27 @@ export default function Category() {
     category === "motherboard" ? ["all", "amd", "intel"] : ["all"];
 
   const chipsetMap = {
-    amd: ["a620", "b650", "b750", "x670", "x770"],
-    intel: ["h610", "h710", "b760", "b860", "z790", "z890"],
+    amd: ["a520", "a620", "b450", "b550", "b650", "b850", "x470", "x670", "x870"],
+    intel: ["h510", "h610", "h810", "b660", "b760", "b860", "z690", "z790", "z890"],
   };
   const chipsetOptions = category === "motherboard" ? chipsetMap[brandFilter] || [] : [];
+
+  const brandKeywords = {
+    cpu: { intel: ["인텔", "intel"], amd: ["amd", "라이젠", "ryzen"] },
+    gpu: { nvidia: ["지포스", "geforce", "rtx", "gtx", "nvidia"], amd: ["라데온", "radeon", "amd"] },
+  };
 
   const filtered = parts
     .filter((p) => {
       const nm = String(p.name || "").toLowerCase();
+      const mfr = String(p.manufacturer || "").toLowerCase();
       const s = search.toLowerCase();
       const nameMatch = nm.includes(s);
       const brandMatch =
         brandFilter === "all" ||
-        ((category === "cpu" || category === "gpu") && nm.includes(brandFilter)) ||
+        ((category === "cpu" || category === "gpu") &&
+          (mfr === brandFilter ||
+            (brandKeywords[category]?.[brandFilter] || []).some((k) => nm.includes(k)))) ||
         (category === "motherboard" && (chipsetMap[brandFilter] || []).some((cs) => nm.includes(cs)));
       const chipsetMatch = category !== "motherboard" || chipsetFilter === "all" || nm.includes(chipsetFilter);
       return nameMatch && brandMatch && chipsetMatch;
