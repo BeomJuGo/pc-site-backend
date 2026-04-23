@@ -94,7 +94,7 @@ export default function Category() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("price");
+  const [sortBy, setSortBy] = useState(() => ["cpu", "gpu"].includes(category) ? "value" : "price");
   const [brandFilter, setBrandFilter] = useState("all");
   const [chipsetFilter, setChipsetFilter] = useState("all");
   const [memCapFilter, setMemCapFilter] = useState("all");
@@ -126,7 +126,7 @@ export default function Category() {
     setCaseFormFilter("all");
     setPsuWattFilter("all");
     setSearch("");
-    setSortBy("price");
+    setSortBy(["cpu", "gpu"].includes(category) ? "value" : "price");
   }, [category]);
 
   const brandOptions =
