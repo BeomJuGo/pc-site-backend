@@ -14,24 +14,35 @@ const router = express.Router();
 
 const CACHE_TTL = 60 * 60 * 1000; // 1시간
 
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function getPriceData(category, name) {
   const cacheKey = `prices:${category}:${name}`;
   const cached = await getCache(cacheKey);
   if (cached) return { ...cached, _fromCache: true };
 
   const db = getDB();
-  const [stored, naverData] = await Promise.all([
-    db.collection("parts").findOne(
-      { category, name },
+  // 프론트엔드의 cleanName이 괄호 이후를 제거하므로, 정확 매칭 실패 시 prefix 매칭으로 DB 풀네임 조회
+  let stored = await db.collection("parts").findOne(
+    { category, name },
+    { projection: { name: 1, price: 1, updatedAt: 1, category: 1 } }
+  );
+  if (!stored) {
+    stored = await db.collection("parts").findOne(
+      { category, name: { $regex: `^${escapeRegex(name)}`, $options: "i" } },
       { projection: { name: 1, price: 1, updatedAt: 1, category: 1 } }
-    ),
-    searchNaverShopping(name, 40, "sim"),
-  ]);
+    );
+  }
+  // DB 풀네임으로 Naver 조회 (정확도 향상)
+  const queryName = stored?.name || name;
+  const naverData = await searchNaverShopping(queryName, 40, "sim");
 
   const rawItems = naverData?.items ?? [];
   // 목록 가격과 동일한 강한 5단계 검증 적용 (토큰 + 중고/리퍼 + 브랜드 매칭)
   const parsed = parseNaverItems(naverData);
-  const validItems = applyStrictFilters(name, parsed);
+  const validItems = applyStrictFilters(queryName, parsed);
   const sorted = validItems.slice().sort((a, b) => a.price - b.price);
 
   // 이상치 제거 후 최저가 결정 (목록 업데이트와 동일 로직)
@@ -39,7 +50,7 @@ async function getPriceData(category, name) {
   // 표시용 malls 리스트에서도 이상치로 판정된 아이템들 제거해 일관성 유지
   const displayMalls = sorted.slice(outlierRemoved);
   const lowestMall = displayMalls[0]?.mallName ?? null;
-  const validation = validateNaverPrice(name, rawItems, stored?.price ?? null);
+  const validation = validateNaverPrice(queryName, rawItems, stored?.price ?? null);
 
   // 일일 업데이트로 검증된 storedPrice와 실시간 Naver 최저가 중 낮은 값 사용.
   // Naver 검색 결과는 시간에 따라 달라지므로, 이미 검증된 DB 가격보다 높아질 수 있음.
