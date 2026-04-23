@@ -14,6 +14,78 @@ const CATEGORY_NAMES = {
   psu: "파워",
 };
 
+const BRAND_KEYWORDS = {
+  cpu: { intel: ["인텔", "intel"], amd: ["amd", "라이젠", "ryzen"] },
+  gpu: { nvidia: ["지포스", "geforce", "rtx", "gtx", "nvidia"], amd: ["라데온", "radeon", "amd"] },
+};
+
+const CHIPSET_MAP = {
+  amd: ["a520", "a620", "b450", "b550", "b650", "b850", "x470", "x670", "x870"],
+  intel: ["h510", "h610", "h810", "b660", "b760", "b860", "z690", "z790", "z890"],
+};
+
+const MEMORY_CAPS = ["4GB", "8GB", "16GB", "32GB", "64GB"];
+const PSU_WATTS = [500, 600, 700, 750, 850, 1000];
+const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
+const STORAGE_CAPS = [
+  { label: "250GB", patterns: ["250gb"] },
+  { label: "500GB", patterns: ["500gb", "512gb"] },
+  { label: "1TB", patterns: ["1tb", "1000gb", "1gb"] }, // DB bug: "1GB" means 1TB
+  { label: "2TB", patterns: ["2tb", "2000gb", "2gb"] },
+  { label: "4TB", patterns: ["4tb", "4000gb", "4gb"] },
+];
+
+function partText(p) {
+  return [p.name, p.info, p.specSummary].filter(Boolean).join(" ").toLowerCase();
+}
+
+function matchBrand(p, category, brand) {
+  if (brand === "all") return true;
+  if (category === "cpu" || category === "gpu") {
+    const mfr = String(p.manufacturer || "").toLowerCase();
+    if (mfr === brand) return true;
+    const nm = String(p.name || "").toLowerCase();
+    return (BRAND_KEYWORDS[category]?.[brand] || []).some((k) => nm.includes(k));
+  }
+  if (category === "motherboard") {
+    const nm = String(p.name || "").toLowerCase();
+    return (CHIPSET_MAP[brand] || []).some((cs) => nm.includes(cs));
+  }
+  return true;
+}
+
+function matchMemCap(p, cap) {
+  if (cap === "all") return true;
+  const text = partText(p);
+  const n = cap.replace("GB", "");
+  return new RegExp(`\\b${n}\\s*gb\\b`, "i").test(text);
+}
+
+function matchStorageCap(p, cap) {
+  if (cap === "all") return true;
+  const entry = STORAGE_CAPS.find((c) => c.label === cap);
+  if (!entry) return false;
+  const capValue = String(p.specs?.capacity || "").toLowerCase();
+  const text = partText(p);
+  return entry.patterns.some((pat) => capValue.includes(pat) || text.includes(pat));
+}
+
+function matchCaseForm(p, ff) {
+  if (ff === "all") return true;
+  const factors = p.specs?.formFactor;
+  const list = Array.isArray(factors) ? factors : typeof factors === "string" ? [factors] : [];
+  const text = partText(p);
+  const target = ff.toLowerCase();
+  return list.some((f) => String(f).toLowerCase() === target) || text.includes(target);
+}
+
+function matchPsuWatt(p, watt) {
+  if (watt === "all") return true;
+  const text = partText(p);
+  const m = text.match(/(\d{3,4})\s*w\b/);
+  return m && Number(m[1]) === Number(watt);
+}
+
 export default function Category() {
   const { category } = useParams();
   const navigate = useNavigate();
@@ -22,9 +94,13 @@ export default function Category() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("value");
+  const [sortBy, setSortBy] = useState("price");
   const [brandFilter, setBrandFilter] = useState("all");
   const [chipsetFilter, setChipsetFilter] = useState("all");
+  const [memCapFilter, setMemCapFilter] = useState("all");
+  const [storageCapFilter, setStorageCapFilter] = useState("all");
+  const [caseFormFilter, setCaseFormFilter] = useState("all");
+  const [psuWattFilter, setPsuWattFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
@@ -36,39 +112,42 @@ export default function Category() {
       .catch(() => { setError("데이터를 불러오지 못했습니다."); setLoading(false); });
   }, [category]);
 
-  useEffect(() => { setCurrentPage(1); }, [search, sortBy, brandFilter, chipsetFilter]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, storageCapFilter, caseFormFilter, psuWattFilter]);
   useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
+
+  // reset category-specific filters when switching category
+  useEffect(() => {
+    setBrandFilter("all");
+    setChipsetFilter("all");
+    setMemCapFilter("all");
+    setStorageCapFilter("all");
+    setCaseFormFilter("all");
+    setPsuWattFilter("all");
+    setSearch("");
+    setSortBy("price");
+  }, [category]);
 
   const brandOptions =
     category === "gpu" ? ["all", "nvidia", "amd"] :
     category === "cpu" ? ["all", "intel", "amd"] :
     category === "motherboard" ? ["all", "amd", "intel"] : ["all"];
 
-  const chipsetMap = {
-    amd: ["a520", "a620", "b450", "b550", "b650", "b850", "x470", "x670", "x870"],
-    intel: ["h510", "h610", "h810", "b660", "b760", "b860", "z690", "z790", "z890"],
-  };
-  const chipsetOptions = category === "motherboard" ? chipsetMap[brandFilter] || [] : [];
-
-  const brandKeywords = {
-    cpu: { intel: ["인텔", "intel"], amd: ["amd", "라이젠", "ryzen"] },
-    gpu: { nvidia: ["지포스", "geforce", "rtx", "gtx", "nvidia"], amd: ["라데온", "radeon", "amd"] },
-  };
+  const chipsetOptions = category === "motherboard" ? CHIPSET_MAP[brandFilter] || [] : [];
 
   const filtered = parts
     .filter((p) => {
       const nm = String(p.name || "").toLowerCase();
-      const mfr = String(p.manufacturer || "").toLowerCase();
       const s = search.toLowerCase();
-      const nameMatch = nm.includes(s);
-      const brandMatch =
-        brandFilter === "all" ||
-        ((category === "cpu" || category === "gpu") &&
-          (mfr === brandFilter ||
-            (brandKeywords[category]?.[brandFilter] || []).some((k) => nm.includes(k)))) ||
-        (category === "motherboard" && (chipsetMap[brandFilter] || []).some((cs) => nm.includes(cs)));
-      const chipsetMatch = category !== "motherboard" || chipsetFilter === "all" || nm.includes(chipsetFilter);
-      return nameMatch && brandMatch && chipsetMatch;
+      if (!nm.includes(s)) return false;
+      if (!matchBrand(p, category, brandFilter)) return false;
+      if (category === "motherboard" && chipsetFilter !== "all" && !nm.includes(chipsetFilter)) return false;
+      if (category === "memory" && !matchMemCap(p, memCapFilter)) return false;
+      if (category === "storage" && !matchStorageCap(p, storageCapFilter)) return false;
+      if (category === "case" && !matchCaseForm(p, caseFormFilter)) return false;
+      if (category === "psu" && !matchPsuWatt(p, psuWattFilter)) return false;
+      return true;
     })
     .sort((a, b) => {
       const aP = Number(a.price) || 0;
@@ -77,16 +156,11 @@ export default function Category() {
       const bS = Number(b.benchmarkScore?.passmarkscore) || 0;
       const a3d = Number(a.benchmarkScore?.["3dmarkscore"]) || 0;
       const b3d = Number(b.benchmarkScore?.["3dmarkscore"]) || 0;
-      const aCB = Number(a.benchmarkScore?.cinebenchMulti) || 0;
-      const bCB = Number(b.benchmarkScore?.cinebenchMulti) || 0;
-      const aV = aP > 0 ? aCB / aP : 0;
-      const bV = bP > 0 ? bCB / bP : 0;
 
       if (sortBy === "price") return aP - bP;
       if (sortBy === "price-desc") return bP - aP;
       if (sortBy === "score") return bS - aS;
       if (sortBy === "3dmark") return b3d - a3d;
-      if (sortBy === "value") return bV - aV;
       return String(a.name).localeCompare(String(b.name));
     });
 
@@ -118,6 +192,11 @@ export default function Category() {
     );
   }
 
+  const pillBase = "px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors";
+  const pillActive = "bg-purple-600 text-white border-purple-500";
+  const pillIdle = "bg-slate-800/50 text-slate-300 border-slate-600 hover:bg-slate-700/50";
+  const subActive = "bg-blue-600 text-white border-blue-500";
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
       {/* Header */}
@@ -140,14 +219,10 @@ export default function Category() {
           onChange={(e) => setSortBy(e.target.value)}
           className="px-3 py-2 text-sm rounded-lg bg-slate-800/50 border border-slate-600 text-slate-200 focus:outline-none"
         >
-          <option value="value">가성비순</option>
           <option value="price">가격 낮은순</option>
           <option value="price-desc">가격 높은순</option>
-          {category === "gpu" ? (
-            <option value="3dmark">3DMark 점수순</option>
-          ) : (
-            <option value="score">PassMark 점수순</option>
-          )}
+          {category === "gpu" && <option value="3dmark">3DMark 점수순</option>}
+          {category === "cpu" && <option value="score">PassMark 점수순</option>}
           <option value="name">이름순</option>
         </select>
 
@@ -157,11 +232,7 @@ export default function Category() {
               <button
                 key={brand}
                 onClick={() => setBrandFilter(brand)}
-                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                  brandFilter === brand
-                    ? "bg-purple-600 text-white border-purple-500"
-                    : "bg-slate-800/50 text-slate-300 border-slate-600 hover:bg-slate-700/50"
-                }`}
+                className={`${pillBase} ${brandFilter === brand ? pillActive : pillIdle}`}
               >
                 {brand === "all" ? "전체" : brand.toUpperCase()}
               </button>
@@ -173,11 +244,7 @@ export default function Category() {
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={() => setChipsetFilter("all")}
-              className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                chipsetFilter === "all"
-                  ? "bg-blue-600 text-white border-blue-500"
-                  : "bg-slate-800/50 text-slate-300 border-slate-600 hover:bg-slate-700/50"
-              }`}
+              className={`${pillBase} ${chipsetFilter === "all" ? subActive : pillIdle}`}
             >
               전체
             </button>
@@ -185,13 +252,89 @@ export default function Category() {
               <button
                 key={cs}
                 onClick={() => setChipsetFilter(cs)}
-                className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                  chipsetFilter === cs
-                    ? "bg-blue-600 text-white border-blue-500"
-                    : "bg-slate-800/50 text-slate-300 border-slate-600 hover:bg-slate-700/50"
-                }`}
+                className={`${pillBase} ${chipsetFilter === cs ? subActive : pillIdle}`}
               >
                 {cs.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {category === "memory" && (
+          <div className="flex gap-1 flex-wrap">
+            <button
+              onClick={() => setMemCapFilter("all")}
+              className={`${pillBase} ${memCapFilter === "all" ? pillActive : pillIdle}`}
+            >
+              전체
+            </button>
+            {MEMORY_CAPS.map((cap) => (
+              <button
+                key={cap}
+                onClick={() => setMemCapFilter(cap)}
+                className={`${pillBase} ${memCapFilter === cap ? pillActive : pillIdle}`}
+              >
+                {cap}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {category === "storage" && (
+          <div className="flex gap-1 flex-wrap">
+            <button
+              onClick={() => setStorageCapFilter("all")}
+              className={`${pillBase} ${storageCapFilter === "all" ? pillActive : pillIdle}`}
+            >
+              전체
+            </button>
+            {STORAGE_CAPS.map((c) => (
+              <button
+                key={c.label}
+                onClick={() => setStorageCapFilter(c.label)}
+                className={`${pillBase} ${storageCapFilter === c.label ? pillActive : pillIdle}`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {category === "case" && (
+          <div className="flex gap-1 flex-wrap">
+            <button
+              onClick={() => setCaseFormFilter("all")}
+              className={`${pillBase} ${caseFormFilter === "all" ? pillActive : pillIdle}`}
+            >
+              전체
+            </button>
+            {CASE_FORM_FACTORS.map((ff) => (
+              <button
+                key={ff}
+                onClick={() => setCaseFormFilter(ff)}
+                className={`${pillBase} ${caseFormFilter === ff ? pillActive : pillIdle}`}
+              >
+                {ff}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {category === "psu" && (
+          <div className="flex gap-1 flex-wrap">
+            <button
+              onClick={() => setPsuWattFilter("all")}
+              className={`${pillBase} ${psuWattFilter === "all" ? pillActive : pillIdle}`}
+            >
+              전체
+            </button>
+            {PSU_WATTS.map((w) => (
+              <button
+                key={w}
+                onClick={() => setPsuWattFilter(w)}
+                className={`${pillBase} ${psuWattFilter === w ? pillActive : pillIdle}`}
+              >
+                {w}W
               </button>
             ))}
           </div>

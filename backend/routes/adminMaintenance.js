@@ -55,6 +55,24 @@ router.post("/cleanup-db", async (req, res) => {
   res.json({ status: "ok", ...results });
 });
 
+/* ==================== 가격 0원/미등록 부품 일괄 삭제 ==================== */
+
+router.post("/delete-zero-price", async (req, res) => {
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DB 연결 실패" });
+
+  const result = await db.collection("parts").deleteMany({
+    $or: [
+      { price: { $exists: false } },
+      { price: null },
+      { price: { $lte: 0 } },
+    ],
+  });
+
+  logger.info(`delete-zero-price 완료: ${result.deletedCount}개 삭제`);
+  res.json({ status: "ok", deleted: result.deletedCount });
+});
+
 /* ==================== priceHistory 전체 초기화 + 오늘 가격으로 재설정 ==================== */
 
 router.post("/reset-price-history", async (req, res) => {
