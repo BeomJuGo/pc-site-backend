@@ -1,42 +1,98 @@
-import React from "react";
+import { useCompare } from "../context/CompareContext";
+import { useFavorites } from "../hooks/useFavorites";
 
 export default function PartCard({ part, onClick }) {
+  const { add: addCompare, remove: removeCompare, has: inCompare } = useCompare();
+  const { toggle: toggleFavorite, isFavorite } = useFavorites();
+
   if (!part) return null;
 
   const name = String(part.name || "");
   const priceNum = Number(part.price);
   const priceText = Number.isFinite(priceNum) ? `${priceNum.toLocaleString()}원` : "가격 정보 없음";
-  const passmark = part?.benchmarkScore?.passmarkscore;
+
+  const benchScore = part?.benchScore || part?.benchmarkScore?.passmarkscore;
   const mark3d = part?.benchmarkScore?.["3dmarkscore"];
   const subScore =
     mark3d != null
       ? `3DMark ${Number(mark3d).toLocaleString()}`
-      : passmark != null
-      ? `PassMark ${Number(passmark).toLocaleString()}`
+      : benchScore != null
+      ? `PassMark ${Number(benchScore).toLocaleString()}`
       : null;
+
+  const comparing = inCompare(name);
+  const favorited = isFavorite(name, part.category);
+
+  const handleCompare = (e) => {
+    e.stopPropagation();
+    comparing ? removeCompare(name) : addCompare(part);
+  };
+
+  const handleFavorite = (e) => {
+    e.stopPropagation();
+    toggleFavorite(part);
+  };
 
   return (
     <div
       onClick={onClick}
-      className="w-full cursor-pointer border-b border-slate-200 px-3 py-4 hover:bg-slate-50 transition"
+      className="w-full cursor-pointer border border-slate-200 rounded-lg px-4 py-5 hover:bg-slate-50 transition bg-white shadow-sm relative group"
     >
-      <div className="flex items-center gap-4">
-        <div className="w-16 h-16 flex-shrink-0 rounded bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden">
-          {part.image ? (
-            <img src={part.image} alt={name} className="w-full h-full object-contain" />
+      <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+        <button
+          onClick={handleFavorite}
+          title={favorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+          className={`p-1.5 rounded-md transition-colors ${
+            favorited
+              ? "bg-pink-100 text-pink-500"
+              : "bg-slate-100 text-slate-400 hover:text-pink-500 hover:bg-pink-50"
+          }`}
+        >
+          <svg className="w-4 h-4" fill={favorited ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          </svg>
+        </button>
+        <button
+          onClick={handleCompare}
+          title={comparing ? "비교 제거" : "비교에 추가 (최대 3개)"}
+          className={`p-1.5 rounded-md transition-colors ${
+            comparing
+              ? "bg-blue-100 text-blue-500"
+              : "bg-slate-100 text-slate-400 hover:text-blue-500 hover:bg-blue-50"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex items-center gap-5">
+        <div className="w-20 h-20 flex-shrink-0 rounded bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden">
+          {part.image && !part.image.includes("noImg") && !part.image.includes("noData") ? (
+            <img
+              src={part.image}
+              alt={name}
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                e.target.style.display = "none";
+                e.target.nextSibling?.classList.remove("hidden");
+              }}
+            />
           ) : (
             <span className="text-xs text-slate-400">NO IMAGE</span>
           )}
+          <span className="text-xs text-slate-400 hidden">NO IMAGE</span>
         </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-[15px] sm:text-[16px] font-medium text-slate-900 truncate">{name}</h3>
+        <div className="flex-1 min-w-0 pr-16">
+          <h3 className="text-lg font-semibold text-slate-900 break-words leading-snug">{name}</h3>
           {part.review && (
-            <p className="mt-1 text-[12px] sm:text-[13px] text-slate-500 truncate">{part.review}</p>
+            <p className="mt-2 text-sm text-slate-600 break-words leading-relaxed">{part.review}</p>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="text-[16px] sm:text-[18px] font-semibold text-slate-900">{priceText}</div>
-          {subScore && <div className="text-[12px] sm:text-[13px] text-slate-500">{subScore}</div>}
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <div className="text-xl font-bold text-slate-900">{priceText}</div>
+          {subScore && <div className="text-sm text-slate-500 font-medium">{subScore}</div>}
         </div>
       </div>
     </div>

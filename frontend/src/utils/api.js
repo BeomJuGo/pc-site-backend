@@ -104,3 +104,22 @@ export const fetchDanawaUrl = async (name) => {
     return null;
   }
 };
+
+export const fetchSearch = async ({ q, category, priceMin, priceMax, sort = "price_asc", limit = 50 }) => {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (category) params.set("category", category);
+  if (priceMin) params.set("priceMin", priceMin);
+  if (priceMax) params.set("priceMax", priceMax);
+  params.set("sort", sort);
+  params.set("limit", limit);
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/parts/search?${params}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch (e) {
+    console.error("[fetchSearch]", e);
+    return [];
+  }
+};

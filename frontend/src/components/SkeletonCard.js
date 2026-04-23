@@ -2,6 +2,24 @@ function Pulse({ className }) {
   return <div className={`animate-pulse bg-slate-700/60 rounded-lg ${className}`} />;
 }
 
+export default function SkeletonCard() {
+  return (
+    <div className="w-full border border-slate-700/50 rounded-lg px-4 py-5 bg-slate-800/30">
+      <div className="flex items-center gap-5">
+        <Pulse className="w-20 h-20 flex-shrink-0" />
+        <div className="flex-1 space-y-2">
+          <Pulse className="h-5 w-3/4" />
+          <Pulse className="h-4 w-1/2" />
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <Pulse className="h-6 w-28" />
+          <Pulse className="h-4 w-20" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SkeletonDetail() {
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
