@@ -41,15 +41,25 @@ async function getPriceData(category, name) {
   const lowestMall = displayMalls[0]?.mallName ?? null;
   const validation = validateNaverPrice(name, rawItems, stored?.price ?? null);
 
+  // 일일 업데이트로 검증된 storedPrice와 실시간 Naver 최저가 중 낮은 값 사용.
+  // Naver 검색 결과는 시간에 따라 달라지므로, 이미 검증된 DB 가격보다 높아질 수 있음.
+  const effectiveLowest = (() => {
+    if (lowestNaver > 0 && stored?.price > 0) return Math.min(lowestNaver, stored.price);
+    if (lowestNaver > 0) return lowestNaver;
+    if (stored?.price > 0) return stored.price;
+    return null;
+  })();
+  const effectiveMall = lowestNaver > 0 && lowestNaver <= (stored?.price ?? Infinity) ? lowestMall : null;
+
   const result = {
     name: stored?.name || name,
     category,
     storedPrice: stored?.price ?? null,
     lastUpdated: stored?.updatedAt ?? null,
     naverMalls: displayMalls.slice(0, 10),
-    lowestPrice: lowestNaver || null,
-    lowestMall,
-    priceGap: stored?.price && lowestNaver > 0 ? stored.price - lowestNaver : null,
+    lowestPrice: effectiveLowest,
+    lowestMall: effectiveMall,
+    priceGap: stored?.price && effectiveLowest > 0 ? stored.price - effectiveLowest : null,
     inStock: displayMalls.length > 0,
     mallCount: displayMalls.length,
     validation,
