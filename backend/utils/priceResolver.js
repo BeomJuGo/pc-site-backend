@@ -7,14 +7,21 @@ const JUNK_KEYWORDS = ["중고", "리퍼", "refurb", "고장", "파손", "부품
 
 // 부품명에서 추출할 브랜드/시리즈 지시어 (매치 요구 강화를 위해)
 const BRAND_TERMS = [
+  // CPU 브랜드
   "amd", "intel", "nvidia",
   "라이젠", "ryzen", "r3", "r5", "r7", "r9",
+  "인텔", "코어", "core", "i3", "i5", "i7", "i9", "ultra",
+  "제온", "xeon",
+  // GPU
   "지포스", "geforce", "rtx", "gtx",
   "라데온", "radeon",
-  "코어", "core", "i3", "i5", "i7", "i9", "ultra",
-  "제온", "xeon",
+  // 메모리
   "ddr3", "ddr4", "ddr5",
-  "nvme", "sata",
+  // 저장장치
+  "nvme", "sata", "ssd", "hdd",
+  // 메인보드 칩셋
+  "a520", "a620", "b450", "b550", "b650", "b850", "x470", "x670", "x870",
+  "h510", "h610", "h810", "b660", "b760", "b860", "z690", "z790", "z890",
 ];
 
 function isJunkListing(title) {
