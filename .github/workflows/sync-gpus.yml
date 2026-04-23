@@ -1,49 +1,35 @@
-name: Daily GPU Sync
+name: Monthly GPU Sync
 
 on:
   schedule:
-    - cron: "20 18 * * *"
+    - cron: "20 18 1 * *"  # 03:20 KST on 1st of each month
   workflow_dispatch:
 
 jobs:
   sync-gpus:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     concurrency:
       group: sync-gpus
       cancel-in-progress: false
 
-    env:
-      BACKEND_URL: https://pc-site-backend.onrender.com
-      API_PATH: /api/admin/sync-gpus
-      PAGES: "10"
-
     steps:
-      - name: Call backend to sync GPUs (with retries)
-        shell: bash
-        run: |
-          set -e
-          echo "POST $BACKEND_URL$API_PATH pages=$PAGES"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
-          for i in 1 2 3; do
-            echo "Attempt $i..."
-            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
-              -X POST "$BACKEND_URL$API_PATH" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}" \
-              -d "{\"pages\": ${PAGES}, \"ai\": true, \"force\": false}") || true
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
 
-            echo "HTTP $http_code"
-            cat /tmp/resp.txt || true
-
-            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-              echo "✅ Success"
-              exit 0
-            fi
-
-            echo "⚠️ Failed (HTTP $http_code). Retrying in 20s..."
-            sleep 20
-          done
-
-          echo "❌ All retries failed"
-          exit 1
+      - name: Run GPU sync
+        run: node scripts/sync-gpus.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PAGES: "5"
+          AI: "true"

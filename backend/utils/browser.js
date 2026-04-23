@@ -17,9 +17,13 @@ export const BLOCK_HOSTS = [
 ];
 
 export async function getBrowserConfig() {
-  const isRender = process.env.RENDER === 'true' || process.env.RENDER_SERVICE_NAME || process.env.RENDER_EXTERNAL_URL;
+  const isCloudEnv = process.env.RENDER === 'true'
+    || process.env.RENDER_SERVICE_NAME
+    || process.env.RENDER_EXTERNAL_URL
+    || process.env.VERCEL === '1'
+    || process.env.GITHUB_ACTIONS === 'true';
 
-  if (isRender) {
+  if (isCloudEnv) {
     chromium.setGraphicsMode = false;
     return {
       args: chromium.args,

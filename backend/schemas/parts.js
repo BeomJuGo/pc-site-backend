@@ -35,6 +35,8 @@ export const batchQuerySchema = z.object({
 
 export const naverPriceQuerySchema = z.object({
   query: z.string({ required_error: "query 파라미터가 필요합니다." }).min(1).max(200),
+  partName: z.string().min(1).max(200).optional(),
+  referencePrice: z.coerce.number().int().positive().optional(),
 });
 
 export const gptInfoSchema = z.object({

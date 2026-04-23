@@ -545,23 +545,21 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
       review = tag;
     }
 
-    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name), price: cpu.price };
+    const update = { category: "cpu", info, image: cpu.image, manufacturer: extractManufacturer(cpu.name) };
     const hasExistingBench = old?.benchScore && old.benchScore > 0;
     if (!hasExistingBench) update.benchScore = benchScore;
     if (review) update.review = review;
 
     if (old) {
-      const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update, $unset: { specSummary: "" } };
-      if (cpu.price > 0 && cpu.price !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: cpu.price }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update, $unset: { specSummary: "" } });
       updated++;
     } else {
-      const priceHistory = cpu.price > 0 ? [{ date: new Date().toISOString().slice(0, 10), price: cpu.price }] : [];
-      await col.insertOne({ name: cpu.name, ...update, priceHistory });
+      const today = new Date().toISOString().slice(0, 10);
+      await col.insertOne({
+        name: cpu.name, ...update,
+        price: cpu.price || 0,
+        priceHistory: cpu.price > 0 ? [{ date: today, price: cpu.price }] : [],
+      });
       inserted++;
     }
     if (ai) await sleep(200);
@@ -602,5 +600,15 @@ router.post("/sync-cpus", async (req, res) => {
     res.status(500).json({ error: "sync-cpus \uc2e4\ud328" });
   }
 });
+
+export async function runSync({ pages = 15, benchPages = 10, ai = true, force = false } = {}) {
+  console.log("\n=== CPU 동기화 시작 ===");
+  const benchmarks = await crawlCpuBenchmark(benchPages);
+  const cpus = await crawlDanawaCpus(pages);
+  if (cpus.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
+  await saveToMongoDB(cpus, benchmarks, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 CPU 동기화 완료");
+}
 
 export default router;

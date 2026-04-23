@@ -283,24 +283,16 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
       image: cooler.image,
       manufacturer: extractManufacturer(cooler.name),
       specs: { type: specs.type, sockets: specs.sockets, tdpW: specs.tdpW, heightMm: specs.heightMm, specText: specs.specText },
-      price: cooler.price || 0,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update };
-      if (cooler.price > 0 && cooler.price !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: cooler.price }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${cooler.name} (\uac00\uaca9: ${cooler.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = cooler.price > 0 ? [{ date: today, price: cooler.price }] : [];
-      await col.insertOne({ name: cooler.name, ...update, priceHistory });
+      await col.insertOne({ name: cooler.name, ...update, price: cooler.price || 0, priceHistory: cooler.price > 0 ? [{ date: today, price: cooler.price }] : [] });
       inserted++;
       console.log(`\uD83C\uDD95 \uc2e0\uaddc \ucd94\uac00: ${cooler.name} (\uac00\uaca9: ${cooler.price.toLocaleString()}\uc6d0)`);
     }
@@ -343,5 +335,14 @@ router.post("/sync-cooler", async (req, res) => {
     res.status(500).json({ error: "sync-cooler \uc2e4\ud328" });
   }
 });
+
+export async function runSync({ pages = 3, ai = true, force = false } = {}) {
+  console.log("\n=== 쿨러 동기화 시작 ===");
+  const coolers = await crawlDanawaCoolers(pages);
+  if (coolers.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
+  await saveToMongoDB(coolers, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 쿨러 동기화 완료");
+}
 
 export default router;

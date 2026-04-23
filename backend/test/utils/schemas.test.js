@@ -40,7 +40,7 @@ describe("createAlertSchema", () => {
 
 describe("createBuildSchema", () => {
   it("유효한 요청 통과", () => {
-    const r = createBuildSchema.safeParse({ builds: [{ cpu: "라이젠" }], budget: 1000000 });
+    const r = createBuildSchema.safeParse({ builds: [{ category: "cpu", name: "AMD 라이젠 9 7950X", price: 650000 }], budget: 1000000 });
     expect(r.success).toBe(true);
   });
   it("builds 빈 배열 거부", () => {

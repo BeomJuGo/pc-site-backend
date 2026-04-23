@@ -244,24 +244,16 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
 
       const update = {
         category: "case", manufacturer, info: specs.info, image: caseItem.image, specs,
-        price: caseItem.price || 0,
         ...(ai ? { review, specSummary } : {}),
       };
 
       if (existing) {
-        const today = new Date().toISOString().slice(0, 10);
-        const ops = { $set: update };
-        if (caseItem.price > 0 && caseItem.price !== existing.price) {
-          const priceHistory = existing.priceHistory || [];
-          if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: caseItem.price }], $slice: -90 } };
-        }
-        await col.updateOne({ _id: existing._id }, ops);
+        await col.updateOne({ _id: existing._id }, { $set: update });
         updated++;
         console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       } else {
         const today = new Date().toISOString().slice(0, 10);
-        const priceHistory = caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [];
-        await col.insertOne({ name: caseItem.name, ...update, priceHistory });
+        await col.insertOne({ name: caseItem.name, ...update, price: caseItem.price || 0, priceHistory: caseItem.price > 0 ? [{ date: today, price: caseItem.price }] : [] });
         inserted++;
         console.log(`\u2728 \uc2e0\uaddc \ucd94\uac00: ${caseItem.name} (\uac00\uaca9: ${caseItem.price.toLocaleString()}\uc6d0)`);
       }
@@ -298,5 +290,14 @@ router.post("/sync-case", async (req, res) => {
     res.status(500).json({ message: "\ub3d9\uae30\ud654 \uc2e4\ud328", error: e.message });
   }
 });
+
+export async function runSync({ pages = 10, ai = true, force = false } = {}) {
+  console.log("\n=== 케이스 동기화 시작 ===");
+  const cases = await crawlDanawa(pages);
+  if (cases.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
+  await syncCasesToDB(cases, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 케이스 동기화 완료");
+}
 
 export default router;

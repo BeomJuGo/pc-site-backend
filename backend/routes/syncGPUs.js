@@ -371,7 +371,6 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     const update = {
       category: "gpu",
       image: p.image,
-      price: p.price || 0,
       manufacturer: extractManufacturer(p.name),
       review,
       specSummary,
@@ -379,18 +378,13 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     };
 
     if (old) {
-      const ops = { $set: update };
-      if (p.price > 0 && p.price !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        const already = priceHistory.some(ph => ph.date === today);
-        if (!already) ops.$push = { priceHistory: { $each: [{ date: today, price: p.price }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update });
       console.log("\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8\ub428:", p.name);
     } else {
       await col.insertOne({
         name: p.name,
         ...update,
+        price: p.price || 0,
         priceHistory: p.price > 0 ? [{ date: today, price: p.price }] : [],
       });
       console.log("\uD83C\uDD95 \uc0bd\uc785\ub428:", p.name);
@@ -426,5 +420,13 @@ router.post("/sync-gpus", async (req, res) => {
     }
   });
 });
+
+export async function runSync({ pages = 5, ai = true, force = false } = {}) {
+  console.log("\n=== GPU 동기화 시작 ===");
+  const [scores, danawa] = await Promise.all([fetchGPUs(), crawlDanawaGpus(pages)]);
+  await saveToDB(scores, danawa, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 GPU 동기화 완료");
+}
 
 export default router;

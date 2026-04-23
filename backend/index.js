@@ -6,10 +6,10 @@ import rateLimit from "express-rate-limit";
 import config from "./config.js";
 import { connectDB, getDB } from "./db.js";
 import { connectRedisCache } from "./utils/responseCache.js";
-import { initJobQueue, scheduleRepeating, scheduleCron } from "./utils/jobQueue.js";
 import logger from "./utils/logger.js";
 import { validate } from "./middleware/validate.js";
 import { naverPriceQuerySchema, gptInfoSchema } from "./schemas/parts.js";
+import { validateNaverPrice } from "./utils/priceValidator.js";
 
 import syncCPUsRouter from "./routes/syncCPUs.js";
 import syncGPUsRouter from "./routes/syncGPUs.js";
@@ -23,16 +23,10 @@ import syncCoolerRouter from "./routes/syncCOOLER.js";
 import syncStorageRouter from "./routes/syncSTORAGE.js";
 import buildsRouter from "./routes/builds.js";
 import alertsRouter, { checkPriceAlerts } from "./routes/alerts.js";
+import priceUpdateRouter from "./routes/priceUpdate.js";
 import compatibilityRouter from "./routes/compatibility.js";
 import pricesRouter from "./routes/prices.js";
 import docsRouter from "./routes/docs.js";
-
-const REQUIRED_ENV = ["MONGODB_URI", "OPENAI_API_KEY", "ADMIN_API_KEY"];
-const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
-if (missingEnv.length > 0) {
-  console.error(`❌ 필수 환경변수 누락: ${missingEnv.join(", ")}`);
-  process.exit(1);
-}
 
 const app = express();
 app.set("etag", "strong");
@@ -138,6 +132,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health and root routes always respond, even before DB is ready
 app.get("/api/health", async (req, res) => {
   const db = getDB();
   let dbStatus = "disconnected";
@@ -167,6 +162,34 @@ app.get("/", (req, res) => {
   });
 });
 
+// Memoized DB initialization — safe for serverless cold starts and concurrent requests
+let _initPromise = null;
+
+function ensureInitialized() {
+  if (!_initPromise) {
+    _initPromise = (async () => {
+      const missing = ["MONGODB_URI", "OPENAI_API_KEY", "ADMIN_API_KEY"].filter((k) => !process.env[k]);
+      if (missing.length > 0) throw new Error(`필수 환경변수 누락: ${missing.join(", ")}`);
+      await connectDB();
+      await connectRedisCache();
+    })().catch((err) => {
+      _initPromise = null; // allow retry on transient failures
+      throw err;
+    });
+  }
+  return _initPromise;
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await ensureInitialized();
+    next();
+  } catch (err) {
+    logger.error(`초기화 실패: ${err.message}`);
+    res.status(503).json({ error: "Service Unavailable", message: err.message });
+  }
+});
+
 app.use("/api/docs", docsRouter);
 app.use("/api/recommend", recommendRouter);
 app.use("/api/admin", requireAdminKey, syncCPUsRouter);
@@ -182,9 +205,22 @@ app.use("/api/builds", buildsRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/compatibility", compatibilityRouter);
 app.use("/api/prices", pricesRouter);
+app.use("/api/admin", requireAdminKey, priceUpdateRouter);
+
+// Admin trigger for price alert checks — called by GitHub Actions every 6 hours
+app.post("/api/admin/check-price-alerts", requireAdminKey, (req, res) => {
+  res.json({ status: "started", message: "가격 알림 체크 시작됨" });
+  setImmediate(async () => {
+    try {
+      await checkPriceAlerts();
+    } catch (err) {
+      logger.error(`가격 알림 체크 실패: ${err.message}`);
+    }
+  });
+});
 
 app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req, res) => {
-  const { query } = req.query;
+  const { query, partName, referencePrice } = req.query;
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   try {
     const response = await fetch(url, {
@@ -194,6 +230,9 @@ app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req
       },
     });
     const data = await response.json();
+    if (partName && data.items) {
+      data.validation = validateNaverPrice(partName, data.items, referencePrice ?? null);
+    }
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: "네이버 API 요청 실패" });
@@ -265,50 +304,5 @@ app.use((err, req, res, next) => {
   });
 });
 
-async function runAutoSync(port, adminKey) {
-  const syncRoutes = [
-    "/api/admin/sync-cpus", "/api/admin/sync-gpus", "/api/admin/sync-motherboards",
-    "/api/admin/sync-memory", "/api/admin/sync-psu", "/api/admin/sync-case",
-    "/api/admin/sync-cooler", "/api/admin/sync-storage",
-  ];
-  logger.info("자동 크롤링 시작");
-  for (const route of syncRoutes) {
-    try {
-      const r = await fetch(`http://localhost:${port}${route}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${adminKey}` },
-        signal: AbortSignal.timeout(10 * 60 * 1000),
-      });
-      logger.info(`자동 크롤링 완료: ${route} (${r.status})`);
-    } catch (err) {
-      logger.error(`자동 크롤링 실패: ${route} - ${err.message}`);
-    }
-    await new Promise((r) => setTimeout(r, 60 * 1000));
-  }
-  logger.info("자동 크롤링 전체 완료");
-}
-
-async function startServer() {
-  await connectDB();
-  await connectRedisCache();
-  await initJobQueue();
-
-  app.listen(config.port, "0.0.0.0", () => {
-    logger.info(`서버 실행 중: http://localhost:${config.port}`);
-    logger.info(`API 문서: http://localhost:${config.port}/api/docs`);
-    logger.info(`CORS 허용 도메인: ${allowedOrigins.join(", ")}`);
-  });
-
-  await scheduleRepeating("price-alert-check", 6 * 60 * 60 * 1000, checkPriceAlerts);
-
-  if (process.env.ENABLE_AUTO_SYNC === "true" && config.adminApiKey) {
-    await scheduleCron("parts-sync", "0 3 * * *", () =>
-      runAutoSync(config.port, config.adminApiKey)
-    );
-  }
-}
-
-startServer().catch((err) => {
-  logger.error(`서버 시작 실패: ${err.message}`);
-  process.exit(1);
-});
+// Serverless export — Vercel and compatible platforms use this directly
+export default app;

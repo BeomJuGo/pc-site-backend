@@ -1,4 +1,4 @@
-// routes/syncPSU.js
+// routes/syncMEMORY.js
 import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
@@ -6,7 +6,7 @@ import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
 
-const DANAWA_PSU_URL = "https://prod.danawa.com/list/?cate=112777";
+const DANAWA_BASE_URL = "https://prod.danawa.com/list/?cate=112752";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 async function fetchAiOneLiner({ name, spec }) {
@@ -15,7 +15,7 @@ async function fetchAiOneLiner({ name, spec }) {
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `\ud30c\uc6cc\uc11c\ud50c\ub77c\uc774 "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\ucd9c\ub825/\ud6a8\uc728/\ubaa8\ub4c8\ub7ec/\ud3fc\ud329\ud130>"}`;
+  const prompt = `\uba54\ubaa8\ub9ac(RAM) "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<DDR\ud0c0\uc785/\uc18d\ub3c4/\uc6a9\ub7c9/\uc6a9\ub3c4>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -52,34 +52,48 @@ async function fetchAiOneLiner({ name, spec }) {
   return { review: "", specSummary: "" };
 }
 
-function extractPSUInfo(name = "", spec = "") {
-  const combined = `${name} ${spec}`.toUpperCase();
+function extractMemoryInfo(spec = "") {
   const parts = [];
-
-  const wattageMatch = combined.match(/(\d+)\s*W(?!\w)/i);
-  if (wattageMatch) parts.push(`Wattage: ${wattageMatch[1]}W`);
-
-  if (/80PLUS\s*TITANIUM|TITANIUM/i.test(combined)) parts.push("80Plus Titanium");
-  else if (/80PLUS\s*PLATINUM|PLATINUM/i.test(combined)) parts.push("80Plus Platinum");
-  else if (/80PLUS\s*GOLD|GOLD/i.test(combined)) parts.push("80Plus Gold");
-  else if (/80PLUS\s*SILVER|SILVER/i.test(combined)) parts.push("80Plus Silver");
-  else if (/80PLUS\s*BRONZE|BRONZE/i.test(combined)) parts.push("80Plus Bronze");
-  else if (/80PLUS/i.test(combined)) parts.push("80Plus");
-
-  if (/\ud480\ubaa8\ub4c8\ub7ec|FULL\s*MODULAR/i.test(combined)) parts.push("\ud480\ubaa8\ub4c8\ub7ec");
-  else if (/\uc138\ubbf8\ubaa8\ub4c8\ub7ec|SEMI\s*MODULAR/i.test(combined)) parts.push("\uc138\ubbf8\ubaa8\ub4c8\ub7ec");
-  else parts.push("\ub17c\ubaa8\ub4c8\ub7ec");
-
-  if (/SFX-L/i.test(combined)) parts.push("SFX-L");
-  else if (/SFX/i.test(combined)) parts.push("SFX");
-  else if (/TFX/i.test(combined)) parts.push("TFX");
-  else parts.push("ATX");
-
+  const ddrMatch = spec.match(/DDR[2-5]/i);
+  if (ddrMatch) parts.push(`Type: ${ddrMatch[0].toUpperCase()}`);
+  const speedMatch = spec.match(/(\d{4,5})\s*MHz/i);
+  if (speedMatch) parts.push(`Speed: ${speedMatch[1]} MHz`);
+  const capacityMatch = spec.match(/(\d+GB(?:\(\d+Gx\d+\))?)/i);
+  if (capacityMatch) parts.push(`Capacity: ${capacityMatch[1]}`);
+  const timingMatch = spec.match(/CL(\d+(?:-\d+)*)/i);
+  if (timingMatch) parts.push(`CL: ${timingMatch[1]}`);
   return parts.join(", ");
 }
 
-async function crawlDanawaPSUs(maxPages = 10) {
-  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 PSU \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
+function calculateMemoryScore(name = "", spec = "") {
+  const combined = `${name} ${spec}`.toUpperCase();
+  const ddrMatch = combined.match(/DDR([2-5])/i);
+  const ddrType = ddrMatch ? parseInt(ddrMatch[1]) : 4;
+  const speedMatch = combined.match(/(\d{4,5})\s*MHZ/i);
+  const speed = speedMatch ? parseInt(speedMatch[1]) : 0;
+  const clMatch = combined.match(/CL(\d+)/i);
+  const cl = clMatch ? parseInt(clMatch[1]) : null;
+
+  let score = ddrType * 10000;
+  if (speed > 0) score += speed * 2;
+
+  if (cl !== null) {
+    if (ddrType === 5) {
+      if (cl <= 30) score += 500;
+      else if (cl <= 36) score += 200;
+      else if (cl <= 40) score += 50;
+    } else if (ddrType === 4) {
+      if (cl <= 14) score += 500;
+      else if (cl <= 16) score += 200;
+      else if (cl <= 18) score += 50;
+    }
+  }
+
+  return Math.max(score, ddrType * 10000);
+}
+
+async function crawlDanawaMemory(maxPages = 10) {
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 \uba54\ubaa8\ub9ac \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   let browser;
   const products = [];
@@ -88,67 +102,26 @@ async function crawlDanawaPSUs(maxPages = 10) {
     browser = await launchBrowser();
     const page = await browser.newPage();
     await setupPage(page, 60000);
-    page.on('pageerror', (error) => console.log('\u26A0\uFE0F \ud398\uc774\uc9c0 \uc5d0\ub7ec:', error.message));
-    page.on('requestfailed', (request) => console.log('\u26A0\uFE0F \uc694\uccad \uc2e4\ud328:', request.url(), request.failure()?.errorText));
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
 
       try {
         if (pageNum === 1) {
-          let retries = 5;
+          let retries = 3;
           let loaded = false;
-
           while (retries > 0 && !loaded) {
             try {
-              await page.goto('about:blank');
-              await sleep(2000);
-
-              const navigateWithRetry = async (url) => {
-                let attempts = 3;
-                while (attempts--) {
-                  try {
-                    await page.goto('about:blank', { waitUntil: 'domcontentloaded' });
-                    await sleep(1000);
-                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                    await sleep(3000);
-                    await page.waitForSelector('.main_prodlist, .product_list', { timeout: 20000 });
-                    return true;
-                  } catch (e) {
-                    console.log('\u26A0\uFE0F \ucd08\uae30 \ub124\ube44\uac8c\uc774\uc158 \uc2e4\ud328:', e.message);
-                    if (!attempts) throw e;
-                  }
-                }
-              };
-
-              await navigateWithRetry(DANAWA_PSU_URL);
-
-              for (let i = 0; i < 5; i++) {
-                await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-                await sleep(400);
-              }
-
-              const hasContent = await page.waitForFunction(() => {
-                return document.querySelectorAll('.main_prodlist .prod_item, .product_list .prod_item').length > 0;
-              }, { timeout: 30000 });
-
-              if (hasContent) {
-                loaded = true;
-                console.log('\u2705 \ud398\uc774\uc9c0 \ub85c\ub529 \uc644\ub8cc');
-              } else {
-                throw new Error('\ud398\uc774\uc9c0 \ucf58\ud150\uce20 \ub85c\ub529 \uc2e4\ud328');
-              }
+              await page.goto(DANAWA_BASE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+              loaded = true;
             } catch (e) {
               retries--;
-              console.log(`\u26A0\uFE0F \ub85c\ub529 \uc7ac\uc2dc\ub3c4 (\ub0a8\uc740 \ud69f\uc218: ${retries}): ${e.message}`);
               if (retries === 0) throw e;
-              await sleep(5000);
+              await sleep(2000);
             }
           }
-
           await page.waitForSelector('.main_prodlist .prod_item', { timeout: 30000 }).catch(() => {});
           await sleep(3000);
-
         } else {
           try {
             await navigateToDanawaPage(page, pageNum, '.main_prodlist .prod_item');
@@ -236,28 +209,29 @@ async function crawlDanawaPSUs(maxPages = 10) {
   return products;
 }
 
-async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
+async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
   const db = getDB();
   const col = db.collection("parts");
-  const existing = await col.find({ category: "psu" }).toArray();
+  const existing = await col.find({ category: "memory" }).toArray();
   const byName = new Map(existing.map((x) => [x.name, x]));
 
   let inserted = 0, updated = 0, skipped = 0;
 
-  for (const psu of psus) {
-    if (!psu.price || psu.price === 0) {
+  for (const memory of memories) {
+    if (!memory.price || memory.price === 0) {
       skipped++;
-      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${psu.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${memory.name}`);
       continue;
     }
 
-    const old = byName.get(psu.name);
-    const info = extractPSUInfo(psu.name, psu.spec);
+    const old = byName.get(memory.name);
+    const info = extractMemoryInfo(memory.spec);
+    const memoryScore = calculateMemoryScore(memory.name, memory.spec);
 
     let review = "", specSummary = "";
     if (ai) {
       if (!old?.review || force) {
-        const aiRes = await fetchAiOneLiner({ name: psu.name, spec: psu.spec });
+        const aiRes = await fetchAiOneLiner({ name: memory.name, spec: memory.spec });
         review = aiRes.review || old?.review || "";
         specSummary = aiRes.specSummary || old?.specSummary || "";
       } else {
@@ -267,64 +241,67 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
     }
 
     const update = {
-      category: "psu", info, image: psu.image, price: psu.price || 0,
+      category: "memory", info, image: memory.image,
+      benchmarkScore: memoryScore > 0 ? { "memoryscore": memoryScore } : undefined,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update };
-      if (psu.price > 0 && psu.price !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: psu.price }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
-      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
+      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${memory.name} (\uac00\uaca9: ${memory.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = psu.price > 0 ? [{ date: today, price: psu.price }] : [];
-      await col.insertOne({ name: psu.name, ...update, priceHistory });
+      await col.insertOne({ name: memory.name, ...update, price: memory.price || 0, priceHistory: memory.price > 0 ? [{ date: today, price: memory.price }] : [] });
       inserted++;
-      console.log(`\uD83C\uDD95 \uc0bd\uc785: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
+      console.log(`\uD83C\uDD95 \uc0bd\uc785: ${memory.name} (\uac00\uaca9: ${memory.price.toLocaleString()}\uc6d0)`);
     }
 
     if (ai) await sleep(200);
   }
 
-  const currentNames = new Set(psus.map((p) => p.name));
+  const currentNames = new Set(memories.map((m) => m.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) {
-    await col.deleteMany({ category: "psu", name: { $in: toDelete } });
+    await col.deleteMany({ category: "memory", name: { $in: toDelete } });
     console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }
 
   console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
 }
 
-router.post("/sync-psu", async (req, res) => {
+router.post("/sync-memory", async (req, res) => {
   try {
     const maxPages = Number(req?.body?.pages) || 3;
     const ai = req?.body?.ai !== false;
     const force = !!req?.body?.force;
 
-    res.json({ message: `\u2705 \ub2e4\ub098\uc640 PSU \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
+    res.json({ message: `\u2705 \ub2e4\ub098\uc640 \uba54\ubaa8\ub9ac \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
 
     setImmediate(async () => {
       try {
-        const psus = await crawlDanawaPSUs(maxPages);
-        if (psus.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
-        await saveToMongoDB(psus, { ai, force });
+        const memories = await crawlDanawaMemory(maxPages);
+        if (memories.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
+        await saveToMongoDB(memories, { ai, force });
         invalidatePartsCache();
-        console.log("\uD83C\uDF89 PSU \ub3d9\uae30\ud654 \uc644\ub8cc");
+        console.log("\uD83C\uDF89 \uba54\ubaa8\ub9ac \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
         console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
       }
     });
   } catch (err) {
-    console.error("\u274C sync-psu \uc2e4\ud328", err);
-    res.status(500).json({ error: "sync-psu \uc2e4\ud328" });
+    console.error("\u274C sync-memory \uc2e4\ud328", err);
+    res.status(500).json({ error: "sync-memory \uc2e4\ud328" });
   }
 });
+
+export async function runSync({ pages = 3, ai = true, force = false } = {}) {
+  console.log("\n=== 메모리 동기화 시작 ===");
+  const memories = await crawlDanawaMemory(pages);
+  if (memories.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
+  await saveToMongoDB(memories, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 메모리 동기화 완료");
+}
 
 export default router;

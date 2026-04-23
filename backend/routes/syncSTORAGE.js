@@ -311,25 +311,17 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
       image: storage.image,
       manufacturer: extractManufacturer(storage.name),
       specs: storage.specs,
-      price: storage.price || 0,
       benchmarkScore: storageScore > 0 ? { "storagescore": storageScore } : undefined,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update };
-      if (storage.price > 0 && storage.price !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: storage.price }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
       console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${storage.name} (\uac00\uaca9: ${(storage.price ?? 0).toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = storage.price > 0 ? [{ date: today, price: storage.price }] : [];
-      await col.insertOne({ name: storage.name, ...update, priceHistory });
+      await col.insertOne({ name: storage.name, ...update, price: storage.price || 0, priceHistory: storage.price > 0 ? [{ date: today, price: storage.price }] : [] });
       inserted++;
       console.log(`\uD83C\uDD95 \uc2e0\uaddc \ucd94\uac00: ${storage.name} (\uac00\uaca9: ${(storage.price ?? 0).toLocaleString()}\uc6d0)`);
     }
@@ -386,5 +378,24 @@ router.post("/sync-storage", async (req, res) => {
     res.status(500).json({ error: "sync-storage \uc2e4\ud328" });
   }
 });
+
+export async function runSync({ pages = 3, ai = true, force = false } = {}) {
+  console.log("\n=== 스토리지 동기화 시작 ===");
+  const ssdProducts = await crawlDanawaStorage(DANAWA_SSD_URL, "SSD", pages);
+  const ssdData = ssdProducts.map(p => {
+    const specs = parseStorageSpecs(p.name, p.spec, "SSD");
+    return { name: p.name, image: p.image, info: specs.info, spec: specs.specText, price: p.price || 0, specs: { type: specs.type, interface: specs.interface, formFactor: specs.formFactor, capacity: specs.capacity, pcieGen: specs.pcieGen, readSpeed: specs.readSpeed, writeSpeed: specs.writeSpeed, tbw: specs.tbw, warranty: specs.warranty } };
+  });
+  const hddProducts = await crawlDanawaStorage(DANAWA_HDD_URL, "HDD", pages);
+  const hddData = hddProducts.map(p => {
+    const specs = parseStorageSpecs(p.name, p.spec, "HDD");
+    return { name: p.name, image: p.image, info: specs.info, spec: specs.specText, price: p.price || 0, specs: { type: specs.type, interface: specs.interface, formFactor: specs.formFactor, capacity: specs.capacity, rpm: specs.rpm, cache: specs.cache, warranty: specs.warranty } };
+  });
+  const allStorage = [...ssdData, ...hddData];
+  if (allStorage.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
+  await saveToMongoDB(allStorage, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 스토리지 동기화 완료");
+}
 
 export default router;

@@ -1,4 +1,4 @@
-// routes/syncMEMORY.js
+// routes/syncMOTHERBOARD.js
 import express from "express";
 import { getDB } from "../db.js";
 import { launchBrowser, setupPage, navigateToDanawaPage, sleep } from "../utils/browser.js";
@@ -6,7 +6,7 @@ import { invalidatePartsCache } from "../utils/recommend-helpers.js";
 
 const router = express.Router();
 
-const DANAWA_BASE_URL = "https://prod.danawa.com/list/?cate=112752";
+const DANAWA_BASE_URL = "https://prod.danawa.com/list/?cate=112751";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 async function fetchAiOneLiner({ name, spec }) {
@@ -15,7 +15,7 @@ async function fetchAiOneLiner({ name, spec }) {
     return { review: "", specSummary: "" };
   }
 
-  const prompt = `\uba54\ubaa8\ub9ac(RAM) "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<DDR\ud0c0\uc785/\uc18d\ub3c4/\uc6a9\ub7c9/\uc6a9\ub3c4>"}`;
+  const prompt = `\uba54\uc778\ubcf4\ub4dc "${name}"(\uc2a4\ud399: ${spec})\uc758 \ud55c\uc904\ud3c9\uacfc \uc2a4\ud399\uc694\uc57d\uc744 JSON\uc73c\ub85c \uc791\uc131: {"review":"<100\uc790 \uc774\ub0b4>", "specSummary":"<\uc18c\ucf13/\uce69\uc14b/\ud3fc\ud329\ud130>"}`;
 
   for (let i = 0; i < 3; i++) {
     try {
@@ -52,48 +52,38 @@ async function fetchAiOneLiner({ name, spec }) {
   return { review: "", specSummary: "" };
 }
 
-function extractMemoryInfo(spec = "") {
-  const parts = [];
-  const ddrMatch = spec.match(/DDR[2-5]/i);
-  if (ddrMatch) parts.push(`Type: ${ddrMatch[0].toUpperCase()}`);
-  const speedMatch = spec.match(/(\d{4,5})\s*MHz/i);
-  if (speedMatch) parts.push(`Speed: ${speedMatch[1]} MHz`);
-  const capacityMatch = spec.match(/(\d+GB(?:\(\d+Gx\d+\))?)/i);
-  if (capacityMatch) parts.push(`Capacity: ${capacityMatch[1]}`);
-  const timingMatch = spec.match(/CL(\d+(?:-\d+)*)/i);
-  if (timingMatch) parts.push(`CL: ${timingMatch[1]}`);
-  return parts.join(", ");
+function extractSocketInfo(name = "", spec = "") {
+  const combined = `${name} ${spec}`;
+
+  if (/B850|X870|A850|B850E|X870E/i.test(combined)) return "Socket: AM5";
+  if (/AM5|B650|X670|A620|B650E|X670E/i.test(combined)) return "Socket: AM5";
+  if (/AM4|B550|X570|A520|B450|X470|B350|X370/i.test(combined)) return "Socket: AM4";
+  if (/sTRX4|TRX40/i.test(combined)) return "Socket: sTRX4";
+  if (/TR4|X399/i.test(combined)) return "Socket: TR4";
+  if (/SP3|EPYC/i.test(combined)) return "Socket: SP3";
+  if (/Z890|B860|H870|LGA\s?1851/i.test(combined)) return "Socket: LGA1851";
+  if (/Z790|B760|H770|Z690|B660|H610|H670|LGA\s?1700/i.test(combined)) return "Socket: LGA1700";
+  if (/Z590|B560|H570|Z490|B460|H410|LGA\s?1200/i.test(combined)) return "Socket: LGA1200";
+  if (/Z390|B360|H370|Z370|B250|H270|Z270|B150|H170|Z170|LGA\s?1151/i.test(combined)) return "Socket: LGA1151";
+  if (/X299|LGA\s?2066/i.test(combined)) return "Socket: LGA2066";
+  if (/X99|LGA\s?2011[-\s]?(?:3|V3)/i.test(combined)) return "Socket: LGA2011-3";
+  if (/X79|LGA\s?2011/i.test(combined)) return "Socket: LGA2011";
+  if (/X58|LGA\s?1366/i.test(combined)) return "Socket: LGA1366";
+  if (/Z97|H97|Z87|H87|B85|H81|LGA\s?1150/i.test(combined)) return "Socket: LGA1150";
+  if (/Z77|H77|Z68|P67|H67|B75|LGA\s?1155/i.test(combined)) return "Socket: LGA1155";
+  if (/P45|P35|G41|LGA\s?775/i.test(combined)) return "Socket: LGA775";
+  if (/LGA\s?3647|Xeon/i.test(combined)) return "Socket: LGA3647";
+  if (/LGA\s?4677/i.test(combined)) return "Socket: LGA4677";
+  if (/LGA\s?4189/i.test(combined)) return "Socket: LGA4189";
+
+  const lga = combined.match(/LGA\s?-?\s?(\d{3,4})/i);
+  if (lga) return `Socket: LGA${lga[1]}`;
+
+  return "";
 }
 
-function calculateMemoryScore(name = "", spec = "") {
-  const combined = `${name} ${spec}`.toUpperCase();
-  const ddrMatch = combined.match(/DDR([2-5])/i);
-  const ddrType = ddrMatch ? parseInt(ddrMatch[1]) : 4;
-  const speedMatch = combined.match(/(\d{4,5})\s*MHZ/i);
-  const speed = speedMatch ? parseInt(speedMatch[1]) : 0;
-  const clMatch = combined.match(/CL(\d+)/i);
-  const cl = clMatch ? parseInt(clMatch[1]) : null;
-
-  let score = ddrType * 10000;
-  if (speed > 0) score += speed * 2;
-
-  if (cl !== null) {
-    if (ddrType === 5) {
-      if (cl <= 30) score += 500;
-      else if (cl <= 36) score += 200;
-      else if (cl <= 40) score += 50;
-    } else if (ddrType === 4) {
-      if (cl <= 14) score += 500;
-      else if (cl <= 16) score += 200;
-      else if (cl <= 18) score += 50;
-    }
-  }
-
-  return Math.max(score, ddrType * 10000);
-}
-
-async function crawlDanawaMemory(maxPages = 10) {
-  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 \uba54\ubaa8\ub9ac \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
+async function crawlDanawaMotherboards(maxPages = 10) {
+  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 \uba54\uc778\ubcf4\ub4dc \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
 
   let browser;
   const products = [];
@@ -209,29 +199,28 @@ async function crawlDanawaMemory(maxPages = 10) {
   return products;
 }
 
-async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
+async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
   const db = getDB();
   const col = db.collection("parts");
-  const existing = await col.find({ category: "memory" }).toArray();
+  const existing = await col.find({ category: "motherboard" }).toArray();
   const byName = new Map(existing.map((x) => [x.name, x]));
 
   let inserted = 0, updated = 0, skipped = 0;
 
-  for (const memory of memories) {
-    if (!memory.price || memory.price === 0) {
+  for (const board of motherboards) {
+    if (!board.price || board.price === 0) {
       skipped++;
-      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${memory.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${board.name}`);
       continue;
     }
 
-    const old = byName.get(memory.name);
-    const info = extractMemoryInfo(memory.spec);
-    const memoryScore = calculateMemoryScore(memory.name, memory.spec);
+    const old = byName.get(board.name);
+    const info = extractSocketInfo(board.name, board.spec);
 
     let review = "", specSummary = "";
     if (ai) {
       if (!old?.review || force) {
-        const aiRes = await fetchAiOneLiner({ name: memory.name, spec: memory.spec });
+        const aiRes = await fetchAiOneLiner({ name: board.name, spec: board.spec });
         review = aiRes.review || old?.review || "";
         specSummary = aiRes.specSummary || old?.specSummary || "";
       } else {
@@ -241,65 +230,66 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
     }
 
     const update = {
-      category: "memory", info, image: memory.image, price: memory.price || 0,
-      benchmarkScore: memoryScore > 0 ? { "memoryscore": memoryScore } : undefined,
+      category: "motherboard", info, image: board.image,
       ...(ai ? { review, specSummary } : {}),
     };
 
     if (old) {
-      const today = new Date().toISOString().slice(0, 10);
-      const ops = { $set: update };
-      if (memory.price > 0 && memory.price !== old.price) {
-        const priceHistory = old.priceHistory || [];
-        if (!priceHistory.some(p => p.date === today)) ops.$push = { priceHistory: { $each: [{ date: today, price: memory.price }], $slice: -90 } };
-      }
-      await col.updateOne({ _id: old._id }, ops);
+      await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
-      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${memory.name} (\uac00\uaca9: ${memory.price.toLocaleString()}\uc6d0)`);
+      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${board.name} (\uac00\uaca9: ${board.price.toLocaleString()}\uc6d0)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
-      const priceHistory = memory.price > 0 ? [{ date: today, price: memory.price }] : [];
-      await col.insertOne({ name: memory.name, ...update, priceHistory });
+      await col.insertOne({ name: board.name, ...update, price: board.price || 0, priceHistory: board.price > 0 ? [{ date: today, price: board.price }] : [] });
       inserted++;
-      console.log(`\uD83C\uDD95 \uc0bd\uc785: ${memory.name} (\uac00\uaca9: ${memory.price.toLocaleString()}\uc6d0)`);
+      console.log(`\uD83C\uDD95 \uc0bd\uc785: ${board.name} (\uac00\uaca9: ${board.price.toLocaleString()}\uc6d0)`);
     }
 
     if (ai) await sleep(200);
   }
 
-  const currentNames = new Set(memories.map((m) => m.name));
+  const currentNames = new Set(motherboards.map((b) => b.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length > 0) {
-    await col.deleteMany({ category: "memory", name: { $in: toDelete } });
+    await col.deleteMany({ category: "motherboard", name: { $in: toDelete } });
     console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }
 
   console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
 }
 
-router.post("/sync-memory", async (req, res) => {
+router.post("/sync-motherboards", async (req, res) => {
   try {
     const maxPages = Number(req?.body?.pages) || 3;
     const ai = req?.body?.ai !== false;
     const force = !!req?.body?.force;
 
-    res.json({ message: `\u2705 \ub2e4\ub098\uc640 \uba54\ubaa8\ub9ac \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
+    res.json({ message: `\u2705 \ub2e4\ub098\uc640 \uba54\uc778\ubcf4\ub4dc \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
 
     setImmediate(async () => {
       try {
-        const memories = await crawlDanawaMemory(maxPages);
-        if (memories.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
-        await saveToMongoDB(memories, { ai, force });
+        const motherboards = await crawlDanawaMotherboards(maxPages);
+        if (motherboards.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
+        await saveToMongoDB(motherboards, { ai, force });
         invalidatePartsCache();
-        console.log("\uD83C\uDF89 \uba54\ubaa8\ub9ac \ub3d9\uae30\ud654 \uc644\ub8cc");
+        console.log("\uD83C\uDF89 \uba54\uc778\ubcf4\ub4dc \ub3d9\uae30\ud654 \uc644\ub8cc");
       } catch (err) {
         console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
       }
     });
   } catch (err) {
-    console.error("\u274C sync-memory \uc2e4\ud328", err);
-    res.status(500).json({ error: "sync-memory \uc2e4\ud328" });
+    console.error("\u274C sync-motherboards \uc2e4\ud328", err);
+    res.status(500).json({ error: "sync-motherboards \uc2e4\ud328" });
   }
 });
+
+export async function runSync({ pages = 3, ai = true, force = false } = {}) {
+  console.log("\n=== 메인보드 동기화 시작 ===");
+  const motherboards = await crawlDanawaMotherboards(pages);
+  if (motherboards.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
+  await saveToMongoDB(motherboards, { ai, force });
+  invalidatePartsCache();
+  console.log("🎉 메인보드 동기화 완료");
+}
 
 export default router;

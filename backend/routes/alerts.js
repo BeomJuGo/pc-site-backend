@@ -68,13 +68,15 @@ router.get("/", validate(getAlertsQuerySchema, "query"), async (req, res) => {
   }
 });
 
-// DELETE /api/alerts/:id - 알림 삭제
+// DELETE /api/alerts/:id?email=xxx - 알림 삭제 (소유자만 가능)
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const { email } = req.query;
     if (!ObjectId.isValid(id)) return res.status(400).json({ error: "유효하지 않은 ID입니다." });
+    if (!email) return res.status(400).json({ error: "email이 필요합니다." });
     const db = getDB();
-    const result = await db.collection("price_alerts").deleteOne({ _id: new ObjectId(id) });
+    const result = await db.collection("price_alerts").deleteOne({ _id: new ObjectId(id), email });
     if (result.deletedCount === 0) return res.status(404).json({ error: "알림을 찾을 수 없습니다." });
     res.json({ message: "알림이 삭제되었습니다." });
   } catch (err) {
@@ -89,11 +91,18 @@ export async function checkPriceAlerts() {
     const alerts = await db.collection("price_alerts").find({ triggered: false }).toArray();
     if (alerts.length === 0) return;
     logger.info(`가격 알림 체크: ${alerts.length}개`);
+
+    // Batch fetch all needed parts instead of N individual queries
+    const uniquePairs = [...new Map(
+      alerts.map((a) => [`${a.category}|${a.name}`, { category: a.category, name: a.name }])
+    ).values()];
+    const parts = await db.collection("parts")
+      .find({ $or: uniquePairs }, { projection: { category: 1, name: 1, price: 1 } })
+      .toArray();
+    const partMap = new Map(parts.map((p) => [`${p.category}|${p.name}`, p]));
+
     for (const alert of alerts) {
-      const part = await db.collection("parts").findOne(
-        { category: alert.category, name: alert.name },
-        { projection: { price: 1 } }
-      );
+      const part = partMap.get(`${alert.category}|${alert.name}`);
       if (!part || part.price > alert.targetPrice) continue;
       await db.collection("price_alerts").updateOne(
         { _id: alert._id },

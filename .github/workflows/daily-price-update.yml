@@ -1,0 +1,40 @@
+name: Daily Price Update
+
+on:
+  schedule:
+    - cron: "0 19 * * *"  # 04:00 KST daily
+  workflow_dispatch:
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Trigger daily price update
+        shell: bash
+        run: |
+          set -e
+          echo "POST ${{ secrets.BACKEND_URL }}/api/admin/update-prices"
+
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            http_code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+              -X POST "${{ secrets.BACKEND_URL }}/api/admin/update-prices" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.ADMIN_API_KEY }}") || true
+
+            echo "HTTP $http_code"
+            cat /tmp/resp.txt || true
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              echo "✅ Price update triggered"
+              exit 0
+            fi
+
+            echo "⚠️ Failed (HTTP $http_code). Retrying in 30s..."
+            sleep 30
+          done
+
+          echo "❌ All retries failed"
+          exit 1

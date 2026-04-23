@@ -5,6 +5,7 @@ import { getCache, setCache } from "../utils/responseCache.js";
 import { setCacheHeaders } from "../middleware/httpCache.js";
 import { validate } from "../middleware/validate.js";
 import { searchNaverShopping, parseNaverItems } from "../utils/naverShopping.js";
+import { filterValidNaverItems, validateNaverPrice } from "../utils/priceValidator.js";
 import { priceCheckSchema } from "../schemas/parts.js";
 import logger from "../utils/logger.js";
 
@@ -26,9 +27,12 @@ async function getPriceData(category, name) {
     searchNaverShopping(name, 20),
   ]);
 
-  const naverMalls = parseNaverItems(naverData);
+  const rawItems = naverData?.items ?? [];
+  const validRawItems = filterValidNaverItems(name, rawItems);
+  const naverMalls = parseNaverItems({ ...naverData, items: validRawItems });
   const lowestNaver = naverMalls[0]?.price ?? null;
   const lowestMall = naverMalls[0]?.mallName ?? null;
+  const validation = validateNaverPrice(name, rawItems, stored?.price ?? null);
 
   const result = {
     name: stored?.name || name,
@@ -41,6 +45,7 @@ async function getPriceData(category, name) {
     priceGap: stored?.price && lowestNaver != null ? stored.price - lowestNaver : null,
     inStock: naverMalls.length > 0,
     mallCount: naverMalls.length,
+    validation,
     checkedAt: new Date().toISOString(),
   };
 

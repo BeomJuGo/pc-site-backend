@@ -5,7 +5,15 @@
       "Bash(npm test *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git rebase *)"
+      "Bash(git rebase *)",
+      "Bash(node -e \"import\\('./utils/naverShopping.js'\\).catch\\(e => console.log\\('not found'\\)\\)\")",
+      "Bash(node -e \"require\\('redis'\\)\")",
+      "Bash(node -e \"require\\('bullmq'\\)\")",
+      "Bash(node -e \"require\\('typescript'\\)\")",
+      "Bash(npm run *)",
+      "Bash(npx react-scripts *)",
+      "Bash(git -C \"C:\\\\Users\\\\lom00\\\\Desktop\\\\pc-site-frontend-main\" status --short)",
+      "Bash(git *)"
     ]
   }
 }
