@@ -223,10 +223,15 @@ router.post("/clear-bad-specs", async (req, res) => {
   const filter = category ? { category, specSummary: { $exists: true } } : { specSummary: { $exists: true } };
   const parts = await db.collection("parts").find(filter, { projection: { _id: 1, name: 1, specSummary: 1 } }).toArray();
 
+  // 유효 스펙: 슬래시 2개 이상 AND ("항목명: 값" 콜론 패턴 OR 브랜드 접두어)
+  const isValidSpec = (s) =>
+    typeof s === "string" &&
+    (s.match(/\//g) || []).length >= 2 &&
+    (/:\s/.test(s) || /^(AMD|NVIDIA|Intel|인텔|DDR[345]|NVMe|SATA|소켓|정격)/i.test(s));
+
   let cleared = 0;
   for (const part of parts) {
-    const slashes = (part.specSummary?.match(/\//g) || []).length;
-    if (slashes < 2) {
+    if (!isValidSpec(part.specSummary)) {
       await db.collection("parts").updateOne(
         { _id: part._id },
         { $unset: { specSummary: "", review: "" } }
