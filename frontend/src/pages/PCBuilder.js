@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 
 const SLOTS = [
   { key: "cpu", label: "CPU", icon: "🖥️" },
@@ -37,7 +36,6 @@ export default function PCBuilder() {
   const [sortBy, setSortBy] = useState("price");
   const [copied, setCopied] = useState(false);
   const searchRef = useRef(null);
-  const navigate = useNavigate();
 
   const openModal = useCallback(async (slot) => {
     setModal(slot);
