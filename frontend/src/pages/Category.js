@@ -141,6 +141,7 @@ export default function Category() {
       const nm = String(p.name || "").toLowerCase();
       const s = search.toLowerCase();
       if (!nm.includes(s)) return false;
+      if (category === "motherboard" && p.price > 0 && p.price < 50000) return false;
       if (!matchBrand(p, category, brandFilter)) return false;
       if (category === "motherboard" && chipsetFilter !== "all" && !nm.includes(chipsetFilter)) return false;
       if (category === "memory" && !matchMemCap(p, memCapFilter)) return false;
