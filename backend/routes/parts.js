@@ -275,6 +275,56 @@ router.get("/danawa-url", (req, res) => {
   res.json({ url, name: name.trim() });
 });
 
+// GET /api/parts/price-drops?limit=10
+router.get("/price-drops", setCacheHeaders(300), async (req, res) => {
+  const limit = Math.min(20, Math.max(1, parseInt(req.query.limit) || 10));
+  const cacheKey = `parts:price-drops:${limit}`;
+  const cached = await getCache(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const db = getDB();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const pipeline = [
+      { $match: { price: { $gt: 0 } } },
+      { $project: {
+        name: 1, category: 1, price: 1, image: 1,
+        refEntries: {
+          $filter: {
+            input: { $ifNull: ["$priceHistory", []] },
+            as: "e",
+            cond: { $and: [
+              { $gte: ["$$e.date", thirtyDaysAgo] },
+              { $lte: ["$$e.date", sevenDaysAgo] },
+              { $gt: ["$$e.price", 0] },
+            ]},
+          },
+        },
+      }},
+      { $match: { "refEntries.0": { $exists: true } } },
+      { $addFields: { prevPrice: { $round: [{ $avg: "$refEntries.price" }, 0] } } },
+      { $addFields: {
+        dropAmt: { $round: [{ $subtract: ["$prevPrice", "$price"] }, 0] },
+        dropPct: { $round: [{ $multiply: [
+          { $divide: [{ $subtract: ["$prevPrice", "$price"] }, "$prevPrice"] }, 100,
+        ]}, 1] },
+      }},
+      { $match: { dropAmt: { $gt: 0 } } },
+      { $sort: { dropPct: -1 } },
+      { $limit: limit },
+      { $project: { name: 1, category: 1, price: 1, image: 1, prevPrice: 1, dropAmt: 1, dropPct: 1 } },
+    ];
+
+    const drops = await db.collection("parts").aggregate(pipeline).toArray();
+    setCache(cacheKey, drops, 5 * 60 * 1000);
+    res.json(drops);
+  } catch (err) {
+    res.status(500).json({ error: "가격 하락 조회 실패" });
+  }
+});
+
 // GET /api/parts/:category/:name/trend
 router.get("/:category/:name/trend", async (req, res) => {
   const { category, name } = req.params;

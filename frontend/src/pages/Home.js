@@ -20,6 +20,73 @@ const FEATURES = [
   { title: "AI 추천", description: "예산과 용도에 맞는 최적의 부품을 추천합니다", icon: "🤖" },
 ];
 
+const CAT_LABEL = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
+const CAT_COLOR = {
+  cpu: "bg-blue-900/40 text-blue-300 border-blue-700/50",
+  gpu: "bg-purple-900/40 text-purple-300 border-purple-700/50",
+  motherboard: "bg-orange-900/40 text-orange-300 border-orange-700/50",
+  memory: "bg-green-900/40 text-green-300 border-green-700/50",
+  storage: "bg-indigo-900/40 text-indigo-300 border-indigo-700/50",
+  psu: "bg-yellow-900/40 text-yellow-300 border-yellow-700/50",
+  cooler: "bg-cyan-900/40 text-cyan-300 border-cyan-700/50",
+  case: "bg-slate-700/40 text-slate-300 border-slate-600/50",
+};
+
+function PriceDrops() {
+  const [drops, setDrops] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/parts/price-drops?limit=10")
+      .then((r) => r.json())
+      .then((data) => { setDrops(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-10">
+        <div className="w-7 h-7 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!drops.length) {
+    return <div className="text-center py-8 text-slate-500 text-sm">최근 가격 하락 데이터가 없습니다.</div>;
+  }
+
+  return (
+    <div className="divide-y divide-slate-700/30 border border-slate-700/50 rounded-xl overflow-hidden">
+      {drops.map((item, i) => (
+        <a
+          key={item._id || i}
+          href={`/detail/${item.category}/${encodeURIComponent(item.name)}`}
+          className="flex items-center gap-3 px-4 py-3.5 bg-slate-800/40 hover:bg-slate-700/50 transition-colors group"
+        >
+          <span className="text-slate-500 text-xs w-5 text-center flex-shrink-0">{i + 1}</span>
+          {item.image && (
+            <img src={item.image} alt="" className="w-9 h-9 object-contain rounded flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-sm text-white truncate group-hover:text-purple-300 transition-colors">{item.name}</div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`text-xs px-1.5 py-0.5 rounded border ${CAT_COLOR[item.category] || CAT_COLOR.case}`}>
+                {CAT_LABEL[item.category] || item.category}
+              </span>
+              <span className="text-xs text-slate-500 line-through">{Number(item.prevPrice).toLocaleString()}원</span>
+            </div>
+          </div>
+          <div className="flex-shrink-0 text-right">
+            <div className="text-sm font-semibold text-white">{Number(item.price).toLocaleString()}원</div>
+            <div className="text-xs font-bold text-green-400">
+              ▼ {item.dropPct}% ({Number(item.dropAmt).toLocaleString()}원↓)
+            </div>
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 const FEATURED_BUDGET = 1500000;
 const FEATURED_PART_LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", psu: "파워", cooler: "쿨러", case: "케이스" };
 
@@ -212,6 +279,24 @@ export default function Home() {
                 </Card>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Price Drops */}
+        <section className="px-4 sm:px-6 lg:px-8 py-16">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <Badge variant="secondary" className="mb-3 bg-green-900/40 border-green-600/50 text-green-300">
+                📉 실시간 가격 정보
+              </Badge>
+              <h2 className="text-3xl font-bold text-white mb-2">최근 가격 하락 TOP 10</h2>
+              <p className="text-slate-400">최근 30일 대비 가격이 가장 많이 내린 부품입니다.</p>
+            </div>
+            <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 shadow-xl">
+              <CardContent className="pt-6 px-0 pb-0">
+                <PriceDrops />
+              </CardContent>
+            </Card>
           </div>
         </section>
 
