@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 const SLOTS = [
   { key: "cpu", label: "CPU", icon: "🖥️" },
@@ -11,25 +11,181 @@ const SLOTS = [
   { key: "psu", label: "파워", icon: "⚡" },
 ];
 
-const SORT_OPTIONS = [
+const BASE_SORT_OPTIONS = [
   { value: "price", label: "가격 낮은순" },
   { value: "price-desc", label: "가격 높은순" },
   { value: "name", label: "이름순" },
   { value: "mallCount", label: "인기순" },
 ];
+const VALUE_SORT = { value: "value", label: "가성비순" };
 
-function sortParts(parts, sortBy) {
+/* ── 호환성 체크 헬퍼 ── */
+function extractSocket(part) {
+  const t = `${part.name || ""} ${part.info || ""} ${part.specSummary || ""}`.toUpperCase();
+  if (/AM5/.test(t) || /B850|X870|A620|B650E|X670E|B650|X670/.test(t)) return "AM5";
+  if (/AM4/.test(t) || /B550|X570|A520|B450|X470|B350|X370/.test(t)) return "AM4";
+  if (/LGA\s?1851/.test(t) || /Z890|B860|H870/.test(t)) return "LGA1851";
+  if (/LGA\s?1700/.test(t) || /Z790|B760|H770|Z690|B660|H610|H670/.test(t)) return "LGA1700";
+  if (/LGA\s?1200/.test(t) || /Z590|B560|H570|Z490|B460|H410/.test(t)) return "LGA1200";
+  if (/LGA\s?1151/.test(t) || /Z390|B360|H370|Z370|B250|H270|Z270/.test(t)) return "LGA1151";
+  const m = t.match(/LGA\s?-?\s?(\d{3,4})/);
+  if (m) return `LGA${m[1]}`;
+  return "";
+}
+
+function extractDdr(part) {
+  const t = `${part.name || ""} ${part.info || ""} ${part.specSummary || ""}`.toUpperCase();
+  if (/DDR5/.test(t)) return "DDR5";
+  if (/DDR4/.test(t)) return "DDR4";
+  return "";
+}
+
+function extractBoardFF(board) {
+  const t = `${board.name || ""} ${board.specSummary || ""}`.toUpperCase();
+  if (/E-ATX|EATX/.test(t)) return "E-ATX";
+  if (/MINI-ITX|MINI\s?ITX|\bITX\b/.test(t)) return "Mini-ITX";
+  if (/MATX|MICRO-ATX|MICRO\s?ATX|M-ATX|\bMATX\b/.test(t)) return "mATX";
+  if (/\bATX\b/.test(t)) return "ATX";
+  return "";
+}
+
+function extractCaseFFs(caseItem) {
+  const t = `${caseItem.name || ""} ${caseItem.specSummary || ""}`.toUpperCase();
+  const ffs = [];
+  if (/E-ATX|EATX/.test(t)) ffs.push("E-ATX");
+  if (/\bATX\b/.test(t)) ffs.push("ATX");
+  if (/MATX|MICRO-ATX|M-ATX/.test(t)) ffs.push("mATX");
+  if (/MINI-ITX|ITX/.test(t)) ffs.push("Mini-ITX");
+  return ffs.length ? ffs : ["ATX"];
+}
+
+function isCaseCompatible(boardFF, caseFFs) {
+  if (!boardFF) return true;
+  const order = ["Mini-ITX", "mATX", "ATX", "E-ATX"];
+  const boardIdx = order.indexOf(boardFF);
+  return caseFFs.some((ff) => order.indexOf(ff) >= boardIdx);
+}
+
+function extractTdpFromPart(part) {
+  const t = `${part.name || ""} ${part.info || ""} ${part.specSummary || ""}`;
+  const m = t.match(/TDP[:\s]*(\d+)\s*W/i) || t.match(/\b(\d{2,3})\s*W\b/i);
+  return m ? parseInt(m[1]) : 0;
+}
+
+function extractPsuWatt(psu) {
+  const m = (psu.name || "").match(/(\d{3,4})\s*W\b/i);
+  return m ? parseInt(m[1]) : 0;
+}
+
+function runCompatibilityCheck(build) {
+  const checks = []; // { label, status: "ok"|"warn"|"error", detail }
+
+  const { cpu, gpu, motherboard, memory, psu, case: caseItem, cooler } = build;
+
+  // 1. CPU ↔ 메인보드 소켓
+  if (cpu && motherboard) {
+    const cs = extractSocket(cpu);
+    const bs = extractSocket(motherboard);
+    if (!cs || !bs) {
+      checks.push({ label: "소켓 호환", status: "warn", detail: "소켓 정보를 확인할 수 없습니다." });
+    } else if (cs === bs) {
+      checks.push({ label: "소켓 호환", status: "ok", detail: `${cs} ↔ ${bs}` });
+    } else {
+      checks.push({ label: "소켓 불일치", status: "error", detail: `CPU(${cs}) ↔ 메인보드(${bs}) — 호환되지 않습니다.` });
+    }
+  }
+
+  // 2. 메모리 DDR ↔ 메인보드
+  if (memory && motherboard) {
+    const md = extractDdr(memory);
+    const bd = extractDdr(motherboard);
+    if (md && bd) {
+      if (md === bd) {
+        checks.push({ label: "메모리 규격", status: "ok", detail: `${md} 호환` });
+      } else {
+        checks.push({ label: "메모리 규격 불일치", status: "error", detail: `RAM(${md}) ↔ 메인보드(${bd}) — 호환되지 않습니다.` });
+      }
+    }
+  }
+
+  // 3. 메인보드 폼팩터 ↔ 케이스
+  if (motherboard && caseItem) {
+    const boardFF = extractBoardFF(motherboard);
+    const caseFFs = extractCaseFFs(caseItem);
+    if (!boardFF) {
+      checks.push({ label: "케이스 호환", status: "warn", detail: "메인보드 폼팩터를 확인할 수 없습니다." });
+    } else if (isCaseCompatible(boardFF, caseFFs)) {
+      checks.push({ label: "케이스 호환", status: "ok", detail: `메인보드(${boardFF}) ↔ 케이스(${caseFFs.join("/")})` });
+    } else {
+      checks.push({ label: "케이스 폼팩터 불일치", status: "error", detail: `메인보드(${boardFF})가 케이스(${caseFFs.join("/")})에 들어가지 않습니다.` });
+    }
+  }
+
+  // 4. 파워 용량 ≥ 시스템 TDP
+  if (psu && (cpu || gpu)) {
+    const cpuTdp = cpu ? extractTdpFromPart(cpu) : 0;
+    const gpuTdp = gpu ? extractTdpFromPart(gpu) : 0;
+    const sysTdp = cpuTdp + gpuTdp + 100;
+    const psuW = extractPsuWatt(psu);
+    if (psuW > 0 && sysTdp > 100) {
+      const minRecommended = Math.round(sysTdp * 1.2);
+      if (psuW >= minRecommended) {
+        checks.push({ label: "파워 용량", status: "ok", detail: `${psuW}W ≥ 권장 ${minRecommended}W (시스템 ${sysTdp - 100}W + 여유 100W × 1.2)` });
+      } else if (psuW >= sysTdp) {
+        checks.push({ label: "파워 용량 부족 위험", status: "warn", detail: `${psuW}W — 권장 ${minRecommended}W 미만 (시스템 TDP ${sysTdp}W). 안정적 운용을 위해 더 높은 출력을 권장합니다.` });
+      } else {
+        checks.push({ label: "파워 용량 부족", status: "error", detail: `${psuW}W < 시스템 TDP ${sysTdp}W — 시스템을 정상 운용할 수 없습니다.` });
+      }
+    }
+  }
+
+  // 5. 쿨러 소켓 ↔ CPU 소켓 (간이 체크)
+  if (cooler && cpu) {
+    const cpuSocket = extractSocket(cpu);
+    const coolerText = `${cooler.name || ""} ${cooler.specSummary || ""}`.toUpperCase();
+    if (cpuSocket) {
+      const supported =
+        (cpuSocket === "AM5" && /AM5/.test(coolerText)) ||
+        (cpuSocket === "AM4" && /AM4/.test(coolerText)) ||
+        (cpuSocket.startsWith("LGA") && new RegExp(cpuSocket.replace("LGA", "LGA\\s?")).test(coolerText));
+      if (!supported && /AM[45]|LGA\s?\d{3,4}/.test(coolerText)) {
+        checks.push({ label: "쿨러 소켓", status: "warn", detail: `쿨러가 CPU 소켓(${cpuSocket})을 지원하는지 확인하세요.` });
+      } else if (supported) {
+        checks.push({ label: "쿨러 소켓", status: "ok", detail: `${cpuSocket} 지원 확인` });
+      }
+    }
+  }
+
+  return checks;
+}
+
+/* ── 정렬 ── */
+function sortParts(parts, sortBy, category) {
   return [...parts].sort((a, b) => {
     if (sortBy === "price") return (Number(a.price) || 0) - (Number(b.price) || 0);
     if (sortBy === "price-desc") return (Number(b.price) || 0) - (Number(a.price) || 0);
     if (sortBy === "mallCount") return (Number(b.mallCount) || 0) - (Number(a.mallCount) || 0);
+    if (sortBy === "value") {
+      const score = (p) => category === "gpu"
+        ? (Number(p.benchmarkScore?.["3dmarkscore"]) || 0)
+        : (Number(p.benchmarkScore?.passmarkscore) || 0);
+      const aV = a.price > 0 && score(a) > 0 ? score(a) / a.price : 0;
+      const bV = b.price > 0 && score(b) > 0 ? score(b) / b.price : 0;
+      return bV - aV;
+    }
     return String(a.name).localeCompare(String(b.name));
   });
 }
 
+const STATUS_STYLE = {
+  ok: { bar: "bg-green-500", text: "text-green-400", badge: "bg-green-900/30 border-green-700/50 text-green-300" },
+  warn: { bar: "bg-yellow-500", text: "text-yellow-400", badge: "bg-yellow-900/30 border-yellow-700/50 text-yellow-300" },
+  error: { bar: "bg-red-500", text: "text-red-400", badge: "bg-red-900/30 border-red-700/50 text-red-300" },
+};
+
 export default function PCBuilder() {
   const [build, setBuild] = useState({});
-  const [modal, setModal] = useState(null); // { category, label }
+  const [modal, setModal] = useState(null);
   const [partsCache, setPartsCache] = useState({});
   const [loadingCat, setLoadingCat] = useState(null);
   const [search, setSearch] = useState("");
@@ -77,6 +233,14 @@ export default function PCBuilder() {
   const totalPrice = Object.values(build).reduce((s, p) => s + (Number(p?.price) || 0), 0);
   const partCount = Object.keys(build).length;
 
+  const compatibilityChecks = useMemo(() => {
+    if (partCount < 2) return [];
+    return runCompatibilityCheck(build);
+  }, [build, partCount]);
+
+  const hasError = compatibilityChecks.some((c) => c.status === "error");
+  const hasWarn = compatibilityChecks.some((c) => c.status === "warn");
+
   const handleShare = async () => {
     const lines = SLOTS.map(({ key, label }) => {
       const p = build[key];
@@ -93,11 +257,15 @@ export default function PCBuilder() {
     }
   };
 
+  const sortOptions = modal
+    ? (["cpu", "gpu"].includes(modal.key) ? [...BASE_SORT_OPTIONS, VALUE_SORT] : BASE_SORT_OPTIONS)
+    : BASE_SORT_OPTIONS;
+
   const rawParts = modal ? (partsCache[modal.key] || []) : [];
   const filtered = rawParts.filter((p) =>
     String(p.name || "").toLowerCase().includes(search.toLowerCase())
   );
-  const sorted = sortParts(filtered, sortBy);
+  const sorted = sortParts(filtered, sortBy, modal?.key);
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto">
@@ -158,6 +326,37 @@ export default function PCBuilder() {
         })}
       </div>
 
+      {/* Compatibility check */}
+      {compatibilityChecks.length > 0 && (
+        <div className={`border rounded-xl px-5 py-4 mb-4 ${
+          hasError ? "bg-red-900/10 border-red-700/40" :
+          hasWarn ? "bg-yellow-900/10 border-yellow-700/40" :
+          "bg-green-900/10 border-green-700/40"
+        }`}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-semibold text-white">호환성 체크</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${
+              hasError ? STATUS_STYLE.error.badge :
+              hasWarn ? STATUS_STYLE.warn.badge :
+              STATUS_STYLE.ok.badge
+            }`}>
+              {hasError ? "문제 있음" : hasWarn ? "주의 필요" : "모두 호환"}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {compatibilityChecks.map((c, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${STATUS_STYLE[c.status].bar}`} />
+                <div className="min-w-0">
+                  <span className={`text-xs font-medium ${STATUS_STYLE[c.status].text}`}>{c.label}: </span>
+                  <span className="text-xs text-slate-400">{c.detail}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Total bar */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl px-5 py-4 flex items-center justify-between mb-4">
         <div>
@@ -198,7 +397,6 @@ export default function PCBuilder() {
             className="relative w-full sm:max-w-2xl bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[85vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal header */}
             <div className="px-5 py-4 border-b border-slate-700 flex items-center gap-3 flex-shrink-0">
               <h2 className="text-lg font-bold text-white flex-1">{modal.label} 선택</h2>
               <button
@@ -209,7 +407,6 @@ export default function PCBuilder() {
               </button>
             </div>
 
-            {/* Search + sort */}
             <div className="px-4 py-3 border-b border-slate-700 flex gap-2 flex-shrink-0">
               <input
                 ref={searchRef}
@@ -224,13 +421,12 @@ export default function PCBuilder() {
                 onChange={(e) => setSortBy(e.target.value)}
                 className="px-2 py-2 text-sm rounded-lg bg-slate-800 border border-slate-600 text-slate-200 focus:outline-none"
               >
-                {SORT_OPTIONS.map((o) => (
+                {sortOptions.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
 
-            {/* Parts list */}
             <div className="overflow-y-auto flex-1">
               {loadingCat === modal.key ? (
                 <div className="flex items-center justify-center py-16">

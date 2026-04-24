@@ -20,6 +20,82 @@ const FEATURES = [
   { title: "AI 추천", description: "예산과 용도에 맞는 최적의 부품을 추천합니다", icon: "🤖" },
 ];
 
+const FEATURED_BUDGET = 1500000;
+const FEATURED_PART_LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", psu: "파워", cooler: "쿨러", case: "케이스" };
+
+function FeaturedRecommend() {
+  const [data, setData] = useState(null);
+  const [status, setStatus] = useState("loading"); // loading | ready | unavailable
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/recommend/budget-set-v2?budget=${FEATURED_BUDGET}`)
+      .then((r) => {
+        if (r.status === 503) { if (!cancelled) setStatus("unavailable"); return null; }
+        if (!r.ok) { if (!cancelled) setStatus("unavailable"); return null; }
+        return r.json();
+      })
+      .then((d) => {
+        if (!cancelled && d?.parts) { setData(d); setStatus("ready"); }
+      })
+      .catch(() => { if (!cancelled) setStatus("unavailable"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center py-10">
+        <div className="w-7 h-7 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (status === "unavailable" || !data) {
+    return (
+      <div className="text-center py-8 text-slate-500 text-sm">
+        견적을 준비 중입니다. 잠시 후 다시 확인하세요.
+      </div>
+    );
+  }
+
+  const parts = Object.entries(FEATURED_PART_LABELS)
+    .map(([key, label]) => ({ key, label, part: data.parts[key] }))
+    .filter(({ part }) => part);
+
+  return (
+    <div>
+      {data.summary && (
+        <div className="mb-4 px-4 py-2.5 bg-blue-900/30 border border-blue-700/40 rounded-xl text-blue-300 text-sm text-center">
+          💡 {data.summary}
+        </div>
+      )}
+      <div className="divide-y divide-slate-700/30 border border-slate-700/50 rounded-xl overflow-hidden">
+        {parts.map(({ key, label, part }) => (
+          <div key={key} className="flex items-center gap-3 px-4 py-3 bg-slate-800/40">
+            <span className="text-xs font-semibold text-slate-400 w-16 flex-shrink-0">{label}</span>
+            <span className="text-sm text-white truncate flex-1">{part.name}</span>
+            <span className="text-sm font-semibold text-white flex-shrink-0">
+              {Number(part.price).toLocaleString()}원
+            </span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-700/30">
+          <span className="text-sm text-slate-400">총 견적</span>
+          <span className="text-lg font-bold text-white">{Number(data.totalPrice).toLocaleString()}원</span>
+        </div>
+      </div>
+      <div className="mt-4 text-center">
+        <Button
+          variant="outline"
+          className="border-purple-500/50 text-purple-300 hover:bg-purple-900/30 hover:text-purple-200"
+          onClick={() => window.location.href = "/ai-recommend"}
+        >
+          내 예산으로 맞춤 견적 받기 →
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
@@ -136,6 +212,24 @@ export default function Home() {
                 </Card>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Featured AI Recommend */}
+        <section className="px-4 sm:px-6 lg:px-8 py-16">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <Badge variant="secondary" className="mb-3 bg-purple-900/40 border-purple-600/50 text-purple-300">
+                ✨ AI 추천 예시
+              </Badge>
+              <h2 className="text-3xl font-bold text-white mb-2">150만원 최적 가성비 견적</h2>
+              <p className="text-slate-400">AI가 DB 실제 가격 기준으로 선정한 가성비 최강 조합입니다.</p>
+            </div>
+            <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 shadow-xl">
+              <CardContent className="pt-6">
+                <FeaturedRecommend />
+              </CardContent>
+            </Card>
           </div>
         </section>
 
