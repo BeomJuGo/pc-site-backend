@@ -29,7 +29,6 @@ import compatibilityRouter from "./routes/compatibility.js";
 import pricesRouter from "./routes/prices.js";
 import docsRouter from "./routes/docs.js";
 import adminMaintenanceRouter from "./routes/adminMaintenance.js";
-import webhooksRouter from "./routes/webhooks.js";
 
 const app = express();
 app.set("etag", "strong");
@@ -214,7 +213,6 @@ app.use("/api/alerts", alertsRouter);
 app.use("/api/compatibility", compatibilityRouter);
 app.use("/api/prices", pricesRouter);
 app.use("/api/admin", requireAdminKey, priceUpdateRouter);
-app.use("/api/webhooks", webhooksRouter);
 
 // Admin trigger for price alert checks — called by GitHub Actions every 6 hours
 app.post("/api/admin/check-price-alerts", requireAdminKey, (req, res) => {
