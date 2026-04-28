@@ -94,7 +94,7 @@ export default function Category() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState(() => ["cpu", "gpu"].includes(category) ? "value" : "price");
+  const [sortBy, setSortBy] = useState(() => ["cpu", "gpu"].includes(category) ? "value" : "popularity");
   const [brandFilter, setBrandFilter] = useState("all");
   const [chipsetFilter, setChipsetFilter] = useState("all");
   const [memCapFilter, setMemCapFilter] = useState("all");
@@ -126,7 +126,7 @@ export default function Category() {
     setCaseFormFilter("all");
     setPsuWattFilter("all");
     setSearch("");
-    setSortBy(["cpu", "gpu"].includes(category) ? "value" : "price");
+    setSortBy(["cpu", "gpu"].includes(category) ? "value" : "popularity");
   }, [category]);
 
   const brandOptions =
@@ -158,6 +158,9 @@ export default function Category() {
       const a3d = Number(a.benchmarkScore?.["3dmarkscore"]) || 0;
       const b3d = Number(b.benchmarkScore?.["3dmarkscore"]) || 0;
 
+      if (sortBy === "popularity") {
+        return (Number(b.mallCount) || 0) - (Number(a.mallCount) || 0);
+      }
       if (sortBy === "price") return aP - bP;
       if (sortBy === "price-desc") return bP - aP;
       if (sortBy === "score") return bS - aS;
@@ -227,6 +230,7 @@ export default function Category() {
           onChange={(e) => setSortBy(e.target.value)}
           className="px-3 py-2 text-sm rounded-lg bg-slate-800/50 border border-slate-600 text-slate-200 focus:outline-none"
         >
+          <option value="popularity">인기순</option>
           <option value="price">가격 낮은순</option>
           <option value="price-desc">가격 높은순</option>
           {(category === "cpu" || category === "gpu") && <option value="value">가성비순</option>}
