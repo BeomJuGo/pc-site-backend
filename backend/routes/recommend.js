@@ -78,6 +78,7 @@ function extractCpuSocket(cpu) {
   m = text.match(/(AM[45]|sTRX4|TR4|SP3|LGA\s*[\d-]+|LGA\d{3,4})/i);
   if (m) return normalizeSocket(m[1]);
   if (/인텔|INTEL/i.test(text)) {
+    if (/ARROW.?LAKE|시리즈\s*2|SERIES\s*2|ULTRA\s*[579]\s*2\d{2}|LGA\s*1851/i.test(combined)) return "LGA1851";
     if (/14세대|13세대|12세대|\b(14|13|12)\s*GEN|낙터레이크|RAPTOR|앨더레이크|ALDER/i.test(combined)) return "LGA1700";
     if (/11세대|10세대|\b(11|10)\s*GEN|로켓레이크|ROCKET|코멧레이크|COMET/i.test(combined)) return "LGA1200";
     if (/9세대|8세대|\b(9|8)\s*GEN|커피레이크|COFFEE/i.test(combined)) return "LGA1151";

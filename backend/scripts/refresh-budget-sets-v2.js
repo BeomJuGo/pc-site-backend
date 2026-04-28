@@ -5,7 +5,7 @@ import logger from "../utils/logger.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const BUDGETS = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
+const BUDGETS = Array.from({ length: 16 }, (_, i) => 500000 + i * 100000);
 
 await connectDB();
 const db = getDB();

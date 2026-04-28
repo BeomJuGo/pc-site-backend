@@ -53,11 +53,33 @@ for (const part of parts) {
       skipped++;
       continue;
     }
-    const ops = { $set: { price: naverPrice, mallCount: mallCount || 0 } };
-    if (naverPrice !== part.price) {
-      ops.$push = { priceHistory: { $each: [{ date: today, price: naverPrice }], $slice: -90 } };
-    }
-    await db.collection("parts").updateOne({ _id: part._id }, ops);
+    await db.collection("parts").updateOne(
+      { _id: part._id },
+      [
+        {
+          $set: {
+            price: naverPrice,
+            mallCount: mallCount || 0,
+            priceHistory: {
+              $slice: [
+                {
+                  $concatArrays: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ["$priceHistory", []] },
+                        cond: { $ne: ["$$this.date", today] },
+                      },
+                    },
+                    [{ date: today, price: naverPrice }],
+                  ],
+                },
+                -90,
+              ],
+            },
+          },
+        },
+      ]
+    );
     updated++;
   } catch (err) {
     logger.error(`가격 업데이트 실패: ${part.name} — ${err.message}`);

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import PartCard from "../components/PartCard";
 
-const BUDGETS = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
+const BUDGETS = Array.from({ length: 16 }, (_, i) => 500000 + i * 100000);
 
 const PART_LABELS = {
   cpu: "CPU",
@@ -121,6 +121,18 @@ export default function Recommend() {
           <p className="mt-2 text-xs text-slate-500">
             선택된 예산: <span className="text-slate-300 font-medium">{budget.toLocaleString()}원</span>
           </p>
+          <div className="mt-3 px-4 py-3 bg-amber-900/20 border border-amber-700/40 rounded-lg text-amber-300/80 text-xs leading-relaxed">
+            💡 AI 견적 추천은 최대 <span className="font-semibold text-amber-300">200만원</span>까지 지원합니다.
+            200만원 초과 고사양 PC는{" "}
+            <button
+              type="button"
+              onClick={() => navigate("/pc-builder")}
+              className="underline underline-offset-2 font-semibold text-amber-200 hover:text-white transition-colors"
+            >
+              PC 견적 빌더
+            </button>
+            를 이용해 직접 구성해 주세요.
+          </div>
         </div>
 
         {error && (

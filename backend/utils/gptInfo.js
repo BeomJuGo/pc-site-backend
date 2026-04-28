@@ -1,7 +1,7 @@
 // utils/gptInfo.js — GPT 부품 정보 생성 (스펙 요약 + AI 한줄평)
 import logger from "./logger.js";
 
-const GPT_MODEL = "gpt-5.4";
+const GPT_MODEL = "gpt-5.5";
 
 // 카테고리별 구조화된 스펙 형식 프롬프트
 const SPEC_FORMAT = {
@@ -11,6 +11,7 @@ const SPEC_FORMAT = {
 
 예시: AMD(소켓AM4)/옥타(8) 코어 16스레드/지원 메모리: DDR4/내장그래픽: 미탑재/기본 클럭: 3.0GHz/최대 클럭: 3.7GHz/TDP: 65W
 예시: 인텔(소켓LGA1700)/헥사데카(16) 코어 24스레드/지원 메모리: DDR5/내장그래픽: UHD 770/기본 클럭: 2.1GHz/최대 클럭: 5.2GHz/TDP: 125W
+예시: 인텔(소켓LGA1851)/헥사데카(16) 코어 24스레드/지원 메모리: DDR5/내장그래픽: 미탑재/기본 클럭: 3.2GHz/최대 클럭: 5.7GHz/TDP: 125W
 
 영어 코어 이름(싱글→Mono·듀얼→Dual·쿼드→Quad·헥사→Hexa·옥타→Octa·데카→Deca·도데카→Dodeca·16→Hexadeca·24→Vigi·32→Triaconta).
 이 제품의 실제 공식 스펙만 사용하고, 모르는 값은 ?로 표기하세요. 다른 설명 없이 형식에 맞는 한 줄만 출력하세요.`,
