@@ -1,0 +1,137 @@
+{
+  "name": "WF3: 스마트 AI 캐시 갱신",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "smart-cache-trigger",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: 캐시 갱신 트리거",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.PC_SITE_API }}/api/parts/price-drops?limit=50",
+        "options": {}
+      },
+      "id": "get-price-drops",
+      "name": "가격 급변 부품 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// 가격 하락 5% 이상인 부품 필터링\nconst items = $input.all();\nconst drops = items.filter(item => Math.abs(item.json.change || 0) >= 5);\n\nif (drops.length === 0) {\n  return [{ json: { budgets: [], message: '갱신 필요 없음' } }];\n}\n\n// 부품 가격 기반 영향 예산 범위 계산 (부품 가격 × 1.5배 ~ × 3배)\nconst affectedBudgets = new Set();\nfor (const drop of drops) {\n  const price = drop.json.price || 0;\n  if (price <= 0) continue;\n  for (let budget = 500000; budget <= 2000000; budget += 100000) {\n    if (budget >= price * 1.2 && budget <= price * 4) {\n      affectedBudgets.add(budget);\n    }\n  }\n}\n\nreturn [{ json: { budgets: [...affectedBudgets].sort((a, b) => a - b), dropCount: drops.length } }];"
+      },
+      "id": "calc-budgets",
+      "name": "영향 예산 계산",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.budgets.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "has-budgets",
+      "name": "갱신 필요?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "budgets",
+        "options": {}
+      },
+      "id": "split-budgets",
+      "name": "예산별 분리",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.PC_SITE_API }}/api/recommend/budget-set-v2/refresh",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-admin-key", "value": "={{ $env.ADMIN_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "budget", "value": "={{ $json }}" }
+          ]
+        },
+        "options": { "timeout": 120000 }
+      },
+      "id": "refresh-cache",
+      "name": "AI 캐시 갱신",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_MONITOR_WEBHOOK }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=🤖 **스마트 AI 캐시 갱신 완료**\n\n가격 변동 감지: {{ $('영향 예산 계산').item.json.dropCount }}개 부품\n갱신된 예산: {{ $('영향 예산 계산').item.json.budgets.length }}개"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-done",
+      "name": "Discord: 갱신 완료",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Webhook: 캐시 갱신 트리거": {
+      "main": [[{ "node": "가격 급변 부품 조회", "type": "main", "index": 0 }]]
+    },
+    "가격 급변 부품 조회": {
+      "main": [[{ "node": "영향 예산 계산", "type": "main", "index": 0 }]]
+    },
+    "영향 예산 계산": {
+      "main": [[{ "node": "갱신 필요?", "type": "main", "index": 0 }]]
+    },
+    "갱신 필요?": {
+      "main": [
+        [
+          { "node": "예산별 분리", "type": "main", "index": 0 },
+          { "node": "Discord: 갱신 완료", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "예산별 분리": {
+      "main": [[{ "node": "AI 캐시 갱신", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "saveManualExecutions": true },
+  "_comment": "설정 필요: PC_SITE_API, ADMIN_API_KEY, DISCORD_MONITOR_WEBHOOK 환경변수. WF2 완료 후 이 워크플로우 웹훅 URL을 WF2에 연결하거나 Schedule로 단독 실행 가능"
+}

@@ -1,0 +1,108 @@
+{
+  "name": "WF4: 일일 인사이트 리포트",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 23 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "매일 08:00 KST (23:00 UTC)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.PC_SITE_API }}/api/webhooks/insights",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-insights",
+      "name": "인사이트 데이터 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $input.first().json;\nconst drops = data.priceDrop || [];\n\n// 가격 하락 TOP3 포맷\nconst dropLines = drops.slice(0, 3).map((d, i) =>\n  `${['🥇','🥈','🥉'][i]} ${d.name} **-${d.dropPct}%** (${d.price.toLocaleString()}원)`\n).join('\\n') || '변동 없음';\n\n// 캐시 상태\nconst cacheStatus = data.cachedSets >= data.totalBudgets\n  ? '✅ 정상'\n  : `⚠️ ${data.cachedSets}/${data.totalBudgets}개`;\n\nconst message = [\n  `📊 **[${data.date}] PC Site 일일 리포트**`,\n  ``,\n  `💸 **가격 하락 TOP3**`,\n  dropLines,\n  ``,\n  `🔔 오늘 알림 발동: **${data.triggeredAlerts}건**`,\n  `🤖 AI 견적 캐시: **${cacheStatus}**`,\n].join('\\n');\n\nreturn [{ json: { message, data } }];"
+      },
+      "id": "format-report",
+      "name": "리포트 메시지 포맷",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_REPORT_WEBHOOK }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "content", "value": "={{ $json.message }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-report",
+      "name": "Discord: 리포트 전송",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "template_object",
+              "value": "={\"object_type\":\"text\",\"text\":\"{{ $json.message.replace(/\\*\\*/g, '').replace(/📊|💸|🔔|🤖|🥇|🥈|🥉|✅|⚠️/g, '') }}\",\"link\":{\"web_url\":\"https://goodpricepc.vercel.app\"}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "kakao-report",
+      "name": "KakaoTalk: 리포트 전송",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 400]
+    }
+  ],
+  "connections": {
+    "매일 08:00 KST (23:00 UTC)": {
+      "main": [[{ "node": "인사이트 데이터 조회", "type": "main", "index": 0 }]]
+    },
+    "인사이트 데이터 조회": {
+      "main": [[{ "node": "리포트 메시지 포맷", "type": "main", "index": 0 }]]
+    },
+    "리포트 메시지 포맷": {
+      "main": [
+        [
+          { "node": "Discord: 리포트 전송", "type": "main", "index": 0 },
+          { "node": "KakaoTalk: 리포트 전송", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "saveManualExecutions": true, "timezone": "Asia/Seoul" },
+  "_comment": "설정 필요: PC_SITE_API, WEBHOOK_SECRET, DISCORD_REPORT_WEBHOOK 환경변수. KakaoTalk: HTTP Header Auth 자격증명 (Authorization: Bearer <kakao_access_token>)"
+}

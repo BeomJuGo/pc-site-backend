@@ -32,3 +32,10 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Notify n8n on failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.N8N_PRICE_DONE_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"failure\",\"workflow\":\"weekly-budget-set-v2\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" || true

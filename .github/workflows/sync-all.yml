@@ -98,3 +98,10 @@ jobs:
 
       - name: Done
         run: echo "🎉 전체 sync 완료"
+
+      - name: Notify n8n on failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.N8N_PRICE_DONE_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"failure\",\"workflow\":\"sync-all\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" || true

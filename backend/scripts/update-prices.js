@@ -96,4 +96,29 @@ if (zeroPriceIds.length > 0) {
 }
 
 logger.info(`완료: 성공 ${updated}개, 건너뜀 ${skipped}개, 실패 ${failed}개, 삭제 ${deleted}개 (총 ${parts.length}개)`);
+
+// n8n 웹훅 알림 (성공 완료 시)
+const n8nWebhook = process.env.N8N_PRICE_DONE_WEBHOOK;
+if (n8nWebhook) {
+  try {
+    await fetch(n8nWebhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "success",
+        updated,
+        skipped,
+        failed,
+        deleted,
+        total: parts.length,
+        timestamp: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    logger.info("n8n 웹훅 전송 완료");
+  } catch (err) {
+    logger.warn(`n8n 웹훅 전송 실패: ${err.message}`);
+  }
+}
+
 process.exit(0);

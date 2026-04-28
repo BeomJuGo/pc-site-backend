@@ -1,0 +1,179 @@
+{
+  "name": "WF2: 가격 업데이트 완료 → 알림 체크 + 에러 모니터링",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "price-update-done",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: 업데이트 완료 수신",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.status }}",
+              "operation": "equal",
+              "value2": "failure"
+            }
+          ]
+        }
+      },
+      "id": "check-status",
+      "name": "실패 여부 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_MONITOR_WEBHOOK }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=🚨 **워크플로우 실패!**\n\n`{{ $json.body.workflow || 'daily-price-update' }}`\n시각: {{ $json.body.timestamp }}\n\nGitHub Actions를 확인해 주세요."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-failure",
+      "name": "Discord: 실패 알림",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 160]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.PC_SITE_API }}/api/alerts?triggered=false&limit=500",
+        "options": {}
+      },
+      "id": "get-alerts",
+      "name": "미트리거 알림 목록 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 440]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-alerts",
+      "name": "알림별 처리",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [900, 440]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.PC_SITE_API }}/api/parts/{{ $json.category }}/{{ encodeURIComponent($json.name) }}",
+        "options": {}
+      },
+      "id": "get-part-price",
+      "name": "부품 현재가 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 440]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.price }}",
+              "operation": "smallerEqual",
+              "value2": "={{ $('알림별 처리').item.json.targetPrice }}"
+            }
+          ]
+        }
+      },
+      "id": "check-alert-price",
+      "name": "목표가 달성?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 440]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_ALERT_WEBHOOK }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=🔔 **가격 알림 달성!**\n\n**{{ $('알림별 처리').item.json.name }}**\n💰 현재가: **{{ $json.price.toLocaleString() }}원**\n🎯 목표가: {{ $('알림별 처리').item.json.targetPrice.toLocaleString() }}원"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-alert",
+      "name": "Discord: 가격 알림",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1560, 360]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DISCORD_MONITOR_WEBHOOK }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=✅ **가격 업데이트 완료**\n\n📦 업데이트: {{ $('Webhook: 업데이트 완료 수신').item.json.body.updated }}개\n⏭ 건너뜀: {{ $('Webhook: 업데이트 완료 수신').item.json.body.skipped }}개\n🗑 삭제: {{ $('Webhook: 업데이트 완료 수신').item.json.body.deleted }}개\n🕐 {{ $('Webhook: 업데이트 완료 수신').item.json.body.timestamp }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "discord-success",
+      "name": "Discord: 완료 요약",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 600]
+    }
+  ],
+  "connections": {
+    "Webhook: 업데이트 완료 수신": {
+      "main": [[{ "node": "실패 여부 확인", "type": "main", "index": 0 }]]
+    },
+    "실패 여부 확인": {
+      "main": [
+        [{ "node": "Discord: 실패 알림", "type": "main", "index": 0 }],
+        [
+          { "node": "미트리거 알림 목록 조회", "type": "main", "index": 0 },
+          { "node": "Discord: 완료 요약", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "미트리거 알림 목록 조회": {
+      "main": [[{ "node": "알림별 처리", "type": "main", "index": 0 }]]
+    },
+    "알림별 처리": {
+      "main": [[{ "node": "부품 현재가 조회", "type": "main", "index": 0 }]]
+    },
+    "부품 현재가 조회": {
+      "main": [[{ "node": "목표가 달성?", "type": "main", "index": 0 }]]
+    },
+    "목표가 달성?": {
+      "main": [
+        [{ "node": "Discord: 가격 알림", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "saveManualExecutions": true },
+  "_comment": "설정 필요: PC_SITE_API(https://goodpricepc.vercel.app), DISCORD_ALERT_WEBHOOK, DISCORD_MONITOR_WEBHOOK 환경변수"
+}

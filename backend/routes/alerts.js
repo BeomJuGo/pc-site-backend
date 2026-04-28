@@ -58,6 +58,17 @@ router.post("/", validate(createAlertSchema), async (req, res) => {
     });
 
     res.json({ id: result.insertedId, message: "가격 알림이 등록되었습니다." });
+
+    // n8n 즉시 체크 트리거 (fire-and-forget)
+    const n8nWebhook = process.env.N8N_ALERT_WEBHOOK;
+    if (n8nWebhook) {
+      fetch(n8nWebhook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, name, targetPrice, email }),
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: "알림 등록 실패" });
   }
