@@ -32,3 +32,9 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+
+      - name: Update popularity scores
+        run: node scripts/update-popularity-scores.js
+        working-directory: backend
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}

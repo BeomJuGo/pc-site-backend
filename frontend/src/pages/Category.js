@@ -159,7 +159,9 @@ export default function Category() {
       const b3d = Number(b.benchmarkScore?.["3dmarkscore"]) || 0;
 
       if (sortBy === "popularity") {
-        return (Number(b.mallCount) || 0) - (Number(a.mallCount) || 0);
+        const aScore = Number(a.popularityScore ?? a.mallCount) || 0;
+        const bScore = Number(b.popularityScore ?? b.mallCount) || 0;
+        return bScore - aScore;
       }
       if (sortBy === "price") return aP - bP;
       if (sortBy === "price-desc") return bP - aP;
