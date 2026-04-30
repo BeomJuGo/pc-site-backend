@@ -555,32 +555,37 @@ export async function saveBudgetSetToDb(db, budget, purpose, result) {
 
 /* ==================== V2: 목적 없는 가성비 극대화 AI 견적 ==================== */
 
-const BUDGET_SET_V2_SYSTEM_PROMPT = `당신은 PC 견적 전문가입니다. DB에 등록된 부품 목록에서만 선택하여 예산에서 최고의 가성비를 제공하는 호환 가능한 PC 견적을 작성하세요.
+function buildV2SystemPrompt(budget) {
+  const minBudget = budget.toLocaleString();
+  const maxBudget = (budget + 100000).toLocaleString();
+  return `당신은 PC 견적 전문가입니다. DB에 등록된 부품 목록에서만 선택하여 예산을 최대한 활용하는 호환 가능한 PC 견적을 작성하세요.
 반드시 JSON만 출력하고 다른 텍스트는 절대 포함하지 마세요.
 
 GPU는 선택 사항입니다:
 - 예산이 충분하면 GPU를 포함하세요.
-- 예산이 부족하거나 GPU를 추가하면 총 가격이 초과될 경우, 내장 그래픽이 탑재된 CPU(AMD 라이젠 G시리즈, 인텔 내장그래픽 포함 CPU)를 선택하고 GPU는 제외하세요.
+- GPU를 추가하면 총 가격이 초과될 경우, 내장 그래픽이 탑재된 CPU(AMD 라이젠 G시리즈, 인텔 내장그래픽 포함 CPU)를 선택하고 GPU는 제외하세요.
 - GPU 없이 구성할 때 출력 형식의 gpu 필드는 생략합니다.
 
 선택 전략:
-- 메인보드/메모리/저장장치/케이스/쿨러/파워는 제공된 인기 순위 목록에서 선택하세요.
-- CPU와 GPU는 예산 내 최고 성능/가격비(벤치마크점수÷가격)를 제공하는 부품을 선택하세요.
+- 보조 부품(메인보드/메모리/저장장치/케이스/쿨러/파워)은 제공된 인기 순위 목록에서 선택하세요.
+- CPU와 GPU는 예산 범위 안에서 최고 성능/가격비(벤치마크점수÷가격)를 제공하는 부품을 선택하세요.
 - 보조 부품 합계 후 남은 예산은 CPU 또는 GPU 업그레이드에 최대한 활용하세요.
+- 예산을 최대한 써야 합니다. 예산의 대부분을 쓰지 않으면 오답입니다.
 
 출력 형식: {"parts":{"cpu":{"name":"...","price":숫자},"gpu":{"name":"...","price":숫자},"motherboard":{"name":"...","price":숫자},"memory":{"name":"...","price":숫자},"psu":{"name":"...","price":숫자},"cooler":{"name":"...","price":숫자},"storage":{"name":"...","price":숫자},"case":{"name":"...","price":숫자}},"totalPrice":숫자,"summary":"한줄설명"}
 
 호환성 규칙:
-- CPU 소켓과 메인보드 소켓 일치
-- 메모리 DDR 규격 일치
+- CPU 소켓과 메인보드 소켓 반드시 일치 (AM4↔AM4, AM5↔AM5, LGA1700↔LGA1700, LGA1851↔LGA1851)
+- 메모리 DDR 규격 메인보드와 일치
 - PSU 출력 = CPU TDP + GPU TDP + 100W 이상 (GPU 없으면 CPU TDP + 100W)
 - 쿨러 소켓 CPU와 일치
 - 케이스 폼팩터 메인보드와 일치
 
 예산 규칙 (절대 준수):
-- 총 가격은 예산의 90~110% 범위여야 함
-- 총 가격이 예산의 90% 미만이면 오답 — 더 고사양 부품으로 교체할 것
-- 총 가격이 예산의 110% 초과도 오답 — 더 저렴한 부품으로 교체하거나 GPU를 제외할 것`;
+- 총 가격은 반드시 ${minBudget}원 이상 ${maxBudget}원 미만이어야 함
+- 총 가격이 ${minBudget}원 미만이면 오답 — CPU/GPU를 더 고사양으로 업그레이드할 것
+- 총 가격이 ${maxBudget}원 이상이면 오답 — 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외할 것`;
+}
 
 const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -646,8 +651,11 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
   const sortedStorages = sortByPopularity(storages, "storage", Math.max(budget * (lowBudget ? 0.12 : 0.08), 60000));
   const sortedCases = sortByPopularity(cases, "case", Math.max(budget * (lowBudget ? 0.10 : 0.07), 50000));
 
+  const minBudget = budget;
+  const maxBudget = budget + 100000;
+
   const userPrompt = [
-    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
+    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${minBudget.toLocaleString()}원 이상 ${maxBudget.toLocaleString()}원 미만이어야 함)`,
     "",
     "[사용 가능한 부품 목록 — 반드시 이 목록에서만 선택]",
     "",
@@ -677,13 +685,13 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
   ].join("\n");
 
   const messages = [
-    { role: "system", content: BUDGET_SET_V2_SYSTEM_PROMPT },
+    { role: "system", content: buildV2SystemPrompt(budget) },
     { role: "user", content: userPrompt },
   ];
 
   const PART_KEYS = ["cpu", "gpu", "motherboard", "memory", "psu", "cooler", "storage", "case"];
   const REQUIRED_KEYS = ["cpu", "motherboard", "memory", "psu", "storage", "case"];
-  const MAX_ATTEMPTS = 5;
+  const MAX_ATTEMPTS = 7;
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -772,8 +780,15 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       const boardSock = extractBoardSocket(boardDbPart);
       if (cpuSock && boardSock && !isSocketCompatible(cpuSock, boardSock)) {
         lastError = new Error(`소켓 불일치: CPU ${cpuSock} ↔ 메인보드 ${boardSock}`);
+        const compatibleBoards = sortedBoards
+          .filter(b => isSocketCompatible(cpuSock, extractBoardSocket(b)))
+          .map(fmtBoard)
+          .join("\n");
+        const boardHint = compatibleBoards
+          ? `\n소켓 ${cpuSock}과 호환되는 메인보드 목록:\n${compatibleBoards}`
+          : "";
         messages.push({ role: "assistant", content: raw });
-        messages.push({ role: "user", content: `호환성 오류: CPU(${enrichedParts.cpu.name})는 소켓 ${cpuSock}이지만 메인보드(${enrichedParts.motherboard.name})는 소켓 ${boardSock}입니다. 소켓이 일치하는 CPU와 메인보드를 다시 선택하세요.` });
+        messages.push({ role: "user", content: `호환성 오류: CPU(${enrichedParts.cpu.name})는 소켓 ${cpuSock}이지만 메인보드(${enrichedParts.motherboard.name})는 소켓 ${boardSock}입니다. 소켓이 일치하는 CPU와 메인보드를 선택하세요.${boardHint}` });
         continue;
       }
     }
@@ -794,18 +809,18 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       .map(([k, v]) => `${k}: ${v.name} (${v.price.toLocaleString()}원)`)
       .join(", ");
 
-    if (totalPrice > budget * 1.10) {
+    if (totalPrice >= maxBudget) {
       lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원`);
-      const over = (totalPrice - Math.round(budget * 1.1)).toLocaleString();
+      const over = (totalPrice - maxBudget).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 상한(${maxBudget.toLocaleString()}원)을 ${over}원 초과.\n목표: ${minBudget.toLocaleString()}원 이상 ${maxBudget.toLocaleString()}원 미만. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
       continue;
     }
-    if (totalPrice < budget * 0.90) {
+    if (totalPrice < minBudget) {
       lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원`);
-      const gap = (Math.round(budget * 0.9) - totalPrice).toLocaleString();
+      const gap = (minBudget - totalPrice).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. CPU 또는 GPU를 더 고사양으로 교체하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 하한(${minBudget.toLocaleString()}원)보다 ${gap}원 부족.\n목표: ${minBudget.toLocaleString()}원 이상 ${maxBudget.toLocaleString()}원 미만. CPU 또는 GPU를 더 고사양으로 교체하거나 GPU를 추가하세요.` });
       continue;
     }
 
