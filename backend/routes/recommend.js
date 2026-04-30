@@ -1111,12 +1111,12 @@ router.post("/", validate(recommendSchema), async (req, res) => {
     const builds = [];
     const ce = results.slice().sort((a, b) => (b.score / b.totalPrice) - (a.score / a.totalPrice))[0];
     builds.push({ label: "가성비", ...ce });
-    const bal = results.slice().sort((a, b) => Math.abs(a.totalPrice - budget * 0.85) - Math.abs(b.totalPrice - budget * 0.85))[0];
+    const bal = results.slice().sort((a, b) => Math.abs(a.totalPrice - budget) - Math.abs(b.totalPrice - budget))[0];
     if (bal !== ce) builds.push({ label: "균형", ...bal });
     const hp = results[0];
     if (hp !== ce && hp !== bal) builds.push({ label: "고성능", ...hp });
 
-    const uniqueBuilds = Array.from(new Set(builds.map(b => b.cpu.name + b.gpu.name))).map(k => builds.find(b => b.cpu.name + b.gpu.name === k));
+    const uniqueBuilds = Array.from(new Set(builds.map(b => `${b.cpu.name}|${b.gpu.name}`))).map(k => builds.find(b => `${b.cpu.name}|${b.gpu.name}` === k));
     while (uniqueBuilds.length < 3 && uniqueBuilds.length < results.length) {
       const next = results.find(r => !uniqueBuilds.some(b => b.cpu.name === r.cpu.name && b.gpu.name === r.gpu.name));
       if (next) uniqueBuilds.push({ label: uniqueBuilds.length === 1 ? "균형" : "고성능", ...next }); else break;

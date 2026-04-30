@@ -197,6 +197,7 @@ router.get("/budget-picks", validate(budgetPicksQuerySchema, "query"), setCacheH
     const db = getDB();
     const pipeline = buildBudgetPicksPipeline(budgetNum);
     const [facetResult] = await db.collection("parts").aggregate(pipeline).toArray();
+    if (!facetResult) return res.status(404).json({ error: "예산에 맞는 부품을 찾을 수 없습니다." });
 
     const budgetAllocation = Object.fromEntries(
       Object.entries(BUDGET_RATIOS).map(([cat, ratio]) => [cat, Math.round(budgetNum * ratio)])
