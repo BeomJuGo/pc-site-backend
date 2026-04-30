@@ -27,5 +27,6 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}

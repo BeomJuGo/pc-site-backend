@@ -28,6 +28,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "10"
           BENCH_PAGES: "6"
@@ -38,6 +39,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "5"
           AI: "true"
@@ -47,6 +49,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "3"
           AI: "true"
@@ -56,6 +59,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "3"
           AI: "true"
@@ -65,6 +69,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "3"
           AI: "true"
@@ -74,6 +79,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "3"
           AI: "true"
@@ -83,6 +89,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "3"
           AI: "true"
@@ -92,6 +99,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PAGES: "8"
           AI: "true"

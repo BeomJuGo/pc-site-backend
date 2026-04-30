@@ -30,6 +30,7 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
 
@@ -38,3 +39,4 @@ jobs:
         working-directory: backend
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
