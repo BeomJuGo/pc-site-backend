@@ -443,7 +443,7 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
         response_format: { type: "json_object" },
 
         messages,
-        max_completion_tokens: 1500,
+        max_completion_tokens: 4096,
       }),
       signal: AbortSignal.timeout(60000),
     });
@@ -705,7 +705,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
         response_format: { type: "json_object" },
 
         messages,
-        max_completion_tokens: 1500,
+        max_completion_tokens: 4096,
       }),
       signal: AbortSignal.timeout(60000),
     });
