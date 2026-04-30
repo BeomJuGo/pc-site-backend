@@ -174,6 +174,7 @@ async function crawlDanawaMemory(maxPages = 10) {
 }
 
 async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
+  if (memories.length === 0) { console.log("⛔ 크롤링 데이터 없음 — DB 삭제 건너뜀"); return; }
   const db = getDB();
   const col = db.collection("parts");
   const existing = await col.find({ category: "memory" }).toArray();
@@ -187,9 +188,9 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const memory of filteredMemories) {
-    if (!memory.price || memory.price === 0) {
+    if (!memory.price || memory.price === 0 || memory.price > 1000000) {
       skipped++;
-      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${memory.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${memory.price?.toLocaleString()}\uc6d0): ${memory.name}`);
       continue;
     }
 
@@ -235,7 +236,9 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
 
   const currentNames = new Set(memories.map((m) => m.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
-  if (toDelete.length > 0) {
+  if (toDelete.length >= existing.length * 0.5) {
+    console.log(`\u26a0\uFE0F \uc0ad\uc81c \ub300\uc0c1 ${toDelete.length}\uac1c / \uae30\uc874 ${existing.length}\uac1c \u2014 50% \ucd08\uacfc\ub85c \uc0ad\uc81c \ucde8\uc18c (\ubd80\ubd84 \ud06c\ub864\ub9c1 \uc758\uc2ec)`);
+  } else if (toDelete.length > 0) {
     await col.deleteMany({ category: "memory", name: { $in: toDelete } });
     console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }

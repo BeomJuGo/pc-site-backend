@@ -201,6 +201,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
 }
 
 async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
+  if (psus.length === 0) { console.log("\u26d4 \ud06c\ub864\ub9c1 \ub370\uc774\ud130 \uc5c6\uc74c \u2014 DB \uc0ad\uc81c \uac74\ub108\ub700"); return; }
   const db = getDB();
   const col = db.collection("parts");
   const existing = await col.find({ category: "psu" }).toArray();
@@ -209,9 +210,9 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const psu of psus) {
-    if (!psu.price || psu.price === 0) {
+    if (!psu.price || psu.price === 0 || psu.price > 600000) {
       skipped++;
-      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${psu.name}`);
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${psu.price?.toLocaleString()}\uc6d0): ${psu.name}`);
       continue;
     }
 
@@ -255,7 +256,9 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
 
   const currentNames = new Set(psus.map((p) => p.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
-  if (toDelete.length > 0) {
+  if (toDelete.length >= existing.length * 0.5) {
+    console.log(`\u26a0\uFE0F \uc0ad\uc81c \ub300\uc0c1 ${toDelete.length}\uac1c / \uae30\uc874 ${existing.length}\uac1c \u2014 50% \ucd08\uacfc\ub85c \uc0ad\uc81c \ucde8\uc18c (\ubd80\ubd84 \ud06c\ub864\ub9c1 \uc758\uc2ec)`);
+  } else if (toDelete.length > 0) {
     await col.deleteMany({ category: "psu", name: { $in: toDelete } });
     console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }

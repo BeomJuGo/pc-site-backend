@@ -43,17 +43,20 @@ export default function PartDetail() {
 
   useEffect(() => {
     const load = async () => {
-      const [detail, history, trendData, prices] = await Promise.all([
-        fetchPartDetail(category, slug),
-        fetchPriceHistory(category, slug),
-        fetchTrend(category, slug),
-        fetchMultiMallPrices(category, decodeURIComponent(slug)),
-      ]);
-      setPart(detail);
-      setPriceHistory(history || []);
-      setTrend(trendData);
-      setMallPrices(prices);
-      setLoading(false);
+      try {
+        const [detail, history, trendData, prices] = await Promise.allSettled([
+          fetchPartDetail(category, slug),
+          fetchPriceHistory(category, slug),
+          fetchTrend(category, slug),
+          fetchMultiMallPrices(category, decodeURIComponent(slug)),
+        ]);
+        setPart(detail.value ?? null);
+        setPriceHistory(history.value || []);
+        setTrend(trendData.value ?? null);
+        setMallPrices(prices.value ?? null);
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, [category, slug]);
@@ -115,7 +118,7 @@ export default function PartDetail() {
   const chartMin = chartPrices.length ? Math.min(...chartPrices) : null;
   const chartMax = chartPrices.length ? Math.max(...chartPrices) : null;
   const chartChange =
-    chartPrices.length >= 2
+    chartPrices.length >= 2 && chartPrices[0] > 0
       ? Math.round(((chartPrices.at(-1) - chartPrices[0]) / chartPrices[0]) * 1000) / 10
       : null;
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -57,9 +58,9 @@ function PriceDrops() {
   return (
     <div className="divide-y divide-slate-700/30 border border-slate-700/50 rounded-xl overflow-hidden">
       {drops.map((item, i) => (
-        <a
+        <Link
           key={item._id || i}
-          href={`/detail/${item.category}/${encodeURIComponent(item.name)}`}
+          to={`/detail/${item.category}/${encodeURIComponent(item.name)}`}
           className="flex items-center gap-3 px-4 py-3.5 bg-slate-800/40 hover:bg-slate-700/50 transition-colors group"
         >
           <span className="text-slate-500 text-xs w-5 text-center flex-shrink-0">{i + 1}</span>
@@ -81,7 +82,7 @@ function PriceDrops() {
               ▼ {item.dropPct}% ({Number(item.dropAmt).toLocaleString()}원↓)
             </div>
           </div>
-        </a>
+        </Link>
       ))}
     </div>
   );
@@ -91,6 +92,7 @@ const FEATURED_BUDGET = 1500000;
 const FEATURED_PART_LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", psu: "파워", cooler: "쿨러", case: "케이스" };
 
 function FeaturedRecommend() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [status, setStatus] = useState("loading"); // loading | ready | unavailable
 
@@ -154,7 +156,7 @@ function FeaturedRecommend() {
         <Button
           variant="outline"
           className="border-purple-500/50 text-purple-300 hover:bg-purple-900/30 hover:text-purple-200"
-          onClick={() => window.location.href = "/ai-recommend"}
+          onClick={() => navigate("/ai-recommend")}
         >
           내 예산으로 맞춤 견적 받기 →
         </Button>
@@ -164,6 +166,7 @@ function FeaturedRecommend() {
 }
 
 export default function Home() {
+  const navigate = useNavigate();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
@@ -276,7 +279,7 @@ export default function Home() {
                   key={i}
                   className="group hover:shadow-xl transition-all duration-500 cursor-pointer bg-slate-800/50 backdrop-blur-sm border-slate-700/50 hover:bg-slate-700/60 hover:scale-105 hover:-translate-y-2 animate-fade-in-up hover-lift"
                   style={{ animationDelay: `${i * 100}ms` }}
-                  onClick={() => window.location.href = cat.href}
+                  onClick={() => navigate(cat.href)}
                 >
                   <CardHeader className="text-center pb-4">
                     <div className="text-5xl mb-3 group-hover:scale-110 transition-transform duration-300">{cat.icon}</div>
@@ -337,14 +340,14 @@ export default function Home() {
                   size="lg"
                   variant="secondary"
                   className="text-lg px-8 py-4 bg-white text-purple-600 hover:bg-blue-50 hover:text-purple-700 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
-                  onClick={() => window.location.href = "/ai-recommend"}
+                  onClick={() => navigate("/ai-recommend")}
                 >
                   ✨ AI 추천 받기
                 </Button>
                 <Button
                   size="lg"
                   className="text-lg px-8 py-4 bg-slate-800/80 text-white border border-white/30 hover:bg-slate-700/80 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
-                  onClick={() => window.location.href = "/pc-builder"}
+                  onClick={() => navigate("/pc-builder")}
                 >
                   🛠️ 직접 견적 짜기
                 </Button>

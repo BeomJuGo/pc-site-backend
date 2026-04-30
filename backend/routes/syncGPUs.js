@@ -267,6 +267,7 @@ const isValidSpec = (s) =>
   (/:\s/.test(s) || /^(AMD|NVIDIA|Intel)/i.test(s));
 
 async function saveToDB(gpus, danawaProducts, options = {}) {
+  if (danawaProducts.length === 0) { console.log("⛔ 크롤링 데이터 없음 — DB 삭제 건너뜀"); return; }
   const { ai = true, force = false } = options;
   const db = getDB();
   const col = db.collection("parts");
@@ -282,8 +283,8 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
   }
 
   for (const p of danawaProducts) {
-    if (!p.price || p.price === 0) {
-      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${p.name}`);
+    if (!p.price || p.price === 0 || p.price > 6000000) {
+      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${p.price?.toLocaleString()}\uc6d0): ${p.name}`);
       continue;
     }
 
@@ -356,7 +357,9 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
   }
 
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
-  if (toDelete.length > 0) {
+  if (toDelete.length >= existing.length * 0.5) {
+    console.log(`\u26a0\uFE0F \uc0ad\uc81c \ub300\uc0c1 ${toDelete.length}\uac1c / \uae30\uc874 ${existing.length}\uac1c \u2014 50% \ucd08\uacfc\ub85c \uc0ad\uc81c \ucde8\uc18c (\ubd80\ubd84 \ud06c\ub864\ub9c1 \uc758\uc2ec)`);
+  } else if (toDelete.length > 0) {
     await col.deleteMany({ category: "gpu", name: { $in: toDelete } });
     console.log("\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428:", toDelete.length, "\uac1c");
   }

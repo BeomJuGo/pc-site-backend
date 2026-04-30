@@ -242,6 +242,7 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
 }
 
 async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
+  if (storages.length === 0) { console.log("⛔ 크롤링 데이터 없음 — DB 삭제 건너뜀"); return; }
   const db = getDB();
   const col = db.collection("parts");
   const existing = await col.find({ category: "storage" }).toArray();
@@ -299,7 +300,9 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
 
   const currentNames = new Set(storages.map((s) => s.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
-  if (toDelete.length > 0) {
+  if (toDelete.length >= existing.length * 0.5) {
+    console.log(`\u26a0\uFE0F \uc0ad\uc81c \ub300\uc0c1 ${toDelete.length}\uac1c / \uae30\uc874 ${existing.length}\uac1c \u2014 50% \ucd08\uacfc\ub85c \uc0ad\uc81c \ucde8\uc18c (\ubd80\ubd84 \ud06c\ub864\ub9c1 \uc758\uc2ec)`);
+  } else if (toDelete.length > 0) {
     await col.deleteMany({ category: "storage", name: { $in: toDelete } });
     console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
   }

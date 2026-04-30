@@ -58,6 +58,7 @@ export default function App() {
                   <Route path="/about" element={<About />} />
                   <Route path="/guide" element={<Guide />} />
                   <Route path="/pc-builder" element={<PCBuilder />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Suspense>
             </ErrorBoundary>

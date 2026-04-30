@@ -472,6 +472,7 @@ function findBenchmarkScore(cpuName, benchmarks) {
 }
 
 async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}) {
+  if (cpus.length === 0) { console.log("⛔ 크롤링 데이터 없음 — DB 삭제 건너뜀"); return; }
   const db = getDB();
   const col = db.collection("parts");
   const existing = await col.find({ category: "cpu" }).toArray();
@@ -479,7 +480,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
   let inserted = 0, updated = 0, withScore = 0, skipped = 0;
 
   for (const cpu of cpus) {
-    if (!cpu.price || cpu.price === 0) { skipped++; continue; }
+    if (!cpu.price || cpu.price === 0 || cpu.price > 3000000) { skipped++; continue; }
     const old = byName.get(cpu.name);
     const baseInfo = extractCpuInfo(cpu.name, cpu.spec);
     const crawledSpec = cpu.spec?.trim() || '';
@@ -542,7 +543,11 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
 
   const currentNames = new Set(cpus.map((c) => c.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
-  if (toDelete.length > 0) await col.deleteMany({ category: "cpu", name: { $in: toDelete } });
+  if (toDelete.length >= existing.length * 0.5) {
+    console.log(`⚠️ 삭제 대상 ${toDelete.length}개 / 기존 ${existing.length}개 — 50% 초과로 삭제 취소 (부분 크롤링 의심)`);
+  } else if (toDelete.length > 0) {
+    await col.deleteMany({ category: "cpu", name: { $in: toDelete } });
+  }
 
   console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
   console.log(`\uD83D\uDCCA \ubca4\uce58\ub9c8\ud06c \uc810\uc218: ${withScore}/${cpus.length}\uac1c \ub9e4\uce6d \uc644\ub8cc`);

@@ -9,7 +9,11 @@ export function useFavorites() {
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+    } catch {
+      // QuotaExceededError: storage full, keep in-memory state as-is
+    }
   }, [favorites]);
 
   const add = (part) =>
