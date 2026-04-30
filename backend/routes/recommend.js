@@ -683,7 +683,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
 
   const PART_KEYS = ["cpu", "gpu", "motherboard", "memory", "psu", "cooler", "storage", "case"];
   const REQUIRED_KEYS = ["cpu", "motherboard", "memory", "psu", "storage", "case"];
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 5;
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -741,7 +741,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
     const partNamesForLookup = Object.values(enrichedParts).map(p => p.name);
     const dbPartsForPrice = await db.collection("parts").find(
       { name: { $in: partNamesForLookup } },
-      { projection: { name: 1, price: 1, image: 1 } }
+      { projection: { name: 1, price: 1, image: 1, info: 1, specSummary: 1 } }
     ).toArray();
     const dbPriceMap = Object.fromEntries(dbPartsForPrice.map(p => [p.name, p]));
 
@@ -761,6 +761,31 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       lastError = new Error(`AI가 DB에 없는 부품 선택: ${hallucinated.join(", ")}`);
       messages.push({ role: "assistant", content: raw });
       messages.push({ role: "user", content: `다음 부품은 DB에 존재하지 않습니다: ${hallucinated.join(", ")}. 반드시 제공된 부품 목록에서 정확한 이름으로만 선택하세요.` });
+      continue;
+    }
+
+    // 호환성 검증: CPU 소켓 ↔ 메인보드 소켓
+    const cpuDbPart = enrichedParts.cpu ? dbPriceMap[enrichedParts.cpu.name] : null;
+    const boardDbPart = enrichedParts.motherboard ? dbPriceMap[enrichedParts.motherboard.name] : null;
+    if (cpuDbPart && boardDbPart) {
+      const cpuSock = extractCpuSocket(cpuDbPart);
+      const boardSock = extractBoardSocket(boardDbPart);
+      if (cpuSock && boardSock && !isSocketCompatible(cpuSock, boardSock)) {
+        lastError = new Error(`소켓 불일치: CPU ${cpuSock} ↔ 메인보드 ${boardSock}`);
+        messages.push({ role: "assistant", content: raw });
+        messages.push({ role: "user", content: `호환성 오류: CPU(${enrichedParts.cpu.name})는 소켓 ${cpuSock}이지만 메인보드(${enrichedParts.motherboard.name})는 소켓 ${boardSock}입니다. 소켓이 일치하는 CPU와 메인보드를 다시 선택하세요.` });
+        continue;
+      }
+    }
+
+    // 호환성 검증: 메모리 DDR 타입 ↔ 메인보드
+    const memDbPart = enrichedParts.memory ? dbPriceMap[enrichedParts.memory.name] : null;
+    if (memDbPart && boardDbPart && !isMemoryCompatible(memDbPart, boardDbPart)) {
+      const memDdr = extractDdrType(memDbPart.name || memDbPart.info || "");
+      const boardDdr = extractDdrType(boardDbPart.info || boardDbPart.specSummary || "");
+      lastError = new Error(`메모리 DDR 불일치: 메모리 ${memDdr} ↔ 메인보드 ${boardDdr}`);
+      messages.push({ role: "assistant", content: raw });
+      messages.push({ role: "user", content: `호환성 오류: 메모리(${enrichedParts.memory.name})는 ${memDdr}이지만 메인보드(${enrichedParts.motherboard.name})는 ${boardDdr}을 지원합니다. DDR 규격이 일치하는 메모리와 메인보드를 다시 선택하세요.` });
       continue;
     }
 
@@ -790,6 +815,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       computedAt: new Date().toISOString(),
       parts: enrichedParts,
       summary: parsed.summary || "",
+      compatibilityVerified: true,
     };
   }
 
@@ -1131,6 +1157,20 @@ router.get("/budget-set-v2", validate(recommendV2Schema, "query"), async (req, r
     const doc = await db.collection("cached_sets_v2").findOne({ _id: `budget-set-v2:${budget}` });
 
     if (doc?.result?.parts) {
+      // 호환성 검증 없이 생성된 구버전 캐시는 즉시 재빌드
+      if (!doc.result.compatibilityVerified && !buildingInProgressV2.has(budget)) {
+        buildingInProgressV2.add(budget);
+        logger.info(`budget-set-v2 호환성 미검증 캐시 — 즉시 재빌드: ${budget}`);
+        buildCompatibleSetWithAIV2(budget, db)
+          .then(async (fresh) => {
+            if (!fresh?.parts) return;
+            await saveBudgetSetV2ToDb(db, budget, fresh);
+            setCache(memKey, fresh, 10 * 60 * 1000);
+          })
+          .catch(e => logger.error(`budget-set-v2 재빌드 실패: ${e.message}`))
+          .finally(() => buildingInProgressV2.delete(budget));
+        return res.status(503).json({ error: "NOT_READY", message: "호환 세트를 재검증 중입니다. 잠시 후 다시 시도해주세요.", retryAfter: 60 });
+      }
       const age = Date.now() - new Date(doc.computedAt).getTime();
       setCache(memKey, doc.result, 10 * 60 * 1000);
       if (age > BUDGET_SET_V2_TTL_MS && !buildingInProgressV2.has(budget)) {
