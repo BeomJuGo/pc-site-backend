@@ -1,7 +1,7 @@
 // utils/gptInfo.js — GPT 부품 정보 생성 (스펙 요약 + AI 한줄평)
 import logger from "./logger.js";
 
-const GPT_MODEL = "gpt-5.4";
+const GPT_MODEL = "gpt-5.4-mini";
 
 // 카테고리별 구조화된 스펙 형식 프롬프트
 const SPEC_FORMAT = {
@@ -122,10 +122,7 @@ export async function callGptInfo(partName, category, model = GPT_MODEL, apiKey)
   if (!apiKey) throw new Error("OPENAI_API_KEY 미설정");
   const { reviewPrompt, specPrompt } = buildGptPrompts(partName, category);
 
-  const useCompletionTokens = model !== "gpt-4o-mini";
-  const tokenParam = useCompletionTokens
-    ? { max_completion_tokens: 300 }
-    : { max_tokens: 300 };
+  const tokenParam = { max_completion_tokens: 300 };
 
   const headers = {
     Authorization: `Bearer ${apiKey}`,

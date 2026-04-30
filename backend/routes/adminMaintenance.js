@@ -159,7 +159,7 @@ router.post("/update-all-specs", async (req, res) => {
         const { review, specSummary } = await callGptInfo(
           part.name,
           part.category,
-          "gpt-5.4",
+          "gpt-5.4-mini",
           OPENAI_API_KEY
         );
         if (review && specSummary) {

@@ -344,7 +344,7 @@ async function buildCompatibleSet(budget, purpose, db) {
   return results.sort((a, b) => (b.score / b.totalPrice) - (a.score / a.totalPrice))[0];
 }
 
-/* ==================== AI 기반 budget-set 생성 (gpt-5.4, 주 1회) ==================== */
+/* ==================== AI 기반 budget-set 생성 (gpt-5.4-mini, 주 1회) ==================== */
 
 export async function buildCompatibleSetWithAI(budget, purpose, db) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
@@ -439,7 +439,7 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         response_format: { type: "json_object" },
         temperature: 0,
         messages,
@@ -691,7 +691,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: "gpt-5.4",
+        model: "gpt-5.4-mini",
         response_format: { type: "json_object" },
         temperature: 0,
         messages,

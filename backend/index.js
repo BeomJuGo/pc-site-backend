@@ -284,7 +284,7 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
   } catch (_) {}
 
   try {
-    const { review, specSummary } = await callGptInfo(name, category, "gpt-5.4", config.openaiApiKey);
+    const { review, specSummary } = await callGptInfo(name, category, "gpt-5.4-mini", config.openaiApiKey);
     // 형식이 유효할 때만 DB에 저장 (숫자만 나열된 불량 스펙은 캐시 안 함)
     const isValidSpec = (s) => typeof s === "string" && (s.match(/\//g) || []).length >= 2;
     if (db && isValidSpec(specSummary)) {

@@ -265,7 +265,7 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
       const needsAI = force || !old?.review || !isValidSpec(old?.specSummary);
       if (needsAI) {
         try {
-          const aiRes = await callGptInfo(storage.name, "storage", "gpt-5.4", OPENAI_API_KEY);
+          const aiRes = await callGptInfo(storage.name, "storage", "gpt-5.4-mini", OPENAI_API_KEY);
           if (aiRes.review) review = aiRes.review;
           if (aiRes.specSummary) specSummary = aiRes.specSummary;
         } catch (e) {
