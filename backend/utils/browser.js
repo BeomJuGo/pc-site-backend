@@ -46,14 +46,14 @@ export async function getBrowserConfig() {
     };
   }
 
-  const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+  const chromePath = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
   if (existsSync(chromePath)) {
     return {
       executablePath: chromePath,
       args: [
         '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage',
         '--disable-setuid-sandbox', '--no-first-run', '--no-zygote',
-        '--single-process', '--disable-extensions', '--disable-web-security',
+        '--single-process', '--disable-extensions',
         '--disable-features=VizDisplayCompositor'
       ],
       defaultViewport: { width: 1280, height: 720 },

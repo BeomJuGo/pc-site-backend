@@ -35,7 +35,10 @@ app.set("etag", "strong");
 app.set("trust proxy", 1);
 const allowedOrigins = config.allowedOrigins;
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(compression());
 
 app.use(
@@ -43,7 +46,7 @@ app.use(
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      logger.warn(`CORS 전당된주 origin: ${origin}`);
+      logger.warn(`CORS 거부된 origin: ${origin}`);
       callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -112,12 +115,21 @@ const pricesLimiter = rateLimit({
   message: { error: "Too Many Requests", message: "1분에 최대 20번 요청 가능합니다." },
 });
 
+const adminLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "어드민 요청은 1시간에 최대 10번입니다." },
+});
+
 app.use("/api", apiLimiter);
 app.use("/api/recommend", recommendLimiter);
 app.use("/api/builds", buildsLimiter);
 app.use("/api/alerts", alertsLimiter);
 app.use("/api/compatibility", compatibilityLimiter);
 app.use("/api/prices", pricesLimiter);
+app.use("/api/admin", adminLimiter);
 
 function requireAdminKey(req, res, next) {
   if (!config.adminApiKey) {
@@ -161,7 +173,7 @@ app.get("/api/health", async (req, res) => {
 
 app.get("/", (req, res) => {
   res.json({
-    message: "PC 추첸 백엔드 API",
+    message: "PC 추천 백엔드 API",
     status: "running",
     docs: "/api/docs",
     endpoints: ["/api/health", "/api/recommend", "/api/parts", "/api/builds", "/api/alerts", "/api/compatibility"],
@@ -174,8 +186,6 @@ let _initPromise = null;
 function ensureInitialized() {
   if (!_initPromise) {
     _initPromise = (async () => {
-      const missing = ["MONGODB_URI", "OPENAI_API_KEY", "ADMIN_API_KEY"].filter((k) => !process.env[k]);
-      if (missing.length > 0) throw new Error(`필수 환경변수 누락: ${missing.join(", ")}`);
       await connectDB();
       await connectRedisCache();
     })().catch((err) => {

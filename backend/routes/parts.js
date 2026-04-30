@@ -6,6 +6,7 @@ import { buildValueRankPipeline, buildBudgetPicksPipeline, BUDGET_RATIOS } from 
 import { setCacheHeaders } from "../middleware/httpCache.js";
 import { validate } from "../middleware/validate.js";
 import { valueRankQuerySchema, budgetPicksQuerySchema, batchQuerySchema, searchQuerySchema, compareSchema } from "../schemas/parts.js";
+import logger from "../utils/logger.js";
 
 const router = express.Router();
 
@@ -77,6 +78,7 @@ router.get("/", setCacheHeaders(60), async (req, res) => {
     res.set("X-Total-Pages", String(Math.ceil(total / limitNum)));
     res.json(parts);
   } catch (err) {
+    logger.error({ err }, "부품 목록 조회 실패");
     res.status(500).json({ error: "부품 목록 조회 실패" });
   }
 });
@@ -159,6 +161,7 @@ router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60),
     setCache(cacheKey, parts, 60 * 1000);
     res.json(parts);
   } catch (err) {
+    logger.error({ err }, "검색 실패");
     res.status(500).json({ error: "검색 실패" });
   }
 });
@@ -177,6 +180,7 @@ router.get("/value-rank", validate(valueRankQuerySchema, "query"), setCacheHeade
     setCache(cacheKey, ranked, 5 * 60 * 1000);
     res.json(ranked);
   } catch (err) {
+    logger.error({ err }, "가성비 순위 조회 실패");
     res.status(500).json({ error: "가성비 순위 조회 실패" });
   }
 });
@@ -202,6 +206,7 @@ router.get("/budget-picks", validate(budgetPicksQuerySchema, "query"), setCacheH
     setCache(cacheKey, result, 5 * 60 * 1000);
     res.json(result);
   } catch (err) {
+    logger.error({ err }, "예산별 추천 조회 실패");
     res.status(500).json({ error: "예산별 추천 조회 실패" });
   }
 });
@@ -218,6 +223,7 @@ router.post("/batch", validate(batchQuerySchema), async (req, res) => {
     );
     res.json(results.filter(Boolean));
   } catch (err) {
+    logger.error({ err }, "일괄 조회 실패");
     res.status(500).json({ error: "일괄 조회 실패" });
   }
 });
@@ -260,6 +266,7 @@ router.post("/compare", validate(compareSchema), async (req, res) => {
 
     res.json({ count: comparison.length, parts: comparison });
   } catch (err) {
+    logger.error({ err }, "비교 실패");
     res.status(500).json({ error: "비교 실패" });
   }
 });
@@ -321,6 +328,7 @@ router.get("/price-drops", setCacheHeaders(300), async (req, res) => {
     setCache(cacheKey, drops, 5 * 60 * 1000);
     res.json(drops);
   } catch (err) {
+    logger.error({ err }, "가격 하락 조회 실패");
     res.status(500).json({ error: "가격 하락 조회 실패" });
   }
 });
@@ -342,6 +350,7 @@ router.get("/:category/:name/trend", async (req, res) => {
       trends,
     });
   } catch (err) {
+    logger.error({ err }, "가격 추세 조회 실패");
     res.status(500).json({ error: "가격 추세 조회 실패" });
   }
 });
@@ -355,6 +364,7 @@ router.get("/:category/:name/history", async (req, res) => {
     if (!part) return res.status(404).json({ error: "부품을 찾을 수 없음" });
     res.json({ name: part.name, category: part.category, priceHistory: part.priceHistory || [] });
   } catch (err) {
+    logger.error({ err }, "가격 히스토리 조회 실패");
     res.status(500).json({ error: "가격 히스토리 조회 실패" });
   }
 });
@@ -368,6 +378,7 @@ router.get("/:category/:name", setCacheHeaders(60), async (req, res) => {
     if (!part) return res.status(404).json({ error: "부품을 찾을 수 없음" });
     res.json(part);
   } catch (err) {
+    logger.error({ err }, "부품 상세 조회 실패");
     res.status(500).json({ error: "부품 상세 조회 실패" });
   }
 });

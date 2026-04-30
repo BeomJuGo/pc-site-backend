@@ -5,7 +5,11 @@ dotenv.config();
 
 const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/pcsite";
 
-const client = new MongoClient(mongoUri);
+const client = new MongoClient(mongoUri, {
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  maxIdleTimeMS: 30000,
+});
 
 let db;
 
@@ -18,6 +22,7 @@ async function ensureIndexes(database) {
   // value-rank 정렬용: 내림차순
   await parts.createIndex({ category: 1, "benchmarkScore.passmarkscore": -1 });
   await parts.createIndex({ category: 1, "benchmarkScore.3dmarkscore": -1 });
+  await parts.createIndex({ category: 1, "naverData.reviewCount": -1 });
 
   const builds = database.collection("builds");
   await builds.createIndex({ shareId: 1 }, { unique: true });

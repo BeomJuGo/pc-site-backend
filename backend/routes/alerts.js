@@ -12,7 +12,10 @@ const MAX_ALERTS_PER_EMAIL = 20;
 async function sendAlertEmail(to, partName, targetPrice, currentPrice) {
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS;
-  if (!smtpUser || !smtpPass) return;
+  if (!smtpUser || !smtpPass) {
+    logger.warn("SMTP 미설정: 이메일 알림 비활성화 (SMTP_USER, SMTP_PASS 환경변수 필요)");
+    return;
+  }
   try {
     const { default: nodemailer } = await import("nodemailer");
     const transporter = nodemailer.createTransport({
@@ -82,8 +85,8 @@ router.delete("/:id", async (req, res) => {
     const { email } = req.query;
 
     if (!ObjectId.isValid(id)) return res.status(400).json({ error: "유효하지 않은 ID입니다." });
-    if (!email || typeof email !== "string" || !email.includes("@"))
-      return res.status(400).json({ error: "소유자 확인을 위해 email 파라미터가 필요합니다." });
+    if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      return res.status(400).json({ error: "소유자 확인을 위해 유효한 email 파라미터가 필요합니다." });
 
     const db = getDB();
     // email 일치 여부까지 함께 검증하여 타인의 알림 삭제 방지

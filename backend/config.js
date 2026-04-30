@@ -4,7 +4,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const requiredEnvVars = [
-  'MONGODB_URI'
+  'MONGODB_URI',
+  'ADMIN_API_KEY',
 ];
 
 const missing = requiredEnvVars.filter(key => !process.env[key]);
@@ -21,7 +22,7 @@ if (missing.length > 0) {
 export const config = {
   mongodbUri: process.env.MONGODB_URI,
   openaiApiKey: process.env.OPENAI_API_KEY || '',
-  adminApiKey: process.env.ADMIN_API_KEY || '',
+  adminApiKey: process.env.ADMIN_API_KEY,
   port: parseInt(process.env.PORT || '10000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
 
@@ -46,11 +47,15 @@ export const config = {
   },
 };
 
+if (!process.env.NAVER_CLIENT_ID || !process.env.NAVER_CLIENT_SECRET) {
+  console.warn('⚠️ NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 미설정: 네이버 쇼핑 API 비활성화');
+}
+
 if (config.nodeEnv !== 'production') {
   console.log('✅ 환경 변수 검증 완료');
   console.log(`   - MongoDB URI: ${config.mongodbUri ? '설정됨' : '미설정'}`);
   console.log(`   - OpenAI API Key: ${config.openaiApiKey ? '설정됨' : '미설정 (AI 기능 비활성화)'}`);
-  console.log(`   - Admin API Key: ${config.adminApiKey ? '설정됨' : '미설정 (⚠️ Admin 엔드포인트 보호 안됨)'}`);
+  console.log(`   - Admin API Key: ${config.adminApiKey ? '설정됨' : '미설정'}`);
   console.log(`   - 포트: ${config.port}`);
   console.log(`   - 환경: ${config.nodeEnv}`);
 }
