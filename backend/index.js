@@ -256,9 +256,7 @@ app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req
   }
 });
 
-// callGptInfo는 utils/gptInfo.js에서 import
-
-// 부품 한줄평 + 사양 요약 (gpt-5.4 — MongoDB에 캐시, 부품당 1회 생성)
+// 부품 한줄평 + 사양 요약 (MongoDB에 캐시, 부품당 1회 생성)
 app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, res) => {
   const { partName } = req.body;
   const name = partName.trim();
@@ -301,39 +299,6 @@ app.post("/api/gpt-info", gptInfoLimiter, validate(gptInfoSchema), async (req, r
   }
 });
 
-// 3모델 비교 테스트 (어드민 전용)
-app.post("/api/gpt-info-compare", requireAdminKey, async (req, res) => {
-  const { partName } = req.body;
-  if (!partName || typeof partName !== "string" || partName.trim().length < 1) {
-    return res.status(400).json({ error: "partName이 필요합니다." });
-  }
-  const db = getDB();
-  let category = null;
-  try {
-    if (db) {
-      const part = await db.collection("parts").findOne({ name: partName.trim() }, { projection: { category: 1 } });
-      category = part?.category || null;
-    }
-  } catch (_) {}
-
-  const MODELS = ["gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4"];
-  try {
-    const results = await Promise.all(
-      MODELS.map(async (model) => {
-        try {
-          const result = await callGptInfo(partName.trim(), category, model, config.openaiApiKey);
-          return { model, ...result, error: null };
-        } catch (e) {
-          return { model, review: null, specSummary: null, usage: null, error: e.message };
-        }
-      })
-    );
-    res.json({ partName: partName.trim(), results });
-  } catch (error) {
-    logger.error(`gpt-info-compare 실패: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 app.use((req, res) => {
   res.status(404).json({
