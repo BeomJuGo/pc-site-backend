@@ -441,7 +441,7 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
       body: JSON.stringify({
         model: "gpt-5.5",
         response_format: { type: "json_object" },
-        temperature: 0,
+
         messages,
         max_completion_tokens: 1500,
       }),
@@ -701,7 +701,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       body: JSON.stringify({
         model: "gpt-5.5",
         response_format: { type: "json_object" },
-        temperature: 0,
+
         messages,
         max_completion_tokens: 1500,
       }),
