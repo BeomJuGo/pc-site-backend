@@ -211,6 +211,10 @@ export default function PCBuilder() {
   }, [partsCache]);
 
   useEffect(() => {
+    document.title = "PC 견적 빌더 | GoodPricePC";
+  }, []);
+
+  useEffect(() => {
     if (modal) setTimeout(() => searchRef.current?.focus(), 50);
   }, [modal]);
 

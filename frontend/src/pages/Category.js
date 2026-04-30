@@ -105,6 +105,12 @@ export default function Category() {
   const itemsPerPage = 12;
 
   useEffect(() => {
+    const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
+    const label = LABELS[category] || category;
+    document.title = `${label} 가격 비교 | GoodPricePC`;
+  }, [category]);
+
+  useEffect(() => {
     setLoading(true);
     setError(null);
     fetchFullPartData(category)

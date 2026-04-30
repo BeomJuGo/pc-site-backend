@@ -29,6 +29,10 @@ export default function Search() {
   const [inputValue, setInputValue] = useState(q);
   const debounceRef = useRef(null);
 
+  useEffect(() => {
+    document.title = q ? `"${q}" 검색 결과 | GoodPricePC` : "부품 검색 | GoodPricePC";
+  }, [q]);
+
   useEffect(() => { setInputValue(q); }, [q]);
 
   useEffect(() => {

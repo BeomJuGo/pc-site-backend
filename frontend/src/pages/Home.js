@@ -167,6 +167,10 @@ export default function Home() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
+    document.title = "GoodPricePC - AI 기반 가성비 PC 견적 추천";
+  }, []);
+
+  useEffect(() => {
     let rafId = null;
     const handleMouseMove = (e) => {
       if (rafId) return;

@@ -39,6 +39,10 @@ export default function Recommend() {
   const pollRef = useRef(null);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    document.title = "AI PC 견적 추천 | GoodPricePC";
+  }, []);
+
   useEffect(() => () => clearTimeout(pollRef.current), []);
 
   const fetchV2 = async (selectedBudget, attempt = 0) => {
