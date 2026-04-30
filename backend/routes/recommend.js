@@ -455,13 +455,15 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
 
     const data = await resp.json();
     const raw = data?.choices?.[0]?.message?.content || "";
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const jsonStr = fenceMatch ? fenceMatch[1].trim() : raw.trim();
     let parsed;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(jsonStr);
     } catch {
       lastError = new Error("AI 응답 JSON 파싱 실패");
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: "응답이 유효한 JSON이 아닙니다. 다시 시도하세요." });
+      messages.push({ role: "user", content: '응답이 유효한 JSON이 아닙니다. 반드시 {"parts":{...},"totalPrice":숫자,"summary":"..."} 형식의 순수 JSON만 출력하세요. 마크다운이나 설명 텍스트를 포함하지 마세요.' });
       continue;
     }
 
@@ -715,13 +717,15 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
 
     const data = await resp.json();
     const raw = data?.choices?.[0]?.message?.content || "";
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const jsonStr = fenceMatch ? fenceMatch[1].trim() : raw.trim();
     let parsed;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(jsonStr);
     } catch {
       lastError = new Error("AI 응답 JSON 파싱 실패");
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: "응답이 유효한 JSON이 아닙니다. 다시 시도하세요." });
+      messages.push({ role: "user", content: '응답이 유효한 JSON이 아닙니다. 반드시 {"parts":{...},"totalPrice":숫자,"summary":"..."} 형식의 순수 JSON만 출력하세요. 마크다운이나 설명 텍스트를 포함하지 마세요.' });
       continue;
     }
 
