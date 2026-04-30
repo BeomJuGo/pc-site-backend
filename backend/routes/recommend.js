@@ -238,7 +238,7 @@ async function buildCompatibleSet(budget, purpose, db) {
     "가성비": { cpu: 0.4, gpu: 0.5, cpuBR: 0.25, gpuBR: 0.30 },
   };
   const w = weights[purpose] || weights["가성비"];
-  const minB = budget * 0.90, maxB = budget * 1.10;
+  const minB = budget, maxB = budget + 100000;
   const maxCpu = budget * w.cpuBR, idealCpu = maxCpu * 0.7;
   const maxGpu = budget * w.gpuBR, idealGpu = maxGpu * 0.7;
 
@@ -333,7 +333,7 @@ async function buildCompatibleSet(budget, purpose, db) {
       const caseItem = casesF.sort((a, b) => Math.abs(a.price - idealCasePrice) - Math.abs(b.price - idealCasePrice))[0];
 
       const totalPrice = cpu.price + gpu.price + memory.price + board.price + psu.price + cooler.price + storage.price + caseItem.price;
-      if (totalPrice < minB || totalPrice > maxB) continue;
+      if (totalPrice < minB || totalPrice >= maxB) continue;
 
       const score = getCpuScore(cpu) * w.cpu + getGpuScore(gpu) * w.gpu;
       results.push({ cpu, gpu, memory, board, psu, cooler, storage, case: caseItem, totalPrice, score, cpuSocket, boardDdr: extractDdrType(board.info || board.specSummary || ""), totalTdp, boardFormFactor: boardFF });
@@ -395,7 +395,7 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
   const sortedCases = sortByPopularity(cases, "case", Math.max(budget * 0.07, 50000));
 
   const userPrompt = [
-    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
+    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${budget.toLocaleString()}원 이상 ${(budget + 100000).toLocaleString()}원 미만이어야 함)`,
     `용도: ${purpose}`,
     "",
     "[사용 가능한 부품 목록 — 반드시 이 목록에서만 선택]",
@@ -520,18 +520,18 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
       .map(([k, v]) => `${k}: ${v.name} (${v.price.toLocaleString()}원)`)
       .join(", ");
 
-    if (totalPrice > budget * 1.10) {
-      lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 > 예산 ${budget.toLocaleString()}원의 110%`);
-      const over = (totalPrice - Math.round(budget * 1.1)).toLocaleString();
+    if (totalPrice >= budget + 100000) {
+      lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 >= ${(budget + 100000).toLocaleString()}원`);
+      const over = (totalPrice - budget).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${budget.toLocaleString()}원 이상 ${(budget + 100000).toLocaleString()}원 미만. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
       continue;
     }
-    if (totalPrice < budget * 0.90) {
-      lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < 예산 ${budget.toLocaleString()}원의 90%`);
-      const gap = (Math.round(budget * 0.9) - totalPrice).toLocaleString();
+    if (totalPrice < budget) {
+      lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < ${budget.toLocaleString()}원`);
+      const gap = (budget - totalPrice).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. GPU 또는 CPU를 더 고사양으로 교체하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${budget.toLocaleString()}원 이상 ${(budget + 100000).toLocaleString()}원 미만. GPU 또는 CPU를 더 고사양으로 교체하세요.` });
       continue;
     }
 
@@ -647,7 +647,7 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
   const sortedCases = sortByPopularity(cases, "case", Math.max(budget * (lowBudget ? 0.10 : 0.07), 50000));
 
   const userPrompt = [
-    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${Math.round(budget * 0.9).toLocaleString()}원 ~ ${Math.round(budget * 1.1).toLocaleString()}원 사이여야 함)`,
+    `총 예산: ${budget.toLocaleString()}원 (8개 부품 합계가 반드시 ${budget.toLocaleString()}원 이상 ${(budget + 100000).toLocaleString()}원 미만이어야 함)`,
     "",
     "[사용 가능한 부품 목록 — 반드시 이 목록에서만 선택]",
     "",
@@ -794,18 +794,18 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
       .map(([k, v]) => `${k}: ${v.name} (${v.price.toLocaleString()}원)`)
       .join(", ");
 
-    if (totalPrice > budget * 1.10) {
-      lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원`);
-      const over = (totalPrice - Math.round(budget * 1.1)).toLocaleString();
+    if (totalPrice >= budget + 100000) {
+      lastError = new Error(`AI 예산 초과: ${totalPrice.toLocaleString()}원 >= ${(budget + 100000).toLocaleString()}원`);
+      const over = (totalPrice - budget).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${over}원 초과.\n목표: ${budget.toLocaleString()}원 이상 ${(budget + 100000).toLocaleString()}원 미만. 가장 비싼 부품을 저렴한 것으로 교체하거나 GPU를 제외하세요.` });
       continue;
     }
-    if (totalPrice < budget * 0.90) {
-      lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원`);
-      const gap = (Math.round(budget * 0.9) - totalPrice).toLocaleString();
+    if (totalPrice < budget) {
+      lastError = new Error(`AI 예산 미달: ${totalPrice.toLocaleString()}원 < ${budget.toLocaleString()}원`);
+      const gap = (budget - totalPrice).toLocaleString();
       messages.push({ role: "assistant", content: raw });
-      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${Math.round(budget*0.9).toLocaleString()}원~${Math.round(budget*1.1).toLocaleString()}원. CPU 또는 GPU를 더 고사양으로 교체하세요.` });
+      messages.push({ role: "user", content: `현재 구성: ${breakdown}\n총합 ${totalPrice.toLocaleString()}원으로 ${gap}원 부족.\n목표: ${budget.toLocaleString()}원 이상 ${(budget + 100000).toLocaleString()}원 미만. CPU 또는 GPU를 더 고사양으로 교체하세요.` });
       continue;
     }
 
@@ -997,7 +997,7 @@ router.post("/", validate(recommendSchema), async (req, res) => {
       "가성비": { cpu: 0.4, gpu: 0.5, cpuBR: 0.25, gpuBR: 0.30 },
     };
     const w = weights[purpose] || weights["가성비"];
-    const minB = budget * 0.90, maxB = budget * 1.10;
+    const minB = budget, maxB = budget + 100000;
     const maxCpu = budget * w.cpuBR, idealCpu = maxCpu * 0.7;
     const maxGpu = budget * w.gpuBR, idealGpu = maxGpu * 0.7;
 
@@ -1096,7 +1096,7 @@ router.post("/", validate(recommendSchema), async (req, res) => {
         const caseItem = casesF.sort((a, b) => Math.abs(a.price - Math.min(adjCaseBudget * 0.8, caBd)) - Math.abs(b.price - Math.min(adjCaseBudget * 0.8, caBd)))[0];
 
         const totalPrice = cpu.price + gpu.price + memory.price + board.price + psu.price + cooler.price + storage.price + caseItem.price;
-        if (totalPrice < minB || totalPrice > maxB) { fs.budgetRange++; continue; }
+        if (totalPrice < minB || totalPrice >= maxB) { fs.budgetRange++; continue; }
         fs.success++;
         const score = getCpuScore(cpu) * w.cpu + getGpuScore(gpu) * w.gpu;
         results.push({ cpu, gpu, memory, board, psu, cooler, storage, case: caseItem, totalPrice, score, cpuSocket, boardDdr: extractDdrType(board.info || board.specSummary || ""), totalTdp, boardFormFactor: boardFF });
