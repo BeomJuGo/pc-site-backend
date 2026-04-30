@@ -223,6 +223,42 @@ export default function Home() {
           </div>
         </section>
 
+        {/* Featured AI Recommend */}
+        <section className="px-4 sm:px-6 lg:px-8 py-12">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <Badge variant="secondary" className="mb-3 bg-purple-900/40 border-purple-600/50 text-purple-300">
+                ✨ AI 추천 예시
+              </Badge>
+              <h2 className="text-3xl font-bold text-white mb-2">150만원 최적 가성비 견적</h2>
+              <p className="text-slate-400">AI가 DB 실제 가격 기준으로 선정한 가성비 최강 조합입니다.</p>
+            </div>
+            <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 shadow-xl">
+              <CardContent className="pt-6">
+                <FeaturedRecommend />
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        {/* Price Drops */}
+        <section className="px-4 sm:px-6 lg:px-8 py-12">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <Badge variant="secondary" className="mb-3 bg-green-900/40 border-green-600/50 text-green-300">
+                📉 실시간 가격 정보
+              </Badge>
+              <h2 className="text-3xl font-bold text-white mb-2">최근 가격 하락 TOP 10</h2>
+              <p className="text-slate-400">최근 30일 대비 가격이 가장 많이 내린 부품입니다.</p>
+            </div>
+            <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 shadow-xl">
+              <CardContent className="pt-6 px-0 pb-0">
+                <PriceDrops />
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
         {/* Categories */}
         <section className="px-4 sm:px-6 lg:px-8 py-16">
           <div className="max-w-6xl mx-auto">
@@ -279,42 +315,6 @@ export default function Home() {
                 </Card>
               ))}
             </div>
-          </div>
-        </section>
-
-        {/* Price Drops */}
-        <section className="px-4 sm:px-6 lg:px-8 py-16">
-          <div className="max-w-3xl mx-auto">
-            <div className="text-center mb-8">
-              <Badge variant="secondary" className="mb-3 bg-green-900/40 border-green-600/50 text-green-300">
-                📉 실시간 가격 정보
-              </Badge>
-              <h2 className="text-3xl font-bold text-white mb-2">최근 가격 하락 TOP 10</h2>
-              <p className="text-slate-400">최근 30일 대비 가격이 가장 많이 내린 부품입니다.</p>
-            </div>
-            <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 shadow-xl">
-              <CardContent className="pt-6 px-0 pb-0">
-                <PriceDrops />
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-
-        {/* Featured AI Recommend */}
-        <section className="px-4 sm:px-6 lg:px-8 py-16">
-          <div className="max-w-3xl mx-auto">
-            <div className="text-center mb-8">
-              <Badge variant="secondary" className="mb-3 bg-purple-900/40 border-purple-600/50 text-purple-300">
-                ✨ AI 추천 예시
-              </Badge>
-              <h2 className="text-3xl font-bold text-white mb-2">150만원 최적 가성비 견적</h2>
-              <p className="text-slate-400">AI가 DB 실제 가격 기준으로 선정한 가성비 최강 조합입니다.</p>
-            </div>
-            <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700/50 shadow-xl">
-              <CardContent className="pt-6">
-                <FeaturedRecommend />
-              </CardContent>
-            </Card>
           </div>
         </section>
 
