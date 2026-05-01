@@ -697,18 +697,18 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
   const chosenAmdGpu    = amdGpuPool.find(amdGpuFloor)    ?? amdGpuPool[0]    ?? null;
   const chosenNvidiaGpu = nvidiaGpuPool.find(nvidiaGpuFloor) ?? nvidiaGpuPool[0] ?? null;
 
-  // gap fill 기준: AMD CPU(없으면 Intel) + 점수 높은 GPU
-  const refCombo = chosenAmdCombo ?? chosenIntelCombo;
-  const refGpu   = (chosenAmdGpu && chosenNvidiaGpu)
+  // gap fill 기준: max(AMD, Intel) 콤보 + 점수 높은 GPU
+  // cpuRefPrice를 기준으로 채워야 Intel 선택 시 프론트 총합이 예산 초과 안 함
+  const refGpu = (chosenAmdGpu && chosenNvidiaGpu)
     ? (getGpuScore(chosenAmdGpu) > getGpuScore(chosenNvidiaGpu) ? chosenAmdGpu : chosenNvidiaGpu)
     : (chosenAmdGpu || chosenNvidiaGpu);
 
-  // ─── Phase 5: Gap fill — refCombo + refGpu 기준으로 소폭 미달 시 보조부품 업그레이드 ─
+  // ─── Phase 5: Gap fill — cpuRefPrice + refGpu 기준으로 소폭 미달 시 보조부품 업그레이드 ─
   let fillStorage = preStorage, fillPsu = prePsu, fillCase = preCase, fillCooler = preCooler;
 
   const calcTotal = () =>
     fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price +
-    (refCombo?.comboPrice || 0) + (refGpu?.price || 0);
+    cpuRefPrice + (refGpu?.price || 0);
 
   if (calcTotal() < minBudget) {
     const window = maxBudget - minBudget;
@@ -782,7 +782,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
     ...(chosenNvidiaGpu && { gpuNvidia: toPartObj(chosenNvidiaGpu, "gpu") }),
   };
 
-  const finalTotal = basePrice + (refCombo?.comboPrice || 0) + (refGpu?.price || 0);
+  const finalTotal = basePrice + cpuRefPrice + (refGpu?.price || 0);
   logger.info(
     `[V2] 예산 ${budget.toLocaleString()}원` +
     ` → AMD: ${chosenAmdCombo?.cpu.name || "없음"}` +
