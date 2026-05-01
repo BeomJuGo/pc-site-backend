@@ -12,7 +12,7 @@ const router = express.Router();
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const DANAWA_GPU_URL = "https://prod.danawa.com/list/?cate=112753";
 const NAV_TIMEOUT = Number(process.env.PUPPETEER_NAV_TIMEOUT || 150000);
-const MIN_3DMARK_SCORE_TO_ATTACH = 6000;
+const MIN_3DMARK_SCORE_FOR_SAVE = 5500;
 
 const simplifyForFilter = (name) => {
   return name
@@ -292,6 +292,11 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     const key = normalizeGpuKey(p.name);
     const score = key ? (scoreByKey.get(key) || 0) : 0;
 
+    if (!score || score < MIN_3DMARK_SCORE_FOR_SAVE) {
+      console.log(`⛔ 저장 제외 (3DMark ${score} < ${MIN_3DMARK_SCORE_FOR_SAVE}): ${p.name}`);
+      continue;
+    }
+
     let review = old?.review || "";
     let specSummary = old?.specSummary || p.spec || "";
 
@@ -325,9 +330,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
     }
 
     const hasExistingBench = old?.benchmarkScore?.["3dmarkscore"] && old.benchmarkScore["3dmarkscore"] > 0;
-    const benchmarkScore = hasExistingBench
-      ? old.benchmarkScore
-      : (score >= MIN_3DMARK_SCORE_TO_ATTACH ? { "3dmarkscore": score } : undefined);
+    const benchmarkScore = hasExistingBench ? old.benchmarkScore : { "3dmarkscore": score };
 
     const update = {
       category: "gpu",
@@ -335,7 +338,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
       manufacturer: extractManufacturer(p.name),
       review,
       specSummary,
-      ...(benchmarkScore ? { benchmarkScore } : {}),
+      benchmarkScore,
     };
 
     if (old) {
