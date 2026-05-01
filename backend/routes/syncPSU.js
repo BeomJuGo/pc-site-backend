@@ -200,10 +200,28 @@ async function crawlDanawaPSUs(maxPages = 10) {
   return products;
 }
 
+// \ucf00\uc774\ube14, \uc5b4\ub311\ud130 \ub4f1 PSU \ubd80\uc18d\ud488 \ud0a4\uc6cc\ub4dc \u2014 \uc774\ub984\uc5d0 \ud3ec\ud568\ub418\uba74 \uc2e4\uc81c PSU\uac00 \uc544\ub2d8
+const ACCESSORY_PATTERN = /\ucf00\uc774\ube14|\uc804\uc120|\uc2ac\ub9ac\ube0c|\uc2a4\ud50c\ub9ac\ud130|\uc5b4\ub311\ud130|\ud53c\ud305|\uc5f0\uc7a5\uc120|\uc5f0\uc7a5\s*\ucf00\uc774\ube14|\ubcc0\ud658\s*\ucf00\uc774\ube14|\ucee4\ub125\ud130|connector|cable|splitter|adapter|sleeve|extension|PSU\uc6a9|\ud30c\uc6cc\uc6a9/i;
+
+// \uc640\ud2b8 \ub300\ube44 \uac00\uaca9\uc774 \ube44\uc815\uc0c1\uc801\uc73c\ub85c \ub0ae\uc73c\uba74 \ubd80\uc18d\ud488 \uc758\uc2ec (40\uc6d0/W \ubbf8\ub9cc)
+function hasSuspiciousWattPrice(name, price) {
+  const m = name.match(/(\d{3,4})\s*W(?!\w)/i) || name.match(/\b(3[0-9]{2}|[4-9]\d{2}|[12]\d{3})\b/);
+  if (!m) return false;
+  const watts = parseInt(m[1]);
+  if (watts < 300 || watts > 2500) return false;
+  return price / watts < 40;
+}
+
 async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
   if (psus.length === 0) { console.log("\u26d4 \ud06c\ub864\ub9c1 \ub370\uc774\ud130 \uc5c6\uc74c \u2014 DB \uc0ad\uc81c \uac74\ub108\ub700"); return; }
   const db = getDB();
   const col = db.collection("parts");
+
+  // \uae30\uc874 DB\uc5d0\uc11c \ubd80\uc18d\ud488\uc73c\ub85c \uc798\ubabb \ub4e4\uc5b4\uac04 \ub808\ucf54\ub4dc \uc989\uc2dc \uc0ad\uc81c
+  const accessoryCleanup = await col.deleteMany({ category: "psu", name: ACCESSORY_PATTERN });
+  if (accessoryCleanup.deletedCount > 0)
+    console.log(`\ud83e\uddf9 \ubd80\uc18d\ud488 \ub808\ucf54\ub4dc \uc815\ub9ac: ${accessoryCleanup.deletedCount}\uac1c \uc0ad\uc81c`);
+
   const existing = await col.find({ category: "psu" }).toArray();
   const byName = new Map(existing.map((x) => [x.name, x]));
 
@@ -213,6 +231,16 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
     if (!psu.price || psu.price === 0 || psu.price > 600000) {
       skipped++;
       console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${psu.price?.toLocaleString()}\uc6d0): ${psu.name}`);
+      continue;
+    }
+    if (ACCESSORY_PATTERN.test(psu.name)) {
+      skipped++;
+      console.log(`\u23ED  \uac74\ub108\ub700 (\ubd80\uc18d\ud488 \ud0a4\uc6cc\ub4dc): ${psu.name}`);
+      continue;
+    }
+    if (hasSuspiciousWattPrice(psu.name, psu.price)) {
+      skipped++;
+      console.log(`\u23ED  \uac74\ub108\ub700 (\uc640\ud2b8 \ub300\ube44 \uac00\uaca9 \uc774\uc0c1 \u2014 ${psu.price.toLocaleString()}\uc6d0): ${psu.name}`);
       continue;
     }
 
