@@ -622,10 +622,8 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const allGpus = [...gpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
 
   // ─── Phase 4: 선택된 CPU/GPU 브랜드로 단일 최적화 ──────────────────────────
-  const remaining = budget - secondaryTotal;
-  const maxCpuComboAllowed = remaining * 0.50;
 
-  // 브랜드 판별 헬퍼
+  // 브랜드 판별 헬퍼 (isGpuBrand 보다 먼저 정의)
   const isAmdCpu    = (cpu) => /amd|라이젠|ryzen|athlon/i.test(cpu.name || '');
   const isIntelCpu  = (cpu) => /intel|인텔|코어i|코어 i|코어 울트라|core i|core ultra|펜티엄|셀러론/i.test(cpu.name || '');
   const isAmdGpu    = (g)   => /라데온|radeon|\brx\b|rx\d/i.test(g.name || '');
@@ -633,6 +631,12 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   const isCpuBrand = cpuBrand === "intel" ? isIntelCpu : isAmdCpu;
   const isGpuBrand = gpuBrand === "amd"   ? isAmdGpu   : isNvidiaGpu;
+
+  // CPU 상한 = 선택된 GPU 브랜드의 최저가 GPU를 담을 수 있는 나머지
+  const minBrandGpuPrice = [...allGpus]
+    .filter(g => isGpuBrand(g) && g.price > 0)
+    .sort((a, b) => a.price - b.price)[0]?.price || 50000;
+  const maxCpuComboAllowed = maxBudget - secondaryTotal - minBrandGpuPrice;
 
   // 단조 증가 플로어
   const cpuFloor = (c) => {
