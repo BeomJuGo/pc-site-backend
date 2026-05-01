@@ -67,15 +67,6 @@ const apiLimiter = rateLimit({
   message: { error: "Too Many Requests", message: "잠시 후 다시 시도해주세요." },
 });
 
-const recommendLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) =>
-    req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.ip,
-  message: { error: "Too Many Requests", message: "1분에 최대 30번 요청 가능합니다." },
-});
 
 const gptInfoLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -126,7 +117,6 @@ const adminLimiter = rateLimit({
 });
 
 app.use("/api", apiLimiter);
-app.use("/api/recommend", recommendLimiter);
 app.use("/api/builds", buildsLimiter);
 app.use("/api/alerts", alertsLimiter);
 app.use("/api/compatibility", compatibilityLimiter);
