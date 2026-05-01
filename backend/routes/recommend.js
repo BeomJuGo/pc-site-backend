@@ -559,7 +559,10 @@ export async function saveBudgetSetToDb(db, budget, purpose, result) {
 
 const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function buildCompatibleSetWithAIV2(budget, db) {
+export async function buildCompatibleSetWithAIV2(budget, db, {
+  minCpuScore = 0, minGpuScore = 0,
+  prevCpuComboPrice = 0, prevGpuPrice = 0,
+} = {}) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
 
   const { cpus, gpus, memories, boards, psus, coolers, storages, cases } = await loadParts(db);
@@ -618,25 +621,71 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
   // ─── Phase 3: GPU 목록 — 가격 오름차순 ──────────────────────────────────
   const allGpus = [...gpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
 
-  // ─── Phase 4: 예산 비례 CPU/GPU 직접 선택 ──────────────────────────────
-  // 예산이 늘수록 CPU와 GPU 모두 업그레이드되도록 비율 기반 직접 선택
+  // ─── Phase 4: CPU+GPU 공동 최적화 (둘 다 단조 증가 보장) ──────────────────
   const remaining = budget - secondaryTotal;
 
-  // CPU조합 목표 비율: 저예산 35% / 중예산 40% / 고예산 48%
   const cpuRatioTarget =
     budget < 1000000 ? 0.35 :
     budget < 1500000 ? 0.40 : 0.48;
   const cpuBudgetMax = remaining * cpuRatioTarget;
 
-  // CPU조합: cpuBudgetMax 이하에서 가장 비싼 것 (= 해당 예산대 최고 사양)
-  const chosen = [...allCombos]
+  // 점수 기준 내림차순 정렬된 CPU 후보 (예산 비율 내)
+  const eligibleCombos = [...allCombos]
     .filter(c => c.comboPrice <= cpuBudgetMax)
-    .at(-1)        // 가장 비싼 것 (가장 좋은 CPU)
-    ?? allCombos[0]; // fallback: 저예산으로 모두 초과시 가장 저렴한 것
+    .sort((a, b) => {
+      const sa = getCpuScore(a.cpu), sb = getCpuScore(b.cpu);
+      if (sa !== sb) return sb - sa;
+      return b.comboPrice - a.comboPrice;
+    });
 
-  // GPU: 남은 예산(maxBudget 미만)에서 가장 비싼 것
-  const gpuBudgetMax = maxBudget - secondaryTotal - chosen.comboPrice;
-  const chosenGpu = allGpus.filter(g => g.price < gpuBudgetMax).at(-1) ?? null;
+  // CPU/GPU 플로어 판정 헬퍼
+  const cpuMeetsFloor = (c) => {
+    const s = getCpuScore(c.cpu);
+    if (s > 0 && minCpuScore > 0) return s >= minCpuScore;
+    if (prevCpuComboPrice > 0) return c.comboPrice >= prevCpuComboPrice;
+    return true;
+  };
+  const gpuMeetsFloor = (g) => {
+    const s = getGpuScore(g);
+    if (s > 0 && minGpuScore > 0) return s >= minGpuScore;
+    if (prevGpuPrice > 0) return g.price >= prevGpuPrice;
+    return true;
+  };
+  const bestGpuForCpu = (cpuComboPrice) => {
+    const cap = maxBudget - secondaryTotal - cpuComboPrice;
+    return [...allGpus]
+      .filter(g => g.price < cap)
+      .sort((a, b) => {
+        const sa = getGpuScore(a), sb = getGpuScore(b);
+        if (sa !== sb) return sb - sa;
+        return b.price - a.price;
+      });
+  };
+
+  let chosen = null, chosenGpu = null;
+
+  // 1순위: CPU 플로어 ∧ GPU 플로어 둘 다 만족하는 최고 CPU 조합
+  for (const combo of eligibleCombos) {
+    if (!cpuMeetsFloor(combo)) continue;
+    const gpuPool = bestGpuForCpu(combo.comboPrice);
+    const validGpu = gpuPool.find(gpuMeetsFloor);
+    if (validGpu) { chosen = combo; chosenGpu = gpuPool[0]; break; }
+  }
+
+  // 2순위: CPU 플로어만 만족 (GPU 플로어 완화)
+  if (!chosen) {
+    const floorCombos = eligibleCombos.filter(cpuMeetsFloor);
+    if (floorCombos.length > 0) {
+      chosen = floorCombos[0];
+      chosenGpu = bestGpuForCpu(chosen.comboPrice)[0] ?? null;
+    }
+  }
+
+  // 3순위: 플로어 무시, 예산 내 최고 CPU+GPU
+  if (!chosen) {
+    chosen = eligibleCombos[0] ?? allCombos[0];
+    chosenGpu = bestGpuForCpu(chosen.comboPrice)[0] ?? null;
+  }
 
   // ─── Phase 5: Gap fill — 소폭 미달 시 보조부품 업그레이드 ────────────────
   let fillStorage = preStorage, fillPsu = prePsu, fillCase = preCase, fillCooler = preCooler;
@@ -710,6 +759,12 @@ export async function buildCompatibleSetWithAIV2(budget, db) {
     parts,
     summary: aiSummary || `${budget.toLocaleString()}원 최적 가성비 PC`,
     compatibilityVerified: true,
+    _meta: {
+      cpuScore: getCpuScore(chosen.cpu),
+      gpuScore: chosenGpu ? getGpuScore(chosenGpu) : 0,
+      cpuComboPrice: chosen.comboPrice,
+      gpuPrice: chosenGpu?.price || 0,
+    },
   };
 }
 

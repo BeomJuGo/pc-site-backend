@@ -13,14 +13,28 @@ const db = getDB();
 logger.info(`V2 AI 견적 캐시 갱신 시작: ${BUDGETS.length}개 예산`);
 
 let success = 0, fail = 0;
+let prevFloor = {};
 
 for (const budget of BUDGETS) {
   try {
-    const result = await buildCompatibleSetWithAIV2(budget, db);
+    const result = await buildCompatibleSetWithAIV2(budget, db, prevFloor);
+
+    // 다음 예산 구간을 위한 단조 증가 기준 업데이트
+    const meta = result._meta || {};
+    prevFloor = {
+      minCpuScore: meta.cpuScore || 0,
+      minGpuScore: meta.gpuScore || 0,
+      prevCpuComboPrice: meta.cpuComboPrice || 0,
+      prevGpuPrice: meta.gpuPrice || 0,
+    };
+
+    // _meta는 저장하지 않음 (내부 체이닝 전용)
+    const { _meta, ...resultToSave } = result;
+
     const _id = `budget-set-v2:${budget}`;
     await db.collection("cached_sets_v2").replaceOne(
       { _id },
-      { _id, budget, result, computedAt: new Date() },
+      { _id, budget, result: resultToSave, computedAt: new Date() },
       { upsert: true }
     );
     logger.info(`완료: ${budget.toLocaleString()}원 → ${result.totalPrice?.toLocaleString()}원`);
