@@ -69,10 +69,12 @@ const apiLimiter = rateLimit({
 
 const recommendLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too Many Requests", message: "1분에 최대 10번 요청 가능합니다." },
+  keyGenerator: (req) =>
+    req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.ip,
+  message: { error: "Too Many Requests", message: "1분에 최대 30번 요청 가능합니다." },
 });
 
 const gptInfoLimiter = rateLimit({
