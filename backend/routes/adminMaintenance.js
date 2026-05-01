@@ -19,18 +19,14 @@ router.post("/cleanup-db", async (req, res) => {
   const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const results = {};
 
-  // 1. 가성비 cached_sets 삭제
-  const r1 = await db.collection("cached_sets").deleteMany({ _id: { $regex: "가성비" } });
-  results.deleted_gasungbi_sets = r1.deletedCount;
-
-  // 2. 노트북 메모리 삭제
+  // 1. 노트북 메모리 삭제
   const r2 = await db.collection("parts").deleteMany({
     category: "memory",
     name: { $regex: "노트북|SO-DIMM|SODIMM|소딤|notebook|laptop", $options: "i" },
   });
   results.deleted_laptop_memory = r2.deletedCount;
 
-  // 3. 90일 이전 priceHistory 항목 $pull로 삭제 (string 날짜 비교)
+  // 2. 90일 이전 priceHistory 항목 $pull로 삭제 (string 날짜 비교)
   const r3 = await db.collection("parts").updateMany(
     { "priceHistory.date": { $lt: cutoff } },
     { $pull: { priceHistory: { date: { $lt: cutoff } } } }
@@ -52,6 +48,10 @@ router.post("/cleanup-db", async (req, res) => {
   }
   results.deleted_duplicates = deletedDuplicates;
   results.duplicate_groups_found = dupeGroups.length;
+
+  // 3. 사용하지 않는 V1 cached_sets 컬렉션 전체 삭제
+  const r4 = await db.collection("cached_sets").deleteMany({});
+  results.deleted_v1_cached_sets = r4.deletedCount;
 
   logger.info(`cleanup-db 완료: ${JSON.stringify(results)}`);
   res.json({ status: "ok", ...results });
