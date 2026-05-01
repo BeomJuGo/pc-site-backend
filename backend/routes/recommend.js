@@ -624,16 +624,15 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
   const allGpus = [...gpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
 
   // ─── Phase 4: AMD/Intel CPU × AMD/NVIDIA GPU 브랜드별 독립 최적화 ──────────
+  // CPU 조합 예산 = remaining * 50%
+  // Intel 최저 플랫폼(i3-12100F + B760M + DDR4 ≈ 315K)은 800K 이상에서 허용
+  // 저예산(500K-700K)에서 Intel이 없는 것은 플랫폼 비용 현실(LGA1151 보드 미등록)
   const remaining = budget - secondaryTotal;
-
-  const cpuRatioTarget =
-    budget < 1000000 ? 0.35 :
-    budget < 1500000 ? 0.40 : 0.48;
-  const cpuBudgetMax = remaining * cpuRatioTarget;
+  const maxCpuComboAllowed = remaining * 0.50;
 
   // 브랜드 판별 헬퍼
   const isAmdCpu    = (cpu) => /amd|라이젠|ryzen|athlon/i.test(cpu.name || '');
-  const isIntelCpu  = (cpu) => /intel|코어i|코어 i|코어 울트라|core i|core ultra|펜티엄|셀러론/i.test(cpu.name || '');
+  const isIntelCpu  = (cpu) => /intel|인텔|코어i|코어 i|코어 울트라|core i|core ultra|펜티엄|셀러론/i.test(cpu.name || '');
   const isAmdGpu    = (g)   => /라데온|radeon|\brx\b|rx\d/i.test(g.name || '');
   const isNvidiaGpu = (g)   => /지포스|geforce|rtx|gtx/i.test(g.name || '');
 
@@ -665,9 +664,9 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
     return true;
   };
 
-  // 점수 기준 내림차순 정렬된 전체 CPU 후보
+  // 점수 기준 내림차순 정렬된 전체 CPU 후보 (GPU 최소 여유 확보 조건만 적용)
   const eligibleCombos = [...allCombos]
-    .filter(c => c.comboPrice <= cpuBudgetMax)
+    .filter(c => c.comboPrice <= maxCpuComboAllowed)
     .sort((a, b) => {
       const sa = getCpuScore(a.cpu), sb = getCpuScore(b.cpu);
       if (sa !== sb) return sb - sa;
