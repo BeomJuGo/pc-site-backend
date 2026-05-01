@@ -7,7 +7,7 @@ import { acquireLock, releaseLock, getRunning } from "../utils/syncLock.js";
 import { callGptInfo } from "../utils/gptInfo.js";
 
 const router = express.Router();
-const MIN_PASSMARK_SCORE_FOR_SAVE = 10000;
+const MIN_PASSMARK_SCORE_FOR_SAVE = 6000;
 const DANAWA_CPU_URL = "https://prod.danawa.com/list/?cate=112747";
 const CPUBENCHMARK_BASE_URL = "https://www.cpubenchmark.net/multithread";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;

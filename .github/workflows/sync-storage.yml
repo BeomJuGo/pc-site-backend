@@ -2,13 +2,13 @@ name: Monthly Storage Sync
 
 on:
   schedule:
-    - cron: "20 20 1 * *"  # 05:20 KST on 1st of each month
+    - cron: "20 20 1 */6 *"  # 05:20 KST on 1st of Jan/Jul
   workflow_dispatch:
 
 jobs:
   sync-storage:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     concurrency:
       group: sync-storage
       cancel-in-progress: false
@@ -32,5 +32,5 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "8"
+          PAGES: "30"
           AI: "true"

@@ -2,13 +2,13 @@ name: Monthly CPU Sync
 
 on:
   schedule:
-    - cron: "0 18 1 * *"  # 03:00 KST on 1st of each month
+    - cron: "0 18 1 */6 *"  # 03:00 KST on 1st of Jan/Jul
   workflow_dispatch:
 
 jobs:
   sync-cpus:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       group: sync-cpus
       cancel-in-progress: false
@@ -32,6 +32,6 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "10"
+          PAGES: "30"
           BENCH_PAGES: "6"
           AI: "true"

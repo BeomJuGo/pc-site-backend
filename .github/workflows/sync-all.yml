@@ -30,7 +30,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "10"
+          PAGES: "30"
           BENCH_PAGES: "6"
           AI: "true"
 
@@ -41,7 +41,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "5"
+          PAGES: "30"
           AI: "true"
 
       - name: Sync Motherboards
@@ -51,7 +51,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "3"
+          PAGES: "30"
           AI: "true"
 
       - name: Sync Memory
@@ -61,7 +61,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "3"
+          PAGES: "30"
           AI: "true"
 
       - name: Sync PSU
@@ -71,7 +71,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "3"
+          PAGES: "30"
           AI: "true"
 
       - name: Sync Coolers
@@ -81,7 +81,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "3"
+          PAGES: "30"
           AI: "true"
 
       - name: Sync Storage
@@ -91,7 +91,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "3"
+          PAGES: "30"
           AI: "true"
 
       - name: Sync Cases
@@ -101,7 +101,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAGES: "8"
+          PAGES: "30"
           AI: "true"
 
       - name: Done
