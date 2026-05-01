@@ -764,14 +764,52 @@ JSON만 출력: {"comboIndex":숫자(0-based),"gpuName":"정확한GPU이름 또�
     if (!chosen) chosen = cpuCombos[0];
   }
 
+  // ─── Phase 6: Gap fill — 소폭 미달 시 보조부품 업그레이드 ─────────────────
+  let fillStorage = preStorage, fillPsu = prePsu, fillCase = preCase, fillCooler = preCooler;
+  const calcTotal = () =>
+    fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price +
+    chosen.comboPrice + (chosenGpu?.price || 0);
+
+  if (calcTotal() < minBudget) {
+    const gap = minBudget - calcTotal();
+    const window = maxBudget - minBudget; // 100,000원
+
+    // 보조부품 순서대로 업그레이드 시도 (저장장치 → PSU → 케이스 → 쿨러)
+    const fillCandidates = [
+      { arr: storages, get: () => fillStorage, set: (v) => { fillStorage = v; } },
+      { arr: psus,     get: () => fillPsu,     set: (v) => { fillPsu = v;     } },
+      { arr: cases,    get: () => fillCase,    set: (v) => { fillCase = v;    } },
+      { arr: coolers,  get: () => fillCooler,  set: (v) => { fillCooler = v;  } },
+    ];
+    for (const { arr, get, set } of fillCandidates) {
+      const cur = get();
+      const upgrade = arr
+        .filter(p => p.price >= cur.price + gap && p.price < cur.price + gap + window)
+        .sort((a, b) => a.price - b.price)[0];
+      if (upgrade) { set(upgrade); break; }
+    }
+
+    // 단일 부품으로 안 되면 두 부품 합산 업그레이드 시도 (더 작은 gap으로 분할)
+    if (calcTotal() < minBudget) {
+      const remaining = minBudget - calcTotal();
+      for (const { arr, get, set } of fillCandidates) {
+        const cur = get();
+        const upgrade = arr
+          .filter(p => p.price > cur.price && p.price <= cur.price + remaining + window)
+          .sort((a, b) => b.price - a.price)[0];
+        if (upgrade && upgrade.price > cur.price) { set(upgrade); break; }
+      }
+    }
+  }
+
   const parts = {
-    cpu:         { name: chosen.cpu.name,   price: chosen.cpu.price,   image: chosen.cpu.image || null,   category: "cpu" },
-    motherboard: { name: chosen.board.name, price: chosen.board.price, image: chosen.board.image || null, category: "motherboard" },
-    memory:      { name: chosen.mem.name,   price: chosen.mem.price,   image: chosen.mem.image || null,   category: "memory" },
-    storage:     { name: preStorage.name,   price: preStorage.price,   image: preStorage.image || null,   category: "storage" },
-    psu:         { name: prePsu.name,       price: prePsu.price,       image: prePsu.image || null,       category: "psu" },
-    cooler:      { name: preCooler.name,    price: preCooler.price,    image: preCooler.image || null,    category: "cooler" },
-    case:        { name: preCase.name,      price: preCase.price,      image: preCase.image || null,      category: "case" },
+    cpu:         { name: chosen.cpu.name,     price: chosen.cpu.price,     image: chosen.cpu.image || null,     category: "cpu" },
+    motherboard: { name: chosen.board.name,   price: chosen.board.price,   image: chosen.board.image || null,   category: "motherboard" },
+    memory:      { name: chosen.mem.name,     price: chosen.mem.price,     image: chosen.mem.image || null,     category: "memory" },
+    storage:     { name: fillStorage.name,    price: fillStorage.price,    image: fillStorage.image || null,    category: "storage" },
+    psu:         { name: fillPsu.name,        price: fillPsu.price,        image: fillPsu.image || null,        category: "psu" },
+    cooler:      { name: fillCooler.name,     price: fillCooler.price,     image: fillCooler.image || null,     category: "cooler" },
+    case:        { name: fillCase.name,       price: fillCase.price,       image: fillCase.image || null,       category: "case" },
   };
   if (chosenGpu) {
     parts.gpu = { name: chosenGpu.name, price: chosenGpu.price, image: chosenGpu.image || null, category: "gpu" };
