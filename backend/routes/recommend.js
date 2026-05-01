@@ -390,7 +390,10 @@ router.get("/budget-set-v2", validate(recommendV2Schema, "query"), async (req, r
   const memKey = `recommend:${cacheId}`;
 
   const memHit = getCache(memKey);
-  if (memHit?.parts) return res.json(memHit);
+  if (memHit?.parts) {
+    res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+    return res.json(memHit);
+  }
 
   const db = getDB();
   if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "DB 연결 실패" });
@@ -414,6 +417,7 @@ router.get("/budget-set-v2", validate(recommendV2Schema, "query"), async (req, r
       }
       const age = Date.now() - new Date(doc.computedAt).getTime();
       setCache(memKey, doc.result, 10 * 60 * 1000);
+      res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
       if (age > BUDGET_SET_V2_TTL_MS && !buildingInProgressV2.has(cacheId)) {
         buildingInProgressV2.add(cacheId);
         logger.info(`budget-set-v2 stale (${Math.round(age / 86400000)}d) — 백그라운드 갱신: ${cacheId}`);

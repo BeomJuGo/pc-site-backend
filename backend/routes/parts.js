@@ -43,7 +43,7 @@ function computeTrend(priceHistory, days) {
 const VALUE_SORT_SCORE = { cpu: "passmarkscore", gpu: "3dmarkscore" };
 
 // GET /api/parts?category=cpu&page=1&limit=50&sort=value_desc
-router.get("/", setCacheHeaders(60), async (req, res) => {
+router.get("/", setCacheHeaders(300, 3600), async (req, res) => {
   const { category, page, limit, sort } = req.query;
   try {
     const db = getDB();
@@ -84,7 +84,7 @@ router.get("/", setCacheHeaders(60), async (req, res) => {
 });
 
 // GET /api/parts/search?q=...&category=...&priceMin=...&priceMax=...&sort=...&limit=...
-router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60), async (req, res) => {
+router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(300, 3600), async (req, res) => {
   const { q, category, manufacturer, priceMin, priceMax, sort = "price_asc", limit = 50 } = req.query;
   const cacheKey = `parts:search:${JSON.stringify(req.query)}`;
   const cached = await getCache(cacheKey);
@@ -158,7 +158,7 @@ router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60),
         .toArray();
     }
 
-    setCache(cacheKey, parts, 60 * 1000);
+    setCache(cacheKey, parts, 5 * 60 * 1000);
     res.json(parts);
   } catch (err) {
     logger.error({ err }, "검색 실패");
@@ -167,7 +167,7 @@ router.get("/search", validate(searchQuerySchema, "query"), setCacheHeaders(60),
 });
 
 // GET /api/parts/value-rank?category=gpu&limit=20
-router.get("/value-rank", validate(valueRankQuerySchema, "query"), setCacheHeaders(120), async (req, res) => {
+router.get("/value-rank", validate(valueRankQuerySchema, "query"), setCacheHeaders(600, 3600), async (req, res) => {
   const { category, limit = 20 } = req.query;
   const cacheKey = `parts:value-rank:${category}:${limit}`;
   const cached = await getCache(cacheKey);
@@ -186,7 +186,7 @@ router.get("/value-rank", validate(valueRankQuerySchema, "query"), setCacheHeade
 });
 
 // GET /api/parts/budget-picks?budget=1000000
-router.get("/budget-picks", validate(budgetPicksQuerySchema, "query"), setCacheHeaders(120), async (req, res) => {
+router.get("/budget-picks", validate(budgetPicksQuerySchema, "query"), setCacheHeaders(600, 3600), async (req, res) => {
   const { budget } = req.query;
   const budgetNum = Number(budget);
   const cacheKey = `parts:budget-picks:${budgetNum}`;
@@ -284,7 +284,7 @@ router.get("/danawa-url", (req, res) => {
 });
 
 // GET /api/parts/price-drops?limit=10
-router.get("/price-drops", setCacheHeaders(300), async (req, res) => {
+router.get("/price-drops", setCacheHeaders(600, 3600), async (req, res) => {
   const limit = Math.min(20, Math.max(1, parseInt(req.query.limit) || 10));
   const cacheKey = `parts:price-drops:${limit}`;
   const cached = await getCache(cacheKey);
@@ -335,7 +335,7 @@ router.get("/price-drops", setCacheHeaders(300), async (req, res) => {
 });
 
 // GET /api/parts/:category/:name/trend
-router.get("/:category/:name/trend", async (req, res) => {
+router.get("/:category/:name/trend", setCacheHeaders(600, 3600), async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
@@ -357,7 +357,7 @@ router.get("/:category/:name/trend", async (req, res) => {
 });
 
 // GET /api/parts/:category/:name/history
-router.get("/:category/:name/history", async (req, res) => {
+router.get("/:category/:name/history", setCacheHeaders(600, 3600), async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
@@ -371,7 +371,7 @@ router.get("/:category/:name/history", async (req, res) => {
 });
 
 // GET /api/parts/:category/:name
-router.get("/:category/:name", setCacheHeaders(60), async (req, res) => {
+router.get("/:category/:name", setCacheHeaders(300, 3600), async (req, res) => {
   const { category, name } = req.params;
   try {
     const db = getDB();
