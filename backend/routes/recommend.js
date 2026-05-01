@@ -439,7 +439,7 @@ export async function buildCompatibleSetWithAI(budget, purpose, db) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: "gpt-5.5",
+        model: "gpt-5.4",
         response_format: { type: "json_object" },
 
         messages,
@@ -664,7 +664,7 @@ JSON만 출력: {"comboIndex":숫자(0-based),"gpuName":"정확한GPU이름 또�
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: "gpt-5.5",
+        model: "gpt-5.4",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
