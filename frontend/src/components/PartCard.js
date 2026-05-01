@@ -36,7 +36,7 @@ export default function PartCard({ part, onClick }) {
   return (
     <div
       onClick={onClick}
-      className="w-full cursor-pointer px-4 py-4 hover:bg-slate-700/30 transition-colors relative group"
+      className="w-full cursor-pointer px-4 py-4 hover:bg-gray-50 transition-colors relative group"
     >
       {/* Hover action buttons */}
       <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
@@ -45,8 +45,8 @@ export default function PartCard({ part, onClick }) {
           title={favorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
           className={`p-1.5 rounded-md transition-colors ${
             favorited
-              ? "bg-pink-900/60 text-pink-400"
-              : "bg-slate-700/60 text-slate-400 hover:text-pink-400 hover:bg-pink-900/40"
+              ? "bg-pink-50 text-pink-500"
+              : "bg-gray-100 text-gray-400 hover:text-pink-500 hover:bg-pink-50"
           }`}
         >
           <svg className="w-4 h-4" fill={favorited ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
@@ -58,8 +58,8 @@ export default function PartCard({ part, onClick }) {
           title={comparing ? "비교 제거" : "비교에 추가 (최대 3개)"}
           className={`p-1.5 rounded-md transition-colors ${
             comparing
-              ? "bg-blue-900/60 text-blue-400"
-              : "bg-slate-700/60 text-slate-400 hover:text-blue-400 hover:bg-blue-900/40"
+              ? "bg-blue-50 text-blue-600"
+              : "bg-gray-100 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,7 +69,7 @@ export default function PartCard({ part, onClick }) {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-slate-700/50 border border-slate-600/50 flex items-center justify-center overflow-hidden">
+        <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden">
           {part.image && !part.image.includes("noImg") && !part.image.includes("noData") ? (
             <img
               src={part.image}
@@ -82,19 +82,19 @@ export default function PartCard({ part, onClick }) {
               }}
             />
           ) : (
-            <span className="text-xs text-slate-500">NO IMG</span>
+            <span className="text-xs text-gray-400">NO IMG</span>
           )}
-          <span className="text-xs text-slate-500 hidden">NO IMG</span>
+          <span className="text-xs text-gray-400 hidden">NO IMG</span>
         </div>
         <div className="flex-1 min-w-0 pr-16">
-          <h3 className="text-[15px] font-semibold text-slate-100 break-words leading-snug">{name}</h3>
+          <h3 className="text-[15px] font-semibold text-gray-900 break-words leading-snug">{name}</h3>
           {part.review && (
-            <p className="mt-1 text-[12px] text-slate-400 truncate leading-relaxed">{part.review}</p>
+            <p className="mt-1 text-[12px] text-gray-500 truncate leading-relaxed">{part.review}</p>
           )}
         </div>
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <div className="text-[16px] font-bold text-white">{priceText}</div>
-          {subScore && <div className="text-[12px] text-slate-400">{subScore}</div>}
+          <div className="text-[16px] font-bold text-gray-900">{priceText}</div>
+          {subScore && <div className="text-[12px] text-gray-500">{subScore}</div>}
         </div>
       </div>
     </div>

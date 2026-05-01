@@ -1,10 +1,10 @@
 function Pulse({ className }) {
-  return <div className={`animate-pulse bg-slate-700/60 rounded-lg ${className}`} />;
+  return <div className={`animate-pulse bg-gray-200 rounded-lg ${className}`} />;
 }
 
 export default function SkeletonCard() {
   return (
-    <div className="w-full border border-slate-700/50 rounded-lg px-4 py-5 bg-slate-800/30">
+    <div className="w-full border border-gray-200 rounded-lg px-4 py-5 bg-white">
       <div className="flex items-center gap-5">
         <Pulse className="w-20 h-20 flex-shrink-0" />
         <div className="flex-1 space-y-2">

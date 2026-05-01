@@ -22,7 +22,7 @@ const PCBuilder = lazy(() => import("./pages/PCBuilder"));
 function PageLoader() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 }
@@ -31,13 +31,9 @@ export default function App() {
   return (
     <CompareProvider>
       <Router>
-        <div className="min-h-screen flex flex-col relative overflow-hidden bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-          <div className="fixed inset-0 pointer-events-none">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-purple-900/15 to-pink-900/10" />
-          </div>
-
+        <div className="min-h-screen flex flex-col bg-white">
           <Header />
-          <main className="flex-1 relative z-10">
+          <main className="flex-1">
             <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
                 <Routes>

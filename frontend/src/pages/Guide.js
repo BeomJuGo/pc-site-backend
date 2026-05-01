@@ -38,21 +38,21 @@ export default function Guide() {
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-12 max-w-3xl mx-auto">
       <div className="text-center mb-10">
-        <h1 className="text-4xl font-bold text-white mb-3">PC 부품 가이드</h1>
-        <p className="text-lg text-slate-300">
+        <h1 className="text-4xl font-bold text-gray-900 mb-3">PC 부품 가이드</h1>
+        <p className="text-lg text-gray-600">
           예산·용도에 맞는 부품 선택을 위한 가이드 글입니다. GoodPricePC 데이터와 함께 활용해 보세요.
         </p>
       </div>
 
       <div className="space-y-8">
         {ARTICLES.map((article) => (
-          <Card key={article.id} className="bg-white/90 backdrop-blur-sm border-slate-200/50">
+          <Card key={article.id} className="bg-white border-gray-200 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-slate-800 text-xl">{article.title}</CardTitle>
-              <p className="text-sm text-slate-500">{article.summary}</p>
+              <CardTitle className="text-gray-900 text-xl">{article.title}</CardTitle>
+              <p className="text-sm text-gray-500">{article.summary}</p>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="text-slate-600 leading-relaxed whitespace-pre-line">
+              <div className="text-gray-600 leading-relaxed whitespace-pre-line">
                 {article.content}
               </div>
             </CardContent>
@@ -61,13 +61,13 @@ export default function Guide() {
       </div>
 
       <div className="mt-10 flex flex-wrap gap-4 justify-center">
-        <Link to="/" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-white/20 text-white hover:bg-white/30 font-medium transition-colors">
+        <Link to="/" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium transition-colors">
           ← 홈으로
         </Link>
         <Link to="/ai-recommend" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium transition-colors">
           AI 견적 추천
         </Link>
-        <Link to="/about" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-white/20 text-white hover:bg-white/30 font-medium transition-colors">
+        <Link to="/about" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium transition-colors">
           사이트 소개
         </Link>
       </div>

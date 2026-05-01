@@ -30,7 +30,7 @@ const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
 const STORAGE_CAPS = [
   { label: "250GB", patterns: ["250gb"] },
   { label: "500GB", patterns: ["500gb", "512gb"] },
-  { label: "1TB", patterns: ["1tb", "1000gb", "1gb"] }, // DB bug: "1GB" means 1TB
+  { label: "1TB", patterns: ["1tb", "1000gb", "1gb"] },
   { label: "2TB", patterns: ["2tb", "2000gb", "2gb"] },
   { label: "4TB", patterns: ["4tb", "4000gb", "4gb"] },
 ];
@@ -123,7 +123,6 @@ export default function Category() {
   }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, storageCapFilter, caseFormFilter, psuWattFilter]);
   useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
 
-  // reset category-specific filters when switching category
   useEffect(() => {
     setBrandFilter("all");
     setChipsetFilter("all");
@@ -191,7 +190,7 @@ export default function Category() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
-        <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -200,10 +199,10 @@ export default function Category() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[40vh] text-center px-4">
         <div className="text-4xl mb-4">⚠️</div>
-        <p className="text-slate-300 mb-4">{error}</p>
+        <p className="text-gray-600 mb-4">{error}</p>
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
         >
           다시 시도
         </button>
@@ -212,31 +211,29 @@ export default function Category() {
   }
 
   const pillBase = "px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors";
-  const pillActive = "bg-purple-600 text-white border-purple-500";
-  const pillIdle = "bg-slate-800/50 text-slate-300 border-slate-600 hover:bg-slate-700/50";
-  const subActive = "bg-blue-600 text-white border-blue-500";
+  const pillActive = "bg-blue-600 text-white border-blue-600";
+  const pillIdle = "bg-white text-gray-600 border-gray-300 hover:bg-gray-50 hover:border-gray-400";
+  const subActive = "bg-blue-600 text-white border-blue-600";
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-2xl font-bold text-white">{catName}</h2>
-        <span className="text-sm text-slate-400">총 {filtered.length.toLocaleString()}개</span>
+        <h2 className="text-2xl font-bold text-gray-900">{catName}</h2>
+        <span className="text-sm text-gray-500">총 {filtered.length.toLocaleString()}개</span>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center mb-5">
         <input
           type="text"
           placeholder="제품명 검색"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg bg-slate-800/50 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 w-52"
+          className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
         />
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg bg-slate-800/50 border border-slate-600 text-slate-200 focus:outline-none"
+          className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-300 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="popularity">인기순</option>
           <option value="price">가격 낮은순</option>
@@ -362,11 +359,10 @@ export default function Category() {
         )}
       </div>
 
-      {/* Part list */}
       {pageItems.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">조건에 맞는 부품이 없습니다.</div>
+        <div className="text-center py-16 text-gray-400">조건에 맞는 부품이 없습니다.</div>
       ) : (
-        <div className="border border-slate-700/50 rounded-xl bg-slate-800/20 backdrop-blur-sm overflow-hidden divide-y divide-slate-700/30">
+        <div className="border border-gray-200 rounded-xl bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
           {pageItems.map((part) => (
             <PartCard
               key={part.id || part._id || part.name}
@@ -377,23 +373,22 @@ export default function Category() {
         </div>
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-center mt-6 gap-2 items-center">
           <button
             disabled={currentPage === 1}
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            className="px-4 py-2 border border-slate-600 rounded-lg text-sm text-slate-300 disabled:opacity-40 hover:bg-slate-700/50 transition-colors"
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
             이전
           </button>
-          <span className="px-4 py-2 text-sm text-slate-400">
+          <span className="px-4 py-2 text-sm text-gray-500">
             {currentPage} / {totalPages}
           </span>
           <button
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            className="px-4 py-2 border border-slate-600 rounded-lg text-sm text-slate-300 disabled:opacity-40 hover:bg-slate-700/50 transition-colors"
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
             다음
           </button>

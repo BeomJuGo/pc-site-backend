@@ -16,14 +16,14 @@ const PART_LABELS = {
 };
 
 const PART_COLORS = {
-  cpu: "bg-blue-900/40 text-blue-300 border-blue-700/50",
-  gpu: "bg-purple-900/40 text-purple-300 border-purple-700/50",
-  motherboard: "bg-orange-900/40 text-orange-300 border-orange-700/50",
-  memory: "bg-green-900/40 text-green-300 border-green-700/50",
-  storage: "bg-indigo-900/40 text-indigo-300 border-indigo-700/50",
-  psu: "bg-yellow-900/40 text-yellow-300 border-yellow-700/50",
-  cooler: "bg-cyan-900/40 text-cyan-300 border-cyan-700/50",
-  case: "bg-slate-700/40 text-slate-300 border-slate-600/50",
+  cpu: "bg-blue-50 text-blue-700 border-blue-200",
+  gpu: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  motherboard: "bg-orange-50 text-orange-700 border-orange-200",
+  memory: "bg-green-50 text-green-700 border-green-200",
+  storage: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  psu: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  cooler: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  case: "bg-gray-100 text-gray-600 border-gray-300",
 };
 
 const MAX_POLL = 6;
@@ -100,13 +100,13 @@ export default function Recommend() {
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">✨ AI PC 견적 추천</h1>
-        <p className="text-slate-400">예산을 선택하면 AI가 최고 가성비 부품 조합을 추천합니다.</p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">✨ AI PC 견적 추천</h1>
+        <p className="text-gray-500">예산을 선택하면 AI가 최고 가성비 부품 조합을 추천합니다.</p>
       </div>
 
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 mb-6 backdrop-blur-sm">
+      <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6 shadow-sm">
         <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-300 mb-3">예산 선택</label>
+          <label className="block text-sm font-medium text-gray-700 mb-3">예산 선택</label>
           <div className="flex flex-wrap gap-1.5">
             {BUDGETS.map((b) => (
               <button
@@ -114,24 +114,24 @@ export default function Recommend() {
                 onClick={() => setBudget(b)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
                   budget === b
-                    ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white border-transparent shadow"
-                    : "bg-slate-700/50 text-slate-300 border-slate-600 hover:bg-slate-700"
+                    ? "bg-blue-600 text-white border-transparent shadow-sm"
+                    : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50 hover:border-gray-400"
                 }`}
               >
                 {(b / 10000).toFixed(0)}만
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            선택된 예산: <span className="text-slate-300 font-medium">{budget.toLocaleString()}원</span>
+          <p className="mt-2 text-xs text-gray-400">
+            선택된 예산: <span className="text-gray-700 font-medium">{budget.toLocaleString()}원</span>
           </p>
-          <div className="mt-3 px-4 py-3 bg-amber-900/20 border border-amber-700/40 rounded-lg text-amber-300/80 text-xs leading-relaxed">
-            💡 AI 견적 추천은 최대 <span className="font-semibold text-amber-300">200만원</span>까지 지원합니다.
+          <div className="mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-xs leading-relaxed">
+            💡 AI 견적 추천은 최대 <span className="font-semibold">200만원</span>까지 지원합니다.
             200만원 초과 고사양 PC는{" "}
             <button
               type="button"
               onClick={() => navigate("/pc-builder")}
-              className="underline underline-offset-2 font-semibold text-amber-200 hover:text-white transition-colors"
+              className="underline underline-offset-2 font-semibold hover:text-amber-900 transition-colors"
             >
               PC 견적 빌더
             </button>
@@ -140,7 +140,7 @@ export default function Recommend() {
         </div>
 
         {error && (
-          <div className="mb-4 px-4 py-3 bg-red-900/30 border border-red-700/50 rounded-lg text-red-300 text-sm">
+          <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
           </div>
         )}
@@ -148,7 +148,7 @@ export default function Recommend() {
         <button
           onClick={handleRecommend}
           disabled={loading}
-          className="w-full py-3 font-semibold text-base rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
+          className="w-full py-3 font-semibold text-base rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
         >
           {loading ? (
             <span className="flex items-center justify-center gap-2">
@@ -161,7 +161,7 @@ export default function Recommend() {
         </button>
 
         {loading && pollCount > 0 && (
-          <p className="mt-2 text-xs text-slate-500 text-center">
+          <p className="mt-2 text-xs text-gray-400 text-center">
             첫 요청 시 AI 생성에 최대 1분이 소요될 수 있습니다
           </p>
         )}
@@ -170,17 +170,17 @@ export default function Recommend() {
       {results && (
         <div className="space-y-3">
           {results.summary && (
-            <div className="px-5 py-3 bg-blue-900/30 border border-blue-700/50 rounded-xl text-blue-300 text-sm">
+            <div className="px-5 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm">
               💡 {results.summary}
             </div>
           )}
 
-          <div className="bg-slate-800/30 border border-slate-700 rounded-2xl overflow-hidden backdrop-blur-sm">
+          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
             {Object.entries(PART_LABELS).map(([key, label]) => {
               const part = results.parts[key];
               if (!part) return null;
               return (
-                <div key={key} className="border-b border-slate-700/50 last:border-b-0">
+                <div key={key} className="border-b border-gray-100 last:border-b-0">
                   <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS[key]}`}>
                       {label}
@@ -198,9 +198,9 @@ export default function Recommend() {
               );
             })}
 
-            <div className="px-5 py-4 bg-slate-700/30 flex items-center justify-between">
-              <span className="text-slate-400 text-sm">총 견적</span>
-              <span className="text-xl font-bold text-white">
+            <div className="px-5 py-4 bg-gray-50 flex items-center justify-between">
+              <span className="text-gray-500 text-sm">총 견적</span>
+              <span className="text-xl font-bold text-gray-900">
                 {Number(results.totalPrice || 0).toLocaleString()}원
               </span>
             </div>
@@ -208,7 +208,7 @@ export default function Recommend() {
 
           <button
             onClick={() => { setResults(null); setError(null); }}
-            className="w-full py-2 text-sm text-slate-400 hover:text-white border border-slate-700 rounded-xl hover:border-slate-500 transition-colors"
+            className="w-full py-2 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 rounded-xl hover:border-gray-400 transition-colors"
           >
             다시 추천받기
           </button>

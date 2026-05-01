@@ -34,11 +34,11 @@ export default function Compare() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
         <div className="text-5xl mb-4">📋</div>
-        <h2 className="text-2xl font-bold text-white mb-3">비교할 부품이 없습니다</h2>
-        <p className="text-slate-400 mb-6">카테고리 페이지에서 부품 카드에 마우스를 올려<br />비교 버튼을 클릭하세요.</p>
+        <h2 className="text-2xl font-bold text-gray-900 mb-3">비교할 부품이 없습니다</h2>
+        <p className="text-gray-500 mb-6">카테고리 페이지에서 부품 카드에 마우스를 올려<br />비교 버튼을 클릭하세요.</p>
         <button
           onClick={() => navigate("/category/cpu")}
-          className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all"
+          className="px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all"
         >
           부품 보러가기
         </button>
@@ -54,10 +54,10 @@ export default function Compare() {
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">부품 비교</h1>
+        <h1 className="text-2xl font-bold text-gray-900">부품 비교</h1>
         <button
           onClick={clear}
-          className="px-4 py-2 text-sm text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/50 transition-colors"
+          className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
         >
           초기화
         </button>
@@ -65,25 +65,25 @@ export default function Compare() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className="text-left py-3 pr-4 text-slate-400 font-medium text-sm w-28">항목</th>
+                <th className="text-left py-3 pr-4 text-gray-500 font-medium text-sm w-28">항목</th>
                 {parts.map((part) => (
                   <th key={part.name} className="pb-3 px-3 text-center min-w-[180px]">
                     <div className="flex flex-col items-center gap-2">
                       {(part.image && !part.image.includes("noImg")) ? (
-                        <img src={part.image} alt={part.name} className="w-16 h-16 object-contain rounded-lg bg-slate-800 p-1" />
+                        <img src={part.image} alt={part.name} className="w-16 h-16 object-contain rounded-lg bg-gray-100 p-1" />
                       ) : (
-                        <div className="w-16 h-16 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 text-xs">NO IMG</div>
+                        <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs">NO IMG</div>
                       )}
                       <button
                         onClick={() => navigate(`/detail/${part.category}/${encodeURIComponent(part.name)}`)}
-                        className="text-sm font-semibold text-white hover:text-purple-400 transition-colors text-center leading-snug"
+                        className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition-colors text-center leading-snug"
                       >
                         {part.name}
                       </button>
@@ -94,13 +94,13 @@ export default function Compare() {
             </thead>
             <tbody>
               {ROW_KEYS.map(({ label, key, format }) => (
-                <tr key={label} className="border-t border-slate-700/50">
-                  <td className="py-3 pr-4 text-slate-400 text-sm font-medium">{label}</td>
+                <tr key={label} className="border-t border-gray-100">
+                  <td className="py-3 pr-4 text-gray-500 text-sm font-medium">{label}</td>
                   {parts.map((part) => {
                     const raw = getVal(part, key);
                     const isMin = label === "가격" && Number(raw) === minPrice && minPrice !== null;
                     return (
-                      <td key={part.name} className={`py-3 px-3 text-center text-sm ${isMin ? "text-green-400 font-bold" : "text-slate-200"}`}>
+                      <td key={part.name} className={`py-3 px-3 text-center text-sm ${isMin ? "text-green-600 font-bold" : "text-gray-700"}`}>
                         {isMin && <span className="text-xs mr-1">✅</span>}
                         {format(raw)}
                       </td>

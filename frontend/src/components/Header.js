@@ -62,11 +62,11 @@ export default function Header() {
   const closeMenu = () => setIsMenuOpen(false);
 
   return (
-    <header ref={menuRef} className="relative bg-slate-900/80 backdrop-blur-md border-b border-slate-700/50 sticky top-0 z-50">
+    <header ref={menuRef} className="relative bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm sticky top-0 z-50">
       <div className="px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         <Link
           to="/"
-          className={`text-xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent hover:scale-105 transition-all duration-500 flex-shrink-0 ${isLoaded ? "animate-fade-in-left" : "opacity-0"}`}
+          className={`text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent hover:scale-105 transition-all duration-500 flex-shrink-0 ${isLoaded ? "animate-fade-in-left" : "opacity-0"}`}
         >
           GoodPricePC
         </Link>
@@ -79,8 +79,8 @@ export default function Header() {
               className={({ isActive }) =>
                 `px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 ${
                   isActive
-                    ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow"
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                 }`
               }
             >
@@ -91,7 +91,7 @@ export default function Header() {
             to="/guide"
             className={({ isActive }) =>
               `px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-200 ${
-                isActive ? "bg-slate-700 text-white" : "text-slate-300 hover:bg-slate-800/60"
+                isActive ? "bg-gray-200 text-gray-900" : "text-gray-600 hover:bg-gray-100"
               }`
             }
           >
@@ -102,7 +102,7 @@ export default function Header() {
         <div className={`flex items-center gap-2 flex-shrink-0 ${isLoaded ? "animate-fade-in-right" : "opacity-0"}`}>
           <button
             onClick={() => setIsSearchOpen((v) => !v)}
-            className="p-2 rounded-lg text-slate-300 hover:bg-slate-800/60 transition-colors"
+            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
             aria-label="검색"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,7 +110,7 @@ export default function Header() {
             </svg>
           </button>
 
-          <Link to="/favorites" className="p-2 rounded-lg text-slate-300 hover:bg-slate-800/60 transition-colors" aria-label="즐겨찾기">
+          <Link to="/favorites" className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors" aria-label="즐겨찾기">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
@@ -118,26 +118,26 @@ export default function Header() {
 
           <NavLink
             to="/pc-builder"
-            className="hidden md:inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg bg-slate-700/80 text-slate-200 hover:bg-slate-600/80 transition-all border border-slate-600"
+            className="hidden md:inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all border border-gray-200"
           >
             🛠️ 견적
           </NavLink>
           <NavLink
             to="/ai-recommend"
-            className="hidden md:inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600 transition-all shadow"
+            className="hidden md:inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm"
           >
             ✨ AI 추천
           </NavLink>
 
           <button
-            className="md:hidden p-2 rounded-lg hover:bg-slate-800/60 transition-all duration-300"
+            className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-all duration-300"
             onClick={() => setIsMenuOpen((v) => !v)}
             aria-label="메뉴"
           >
             <div className="w-6 h-6 flex flex-col justify-center space-y-1">
-              <div className={`h-0.5 bg-slate-300 transition-all duration-300 ${isMenuOpen ? "rotate-45 translate-y-1.5" : ""}`} />
-              <div className={`h-0.5 bg-slate-300 transition-all duration-300 ${isMenuOpen ? "opacity-0" : ""}`} />
-              <div className={`h-0.5 bg-slate-300 transition-all duration-300 ${isMenuOpen ? "-rotate-45 -translate-y-1.5" : ""}`} />
+              <div className={`h-0.5 bg-gray-600 transition-all duration-300 ${isMenuOpen ? "rotate-45 translate-y-1.5" : ""}`} />
+              <div className={`h-0.5 bg-gray-600 transition-all duration-300 ${isMenuOpen ? "opacity-0" : ""}`} />
+              <div className={`h-0.5 bg-gray-600 transition-all duration-300 ${isMenuOpen ? "-rotate-45 -translate-y-1.5" : ""}`} />
             </div>
           </button>
         </div>
@@ -146,7 +146,7 @@ export default function Header() {
       <div
         className={`overflow-hidden transition-all duration-300 ${
           isSearchOpen ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
-        } border-t border-slate-700/50 bg-slate-900/95 backdrop-blur-md`}
+        } border-t border-gray-200 bg-gray-50`}
       >
         <form onSubmit={handleSearchSubmit} className="px-4 sm:px-6 lg:px-8 py-3 flex gap-2">
           <input
@@ -155,15 +155,15 @@ export default function Header() {
             value={searchQuery}
             onChange={handleSearchChange}
             placeholder="부품 이름으로 검색... (예: RTX 4070, Ryzen 7)"
-            className="flex-1 px-4 py-2 text-sm rounded-lg border border-slate-600 bg-slate-800 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button type="submit" className="px-4 py-2 text-sm font-medium bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all">
+          <button type="submit" className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all">
             검색
           </button>
           <button
             type="button"
             onClick={() => { setIsSearchOpen(false); setSearchQuery(""); }}
-            className="px-3 py-2 text-sm text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/60 transition-colors"
+            className="px-3 py-2 text-sm text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
           >
             닫기
           </button>
@@ -171,7 +171,7 @@ export default function Header() {
       </div>
 
       <div
-        className={`md:hidden absolute top-full left-0 right-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-700/50 shadow-lg transition-all duration-300 ${
+        className={`md:hidden absolute top-full left-0 right-0 bg-white border-b border-gray-200 shadow-lg transition-all duration-300 ${
           isMenuOpen ? "opacity-100 visible" : "opacity-0 invisible"
         }`}
       >
@@ -184,8 +184,8 @@ export default function Header() {
                 className={({ isActive }) =>
                   `px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 text-center ${
                     isActive
-                      ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow"
-                      : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-gray-700 hover:text-gray-900 hover:bg-gray-100"
                   }`
                 }
                 onClick={closeMenu}
@@ -194,14 +194,14 @@ export default function Header() {
               </NavLink>
             ))}
           </div>
-          <div className="border-t border-slate-700 pt-3 flex flex-wrap gap-2">
-            <NavLink to="/guide" className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors" onClick={closeMenu}>
+          <div className="border-t border-gray-200 pt-3 flex flex-wrap gap-2">
+            <NavLink to="/guide" className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors" onClick={closeMenu}>
               📖 가이드
             </NavLink>
-            <NavLink to="/pc-builder" className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 transition-all border border-slate-600" onClick={closeMenu}>
+            <NavLink to="/pc-builder" className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all border border-gray-200" onClick={closeMenu}>
               🛠️ 직접 견적 짜기
             </NavLink>
-            <NavLink to="/ai-recommend" className="px-5 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600 transition-all shadow" onClick={closeMenu}>
+            <NavLink to="/ai-recommend" className="px-5 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm" onClick={closeMenu}>
               ✨ AI 추천 받기
             </NavLink>
           </div>

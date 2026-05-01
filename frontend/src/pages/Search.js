@@ -64,7 +64,7 @@ export default function Search() {
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-white mb-6">부품 검색</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">부품 검색</h1>
 
       <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
         <input
@@ -72,11 +72,11 @@ export default function Search() {
           value={inputValue}
           onChange={handleInputChange}
           placeholder="부품 이름을 입력하세요 (예: RTX 4070, Ryzen 7 7700X)"
-          className="flex-1 px-4 py-3 rounded-xl border border-slate-600 bg-slate-800/50 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="flex-1 px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
           type="submit"
-          className="px-5 py-3 font-medium bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all"
+          className="px-5 py-3 font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all"
         >
           검색
         </button>
@@ -88,10 +88,10 @@ export default function Search() {
             <button
               key={cat.value}
               onClick={() => setParam("category", cat.value)}
-              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium border transition-colors ${
                 category === cat.value
-                  ? "bg-purple-600 text-white"
-                  : "bg-slate-800/50 text-slate-300 hover:bg-slate-700/50"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
               }`}
             >
               {cat.label}
@@ -101,7 +101,7 @@ export default function Search() {
         <select
           value={sort}
           onChange={(e) => setParam("sort", e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-lg bg-slate-800/50 text-slate-300 border border-slate-600 focus:outline-none"
+          className="px-3 py-1.5 text-sm rounded-lg bg-white text-gray-700 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="price_asc">가격 낮은 순</option>
           <option value="price_desc">가격 높은 순</option>
@@ -119,15 +119,15 @@ export default function Search() {
       {!loading && searched && results.length === 0 && (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">🔍</div>
-          <p className="text-slate-300 text-lg mb-2">"{q}"에 대한 결과가 없습니다.</p>
-          <p className="text-slate-500 text-sm">다른 검색어를 시도해 보세요.</p>
+          <p className="text-gray-700 text-lg mb-2">"{q}"에 대한 결과가 없습니다.</p>
+          <p className="text-gray-400 text-sm">다른 검색어를 시도해 보세요.</p>
         </div>
       )}
 
       {!loading && results.length > 0 && (
         <>
-          <p className="text-slate-400 text-sm mb-3">{results.length}개 결과</p>
-          <div className="space-y-3">
+          <p className="text-gray-500 text-sm mb-3">{results.length}개 결과</p>
+          <div className="border border-gray-200 rounded-xl bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
             {results.map((part) => (
               <PartCard
                 key={part._id || part.name}
@@ -140,7 +140,7 @@ export default function Search() {
       )}
 
       {!searched && (
-        <div className="text-center py-16 text-slate-500">
+        <div className="text-center py-16 text-gray-400">
           검색어를 입력하면 모든 카테고리에서 부품을 찾아드립니다.
         </div>
       )}
