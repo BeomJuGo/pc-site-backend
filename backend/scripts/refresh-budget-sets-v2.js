@@ -22,12 +22,14 @@ for (const budget of BUDGETS) {
     // 다음 예산 구간을 위한 단조 증가 기준 업데이트
     const meta = result._meta || {};
     prevFloor = {
-      minCpuScore:       meta.cpuScore       || 0,
-      prevCpuComboPrice: meta.cpuComboPrice  || 0,
-      minAmdGpuScore:    meta.amdGpuScore    || 0,
-      prevAmdGpuPrice:   meta.amdGpuPrice    || 0,
-      minNvidiaGpuScore: meta.nvidiaGpuScore || 0,
-      prevNvidiaGpuPrice:meta.nvidiaGpuPrice || 0,
+      minAmdCpuScore:         meta.amdCpuScore         || 0,
+      prevAmdCpuComboPrice:   meta.amdCpuComboPrice    || 0,
+      minIntelCpuScore:       meta.intelCpuScore       || 0,
+      prevIntelCpuComboPrice: meta.intelCpuComboPrice  || 0,
+      minAmdGpuScore:         meta.amdGpuScore         || 0,
+      prevAmdGpuPrice:        meta.amdGpuPrice         || 0,
+      minNvidiaGpuScore:      meta.nvidiaGpuScore      || 0,
+      prevNvidiaGpuPrice:     meta.nvidiaGpuPrice      || 0,
     };
 
     // _meta는 저장하지 않음 (내부 체이닝 전용)
