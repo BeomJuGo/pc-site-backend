@@ -363,42 +363,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="px-4 sm:px-6 lg:px-8 py-16">
-        <div className="max-w-4xl mx-auto text-center">
-          <Card className="bg-gray-900 text-white border-0 shadow-xl hover:shadow-2xl transition-all duration-300 animate-fade-in-up">
-            <CardHeader>
-              <div className="flex justify-center mb-4">
-                <div className="p-3 rounded-xl bg-white/10">
-                  <Sparkles className="w-7 h-7 text-white" />
-                </div>
-              </div>
-              <CardTitle className="text-4xl mb-4 font-bold text-white">지금 시작하세요</CardTitle>
-              <p className="text-gray-300 text-xl font-medium">
-                AI 추천을 통해 최적의 PC 구성을 찾아보세요
-              </p>
-            </CardHeader>
-            <CardContent className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button
-                size="lg"
-                className="text-lg px-8 py-4 bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
-                onClick={() => navigate("/ai-recommend")}
-              >
-                <Sparkles className="w-5 h-5 mr-2" />
-                AI 추천 받기
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="text-lg px-8 py-4 bg-transparent text-white border-white/30 hover:bg-white/10 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
-                onClick={() => navigate("/pc-builder")}
-              >
-                직접 견적 짜기
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
     </div>
   );
 }
