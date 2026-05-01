@@ -26,11 +26,35 @@ const PART_COLORS = {
   case: "bg-gray-100 text-gray-600 border-gray-300",
 };
 
+const PURPOSE_INFO = {
+  gaming: {
+    icon: "🎮",
+    label: "게이밍용",
+    cpuPct: 25,
+    gpuPct: 55,
+    secPct: 20,
+    desc: "FPS·RPG 등 고사양 게임에 최적화된 구성입니다. GPU 성능에 예산을 집중하여 높은 해상도와 안정적인 프레임을 경험할 수 있습니다. 게임을 주 목적으로 하는 분께 추천합니다.",
+    activeClass: "border-indigo-500 bg-indigo-50",
+    badgeClass: "bg-indigo-100 text-indigo-700",
+  },
+  work: {
+    icon: "🖥",
+    label: "작업용",
+    cpuPct: 45,
+    gpuPct: 35,
+    secPct: 20,
+    desc: "영상 편집·3D 렌더링·프로그래밍·AI 학습 등 CPU 집약적 작업에 최적화된 구성입니다. 멀티코어 성능에 예산을 집중하며 GPU는 보조 역할로 구성됩니다. 창작·개발 작업이 주 목적인 분께 추천합니다.",
+    activeClass: "border-orange-500 bg-orange-50",
+    badgeClass: "bg-orange-100 text-orange-700",
+  },
+};
+
 const MAX_POLL = 6;
 const POLL_INTERVAL = 10000;
 
 export default function Recommend() {
   const [budget, setBudget] = useState(1000000);
+  const [purpose, setPurpose] = useState("gaming");
   const [cpuBrand, setCpuBrand] = useState("amd");
   const [gpuBrand, setGpuBrand] = useState("nvidia");
   const [results, setResults] = useState(null);
@@ -47,38 +71,30 @@ export default function Recommend() {
 
   useEffect(() => () => clearTimeout(pollRef.current), []);
 
-  const fetchV2 = async (selectedBudget, selectedCpuBrand, selectedGpuBrand, attempt = 0) => {
+  const fetchV2 = async (sel, attempt = 0) => {
+    const { budget: b, purpose: p, cpuBrand: cb, gpuBrand: gb } = sel;
     try {
       const res = await fetch(
-        `/api/recommend/budget-set-v2?budget=${selectedBudget}&cpuBrand=${selectedCpuBrand}&gpuBrand=${selectedGpuBrand}`
+        `/api/recommend/budget-set-v2?budget=${b}&cpuBrand=${cb}&gpuBrand=${gb}&purpose=${p}`
       );
       if (res.ok) {
         const data = await res.json();
-        setResults({
-          parts: data.parts || {},
-          totalPrice: data.totalPrice || 0,
-          summary: data.summary,
-        });
+        setResults({ parts: data.parts || {}, totalPrice: data.totalPrice || 0, summary: data.summary });
         setLoading(false);
         setPollCount(0);
         setWaitMsg("");
         return;
       }
       if (res.status === 503) {
-        const nextAttempt = attempt + 1;
-        if (nextAttempt > MAX_POLL) {
+        const next = attempt + 1;
+        if (next > MAX_POLL) {
           setError("견적 준비에 시간이 걸리고 있습니다. 잠시 후 다시 시도해주세요.");
-          setLoading(false);
-          setPollCount(0);
-          setWaitMsg("");
+          setLoading(false); setPollCount(0); setWaitMsg("");
           return;
         }
-        setPollCount(nextAttempt);
-        setWaitMsg(`AI가 견적을 생성 중입니다... (${nextAttempt}/${MAX_POLL})`);
-        pollRef.current = setTimeout(
-          () => fetchV2(selectedBudget, selectedCpuBrand, selectedGpuBrand, nextAttempt),
-          POLL_INTERVAL
-        );
+        setPollCount(next);
+        setWaitMsg(`AI가 견적을 생성 중입니다... (${next}/${MAX_POLL})`);
+        pollRef.current = setTimeout(() => fetchV2(sel, next), POLL_INTERVAL);
         return;
       }
       const body = await res.json().catch(() => ({}));
@@ -86,9 +102,7 @@ export default function Recommend() {
     } catch (e) {
       if (e.name === "AbortError") return;
       setError(e.message || "추천 요청에 실패했습니다.");
-      setLoading(false);
-      setPollCount(0);
-      setWaitMsg("");
+      setLoading(false); setPollCount(0); setWaitMsg("");
     }
   };
 
@@ -99,17 +113,52 @@ export default function Recommend() {
     setResults(null);
     setPollCount(0);
     setWaitMsg("AI 견적을 불러오는 중...");
-    fetchV2(budget, cpuBrand, gpuBrand, 0);
+    fetchV2({ budget, purpose, cpuBrand, gpuBrand }, 0);
   };
+
+  const info = PURPOSE_INFO[purpose];
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">✨ AI PC 견적 추천</h1>
-        <p className="text-gray-500">예산과 브랜드를 선택하면 AI가 최고 가성비 부품 조합을 추천합니다.</p>
+        <p className="text-gray-500">사용 목적과 예산을 선택하면 AI가 최적의 부품 조합을 추천합니다.</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6 shadow-sm">
+
+        {/* 사용 목적 선택 */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-gray-700 mb-3">사용 목적</label>
+          <div className="grid grid-cols-2 gap-3">
+            {Object.entries(PURPOSE_INFO).map(([key, pi]) => (
+              <button
+                key={key}
+                onClick={() => setPurpose(key)}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  purpose === key ? pi.activeClass : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <div className="font-bold text-gray-900 mb-2 text-sm">
+                  {pi.icon} {pi.label}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pi.badgeClass}`}>
+                    GPU {pi.gpuPct}%
+                  </span>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${pi.badgeClass}`}>
+                    CPU {pi.cpuPct}%
+                  </span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    보조부품 {pi.secPct}%
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 leading-relaxed">{pi.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 예산 선택 */}
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-3">예산 선택</label>
@@ -206,7 +255,7 @@ export default function Recommend() {
               {waitMsg || "불러오는 중..."}
             </span>
           ) : (
-            `✨ ${(budget / 10000).toFixed(0)}만원 견적 추천받기`
+            `${info.icon} ${(budget / 10000).toFixed(0)}만원 ${info.label} 견적 추천받기`
           )}
         </button>
 

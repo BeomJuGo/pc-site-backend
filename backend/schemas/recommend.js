@@ -33,6 +33,7 @@ export const recommendV2Schema = z.object({
     .refine((v) => v % 100000 === 0, "budget은 10만원 단위여야 합니다."),
   cpuBrand: z.enum(["amd", "intel"]).optional().default("amd"),
   gpuBrand: z.enum(["amd", "nvidia"]).optional().default("nvidia"),
+  purpose: z.enum(["gaming", "work"]).optional().default("gaming"),
 });
 
 export const recommendSchema = z.object({
