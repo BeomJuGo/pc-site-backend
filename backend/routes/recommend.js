@@ -559,11 +559,9 @@ export async function saveBudgetSetToDb(db, budget, purpose, result) {
 
 const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function buildCompatibleSetWithAIV2(budget, db, {
-  minAmdCpuScore = 0, prevAmdCpuComboPrice = 0,
-  minIntelCpuScore = 0, prevIntelCpuComboPrice = 0,
-  minAmdGpuScore = 0, prevAmdGpuPrice = 0,
-  minNvidiaGpuScore = 0, prevNvidiaGpuPrice = 0,
+export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", gpuBrand = "nvidia", {
+  minCpuScore = 0, prevCpuComboPrice = 0,
+  minGpuScore = 0, prevGpuPrice = 0,
 } = {}) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
 
@@ -623,10 +621,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
   // ─── Phase 3: GPU 목록 — 가격 오름차순 ──────────────────────────────────
   const allGpus = [...gpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
 
-  // ─── Phase 4: AMD/Intel CPU × AMD/NVIDIA GPU 브랜드별 독립 최적화 ──────────
-  // CPU 조합 예산 = remaining * 50%
-  // Intel 최저 플랫폼(i3-12100F + B760M + DDR4 ≈ 315K)은 800K 이상에서 허용
-  // 저예산(500K-700K)에서 Intel이 없는 것은 플랫폼 비용 현실(LGA1151 보드 미등록)
+  // ─── Phase 4: 선택된 CPU/GPU 브랜드로 단일 최적화 ──────────────────────────
   const remaining = budget - secondaryTotal;
   const maxCpuComboAllowed = remaining * 0.50;
 
@@ -636,79 +631,54 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
   const isAmdGpu    = (g)   => /라데온|radeon|\brx\b|rx\d/i.test(g.name || '');
   const isNvidiaGpu = (g)   => /지포스|geforce|rtx|gtx/i.test(g.name || '');
 
-  // CPU 브랜드별 플로어
-  const amdCpuFloor = (c) => {
+  const isCpuBrand = cpuBrand === "intel" ? isIntelCpu : isAmdCpu;
+  const isGpuBrand = gpuBrand === "amd"   ? isAmdGpu   : isNvidiaGpu;
+
+  // 단조 증가 플로어
+  const cpuFloor = (c) => {
     const s = getCpuScore(c.cpu);
-    if (s > 0 && minAmdCpuScore > 0) return s >= minAmdCpuScore;
-    if (prevAmdCpuComboPrice > 0) return c.comboPrice >= prevAmdCpuComboPrice;
+    if (s > 0 && minCpuScore > 0) return s >= minCpuScore;
+    if (prevCpuComboPrice > 0) return c.comboPrice >= prevCpuComboPrice;
     return true;
   };
-  const intelCpuFloor = (c) => {
-    const s = getCpuScore(c.cpu);
-    if (s > 0 && minIntelCpuScore > 0) return s >= minIntelCpuScore;
-    if (prevIntelCpuComboPrice > 0) return c.comboPrice >= prevIntelCpuComboPrice;
+  const gpuFloor = (g) => {
+    const s = getGpuScore(g);
+    if (s > 0 && minGpuScore > 0) return s >= minGpuScore;
+    if (prevGpuPrice > 0) return g.price >= prevGpuPrice;
     return true;
   };
 
-  // GPU 브랜드별 플로어
-  const amdGpuFloor = (g) => {
-    const s = getGpuScore(g);
-    if (s > 0 && minAmdGpuScore > 0) return s >= minAmdGpuScore;
-    if (prevAmdGpuPrice > 0) return g.price >= prevAmdGpuPrice;
-    return true;
-  };
-  const nvidiaGpuFloor = (g) => {
-    const s = getGpuScore(g);
-    if (s > 0 && minNvidiaGpuScore > 0) return s >= minNvidiaGpuScore;
-    if (prevNvidiaGpuPrice > 0) return g.price >= prevNvidiaGpuPrice;
-    return true;
-  };
-
-  // 점수 기준 내림차순 정렬된 전체 CPU 후보 (GPU 최소 여유 확보 조건만 적용)
+  // 해당 브랜드 CPU 후보 (점수 내림차순)
   const eligibleCombos = [...allCombos]
-    .filter(c => c.comboPrice <= maxCpuComboAllowed)
+    .filter(c => isCpuBrand(c.cpu) && c.comboPrice <= maxCpuComboAllowed)
     .sort((a, b) => {
       const sa = getCpuScore(a.cpu), sb = getCpuScore(b.cpu);
       if (sa !== sb) return sb - sa;
       return b.comboPrice - a.comboPrice;
     });
 
-  // 브랜드별 최선 CPU 조합 (플로어 우선, 없으면 최고 점수)
-  const amdCpuEligible   = eligibleCombos.filter(c => isAmdCpu(c.cpu));
-  const intelCpuEligible = eligibleCombos.filter(c => isIntelCpu(c.cpu));
-  const chosenAmdCombo   = amdCpuEligible.find(amdCpuFloor)   ?? amdCpuEligible[0]   ?? null;
-  const chosenIntelCombo = intelCpuEligible.find(intelCpuFloor) ?? intelCpuEligible[0] ?? null;
+  if (eligibleCombos.length === 0)
+    throw new Error(`${budget.toLocaleString()}원 예산에서 ${cpuBrand.toUpperCase()} CPU 조합을 찾을 수 없음`);
 
-  // GPU 예산: 더 비싼 CPU 기준으로 계산 (어떤 CPU를 선택해도 GPU가 예산 초과 안 함)
-  const cpuRefPrice = Math.max(
-    chosenAmdCombo?.comboPrice   || 0,
-    chosenIntelCombo?.comboPrice || 0,
-  );
-  const gpuCap = maxBudget - secondaryTotal - cpuRefPrice;
-  const gpuByScore = [...allGpus]
-    .filter(g => g.price < gpuCap)
+  const chosenCombo = eligibleCombos.find(cpuFloor) ?? eligibleCombos[0];
+
+  // GPU 예산: 이 CPU 조합 기준으로 정확하게 계산
+  const gpuCap = maxBudget - secondaryTotal - chosenCombo.comboPrice;
+  const gpuPool = [...allGpus]
+    .filter(g => isGpuBrand(g) && g.price < gpuCap)
     .sort((a, b) => {
       const sa = getGpuScore(a), sb = getGpuScore(b);
       if (sa !== sb) return sb - sa;
       return b.price - a.price;
     });
-  const amdGpuPool    = gpuByScore.filter(isAmdGpu);
-  const nvidiaGpuPool = gpuByScore.filter(isNvidiaGpu);
-  const chosenAmdGpu    = amdGpuPool.find(amdGpuFloor)    ?? amdGpuPool[0]    ?? null;
-  const chosenNvidiaGpu = nvidiaGpuPool.find(nvidiaGpuFloor) ?? nvidiaGpuPool[0] ?? null;
+  const chosenGpu = gpuPool.find(gpuFloor) ?? gpuPool[0] ?? null;
 
-  // gap fill 기준: max(AMD, Intel) 콤보 + 점수 높은 GPU
-  // cpuRefPrice를 기준으로 채워야 Intel 선택 시 프론트 총합이 예산 초과 안 함
-  const refGpu = (chosenAmdGpu && chosenNvidiaGpu)
-    ? (getGpuScore(chosenAmdGpu) > getGpuScore(chosenNvidiaGpu) ? chosenAmdGpu : chosenNvidiaGpu)
-    : (chosenAmdGpu || chosenNvidiaGpu);
-
-  // ─── Phase 5: Gap fill — cpuRefPrice + refGpu 기준으로 소폭 미달 시 보조부품 업그레이드 ─
+  // ─── Phase 5: Gap fill — 실제 CPU+GPU 기준으로 소폭 미달 시 보조부품 업그레이드 ─
   let fillStorage = preStorage, fillPsu = prePsu, fillCase = preCase, fillCooler = preCooler;
 
   const calcTotal = () =>
     fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price +
-    cpuRefPrice + (refGpu?.price || 0);
+    chosenCombo.comboPrice + (chosenGpu?.price || 0);
 
   if (calcTotal() < minBudget) {
     const window = maxBudget - minBudget;
@@ -742,7 +712,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
         model: "gpt-5.4",
         messages: [{
           role: "user",
-          content: `다음 PC 견적을 30자 이내 한 줄로 요약해줘 (용도·특징 포함):\n예산: ${budget.toLocaleString()}원\nAMD CPU: ${chosenAmdCombo?.cpu.name || "없음"} / Intel CPU: ${chosenIntelCombo?.cpu.name || "없음"}\nAMD GPU: ${chosenAmdGpu?.name || "없음"} / NVIDIA GPU: ${chosenNvidiaGpu?.name || "없음"}`,
+          content: `다음 PC 견적을 30자 이내 한 줄로 요약해줘 (용도·특징 포함):\n예산: ${budget.toLocaleString()}원\nCPU: ${chosenCombo.cpu.name}\nGPU: ${chosenGpu?.name || "없음"}`,
         }],
         max_completion_tokens: 80,
       }),
@@ -756,66 +726,47 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
 
   const toPartObj = (p, cat) => p ? { name: p.name, price: p.price, image: p.image || null, category: cat } : null;
 
-  // secondary-only base (CPU/GPU는 프론트에서 선택에 따라 더함)
   const basePrice = fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price;
+  const finalTotal = basePrice + chosenCombo.comboPrice + (chosenGpu?.price || 0);
 
-  const parts = {
-    // AMD CPU 플랫폼 (CPU + 호환 보드 + 메모리)
-    ...(chosenAmdCombo && {
-      cpuAmd:   toPartObj(chosenAmdCombo.cpu,   "cpu"),
-      boardAmd: toPartObj(chosenAmdCombo.board, "motherboard"),
-      memAmd:   toPartObj(chosenAmdCombo.mem,   "memory"),
-    }),
-    // Intel CPU 플랫폼
-    ...(chosenIntelCombo && {
-      cpuIntel:   toPartObj(chosenIntelCombo.cpu,   "cpu"),
-      boardIntel: toPartObj(chosenIntelCombo.board, "motherboard"),
-      memIntel:   toPartObj(chosenIntelCombo.mem,   "memory"),
-    }),
-    // 보조 부품 (공통)
-    storage: toPartObj(fillStorage, "storage"),
-    psu:     toPartObj(fillPsu,     "psu"),
-    cooler:  toPartObj(fillCooler,  "cooler"),
-    case:    toPartObj(fillCase,    "case"),
-    // GPU 옵션
-    ...(chosenAmdGpu    && { gpuAmd:    toPartObj(chosenAmdGpu,    "gpu") }),
-    ...(chosenNvidiaGpu && { gpuNvidia: toPartObj(chosenNvidiaGpu, "gpu") }),
-  };
-
-  const finalTotal = basePrice + cpuRefPrice + (refGpu?.price || 0);
   logger.info(
-    `[V2] 예산 ${budget.toLocaleString()}원` +
-    ` → AMD: ${chosenAmdCombo?.cpu.name || "없음"}` +
-    ` / Intel: ${chosenIntelCombo?.cpu.name || "없음"}` +
-    ` / AMD GPU: ${chosenAmdGpu?.name || "없음"}` +
-    ` / NVIDIA GPU: ${chosenNvidiaGpu?.name || "없음"}` +
-    ` / ref총합: ${finalTotal.toLocaleString()}원 (${finalTotal >= minBudget && finalTotal < maxBudget ? "✅" : "⚠️"})`
+    `[V2] 예산 ${budget.toLocaleString()}원 [${cpuBrand}+${gpuBrand}]` +
+    ` → CPU: ${chosenCombo.cpu.name}` +
+    ` / GPU: ${chosenGpu?.name || "없음"}` +
+    ` / 총합: ${finalTotal.toLocaleString()}원 (${finalTotal >= minBudget && finalTotal < maxBudget ? "✅" : "⚠️"})`
   );
 
   return {
     budget,
+    cpuBrand,
+    gpuBrand,
     basePrice,
     totalPrice: finalTotal,
     computedAt: new Date().toISOString(),
-    parts,
-    summary: aiSummary || `${budget.toLocaleString()}원 최적 가성비 PC`,
+    parts: {
+      cpu:         toPartObj(chosenCombo.cpu,   "cpu"),
+      motherboard: toPartObj(chosenCombo.board, "motherboard"),
+      memory:      toPartObj(chosenCombo.mem,   "memory"),
+      ...(chosenGpu && { gpu: toPartObj(chosenGpu, "gpu") }),
+      storage: toPartObj(fillStorage, "storage"),
+      psu:     toPartObj(fillPsu,     "psu"),
+      cooler:  toPartObj(fillCooler,  "cooler"),
+      case:    toPartObj(fillCase,    "case"),
+    },
+    summary: aiSummary || `${budget.toLocaleString()}원 ${cpuBrand.toUpperCase()} + ${gpuBrand.toUpperCase()} PC`,
     compatibilityVerified: true,
     _meta: {
-      amdCpuScore:         chosenAmdCombo   ? getCpuScore(chosenAmdCombo.cpu)   : 0,
-      amdCpuComboPrice:    chosenAmdCombo?.comboPrice   || 0,
-      intelCpuScore:       chosenIntelCombo ? getCpuScore(chosenIntelCombo.cpu) : 0,
-      intelCpuComboPrice:  chosenIntelCombo?.comboPrice || 0,
-      amdGpuScore:         chosenAmdGpu    ? getGpuScore(chosenAmdGpu)    : 0,
-      amdGpuPrice:         chosenAmdGpu?.price    || 0,
-      nvidiaGpuScore:      chosenNvidiaGpu ? getGpuScore(chosenNvidiaGpu) : 0,
-      nvidiaGpuPrice:      chosenNvidiaGpu?.price || 0,
+      cpuScore:      getCpuScore(chosenCombo.cpu),
+      cpuComboPrice: chosenCombo.comboPrice,
+      gpuScore:      chosenGpu ? getGpuScore(chosenGpu) : 0,
+      gpuPrice:      chosenGpu?.price || 0,
     },
   };
 }
 
-async function saveBudgetSetV2ToDb(db, budget, result) {
-  const _id = `budget-set-v2:${budget}`;
-  await db.collection("cached_sets_v2").replaceOne({ _id }, { _id, budget, result, computedAt: new Date() }, { upsert: true });
+async function saveBudgetSetV2ToDb(db, budget, cpuBrand, gpuBrand, result) {
+  const _id = `budget-set-v2:${budget}:${cpuBrand}:${gpuBrand}`;
+  await db.collection("cached_sets_v2").replaceOne({ _id }, { _id, budget, cpuBrand, gpuBrand, result, computedAt: new Date() }, { upsert: true });
 }
 
 function checkAdminKey(req, res) {
@@ -1134,10 +1085,14 @@ router.post("/", validate(recommendSchema), async (req, res) => {
 
 /* ==================== V2 엔드포인트 ==================== */
 
-// GET /api/recommend/budget-set-v2?budget=1500000
+// GET /api/recommend/budget-set-v2?budget=1500000&cpuBrand=amd&gpuBrand=nvidia
 router.get("/budget-set-v2", validate(recommendV2Schema, "query"), async (req, res) => {
   const budget = Number(req.query.budget);
-  const memKey = `recommend:budget-set-v2:${budget}`;
+  const cpuBrand = req.query.cpuBrand || "amd";
+  const gpuBrand = req.query.gpuBrand || "nvidia";
+  const cacheId = `budget-set-v2:${budget}:${cpuBrand}:${gpuBrand}`;
+  const memKey = `recommend:${cacheId}`;
+
   const memHit = getCache(memKey);
   if (memHit?.parts) return res.json(memHit);
 
@@ -1145,50 +1100,50 @@ router.get("/budget-set-v2", validate(recommendV2Schema, "query"), async (req, r
   if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "DB 연결 실패" });
 
   try {
-    const doc = await db.collection("cached_sets_v2").findOne({ _id: `budget-set-v2:${budget}` });
+    const doc = await db.collection("cached_sets_v2").findOne({ _id: cacheId });
 
     if (doc?.result?.parts) {
       // 호환성 검증 없이 생성된 구버전 캐시는 즉시 재빌드
-      if (!doc.result.compatibilityVerified && !buildingInProgressV2.has(budget)) {
-        buildingInProgressV2.add(budget);
-        logger.info(`budget-set-v2 호환성 미검증 캐시 — 즉시 재빌드: ${budget}`);
-        buildCompatibleSetWithAIV2(budget, db)
+      if (!doc.result.compatibilityVerified && !buildingInProgressV2.has(cacheId)) {
+        buildingInProgressV2.add(cacheId);
+        logger.info(`budget-set-v2 호환성 미검증 캐시 — 즉시 재빌드: ${cacheId}`);
+        buildCompatibleSetWithAIV2(budget, db, cpuBrand, gpuBrand)
           .then(async (fresh) => {
             if (!fresh?.parts) return;
-            await saveBudgetSetV2ToDb(db, budget, fresh);
+            await saveBudgetSetV2ToDb(db, budget, cpuBrand, gpuBrand, fresh);
             setCache(memKey, fresh, 10 * 60 * 1000);
           })
           .catch(e => logger.error(`budget-set-v2 재빌드 실패: ${e.message}`))
-          .finally(() => buildingInProgressV2.delete(budget));
+          .finally(() => buildingInProgressV2.delete(cacheId));
         return res.status(503).json({ error: "NOT_READY", message: "호환 세트를 재검증 중입니다. 잠시 후 다시 시도해주세요.", retryAfter: 60 });
       }
       const age = Date.now() - new Date(doc.computedAt).getTime();
       setCache(memKey, doc.result, 10 * 60 * 1000);
-      if (age > BUDGET_SET_V2_TTL_MS && !buildingInProgressV2.has(budget)) {
-        buildingInProgressV2.add(budget);
-        logger.info(`budget-set-v2 stale (${Math.round(age / 86400000)}d) — 백그라운드 갱신`);
-        buildCompatibleSetWithAIV2(budget, db)
+      if (age > BUDGET_SET_V2_TTL_MS && !buildingInProgressV2.has(cacheId)) {
+        buildingInProgressV2.add(cacheId);
+        logger.info(`budget-set-v2 stale (${Math.round(age / 86400000)}d) — 백그라운드 갱신: ${cacheId}`);
+        buildCompatibleSetWithAIV2(budget, db, cpuBrand, gpuBrand)
           .then(async (fresh) => {
             if (!fresh?.parts) return;
-            await saveBudgetSetV2ToDb(db, budget, fresh);
+            await saveBudgetSetV2ToDb(db, budget, cpuBrand, gpuBrand, fresh);
             setCache(memKey, fresh, 10 * 60 * 1000);
           })
           .catch(e => logger.error(`budget-set-v2 백그라운드 갱신 실패: ${e.message}`))
-          .finally(() => buildingInProgressV2.delete(budget));
+          .finally(() => buildingInProgressV2.delete(cacheId));
       }
       return res.json(doc.result);
     }
 
-    if (!buildingInProgressV2.has(budget)) {
-      buildingInProgressV2.add(budget);
-      buildCompatibleSetWithAIV2(budget, db)
+    if (!buildingInProgressV2.has(cacheId)) {
+      buildingInProgressV2.add(cacheId);
+      buildCompatibleSetWithAIV2(budget, db, cpuBrand, gpuBrand)
         .then(async (result) => {
           if (!result?.parts) return;
-          await saveBudgetSetV2ToDb(db, budget, result);
+          await saveBudgetSetV2ToDb(db, budget, cpuBrand, gpuBrand, result);
           setCache(memKey, result, 10 * 60 * 1000);
         })
-        .catch(e => logger.error(`budget-set-v2 초기 계산 실패: ${e.message}`))
-        .finally(() => buildingInProgressV2.delete(budget));
+        .catch(e => logger.error(`budget-set-v2 초기 계산 실패 [${cacheId}]: ${e.message}`))
+        .finally(() => buildingInProgressV2.delete(cacheId));
     }
 
     return res.status(503).json({
@@ -1208,40 +1163,48 @@ router.post("/budget-set-v2/refresh", async (req, res) => {
   if (!db) return res.status(500).json({ error: "DB 연결 실패" });
 
   const budget = parseInt(req.body?.budget) || 1500000;
+  const COMBOS = [["amd","nvidia"],["amd","amd"],["intel","nvidia"],["intel","amd"]];
+  const results = [];
   try {
-    logger.info(`budget-set-v2 갱신 시작: ${budget.toLocaleString()}원`);
-    const result = await buildCompatibleSetWithAIV2(budget, db);
-    await saveBudgetSetV2ToDb(db, budget, result);
-    setCache(`recommend:budget-set-v2:${budget}`, result, 10 * 60 * 1000);
-    res.json({ status: "ok", budget, totalPrice: result.totalPrice, summary: result.summary });
+    for (const [cpuBrand, gpuBrand] of COMBOS) {
+      logger.info(`budget-set-v2 갱신 시작: ${budget.toLocaleString()}원 [${cpuBrand}+${gpuBrand}]`);
+      const result = await buildCompatibleSetWithAIV2(budget, db, cpuBrand, gpuBrand);
+      await saveBudgetSetV2ToDb(db, budget, cpuBrand, gpuBrand, result);
+      setCache(`recommend:budget-set-v2:${budget}:${cpuBrand}:${gpuBrand}`, result, 10 * 60 * 1000);
+      results.push({ cpuBrand, gpuBrand, totalPrice: result.totalPrice });
+    }
+    res.json({ status: "ok", budget, results });
   } catch (e) {
     logger.error(`budget-set-v2 갱신 실패 ${budget}: ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
 
-// 26 budgets (500k~3000k, 100k 단위) — 주 1회 GitHub Actions
+// 16 budgets × 4 brand combos = 64 entries — 주 1회 GitHub Actions
 router.post("/budget-set-v2/refresh-all", async (req, res) => {
   if (!checkAdminKey(req, res)) return;
-  const budgets = Array.from({ length: 26 }, (_, i) => 500000 + i * 100000);
-  res.json({ status: "started", total: budgets.length });
+  const budgets = Array.from({ length: 16 }, (_, i) => 500000 + i * 100000);
+  const COMBOS = [["amd","nvidia"],["amd","amd"],["intel","nvidia"],["intel","amd"]];
+  res.json({ status: "started", total: budgets.length * COMBOS.length });
 
   (async () => {
     const db = getDB();
     if (!db) return;
     let success = 0, fail = 0;
-    for (const budget of budgets) {
-      try {
-        const result = await buildCompatibleSetWithAIV2(budget, db);
-        await saveBudgetSetV2ToDb(db, budget, result);
-        setCache(`recommend:budget-set-v2:${budget}`, result, 10 * 60 * 1000);
-        logger.info(`budget-set-v2 완료: ${budget.toLocaleString()}원 → ${result.totalPrice?.toLocaleString()}원`);
-        success++;
-      } catch (err) {
-        logger.error(`budget-set-v2 실패: ${budget.toLocaleString()}원 — ${err.message}`);
-        fail++;
+    for (const [cpuBrand, gpuBrand] of COMBOS) {
+      for (const budget of budgets) {
+        try {
+          const result = await buildCompatibleSetWithAIV2(budget, db, cpuBrand, gpuBrand);
+          await saveBudgetSetV2ToDb(db, budget, cpuBrand, gpuBrand, result);
+          setCache(`recommend:budget-set-v2:${budget}:${cpuBrand}:${gpuBrand}`, result, 10 * 60 * 1000);
+          logger.info(`budget-set-v2 완료: ${budget.toLocaleString()}원 [${cpuBrand}+${gpuBrand}] → ${result.totalPrice?.toLocaleString()}원`);
+          success++;
+        } catch (err) {
+          logger.error(`budget-set-v2 실패: ${budget.toLocaleString()}원 [${cpuBrand}+${gpuBrand}] — ${err.message}`);
+          fail++;
+        }
+        await sleep(2000);
       }
-      await sleep(2000);
     }
     logger.info(`budget-set-v2 refresh-all 완료: 성공 ${success}개, 실패 ${fail}개`);
   })();

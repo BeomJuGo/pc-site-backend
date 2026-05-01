@@ -29,51 +29,15 @@ const PART_COLORS = {
 const MAX_POLL = 6;
 const POLL_INTERVAL = 10000;
 
-function BrandToggle({ label, colorClass, hasA, hasB, labelA, labelB, active, onSelect, colorA, colorB }) {
-  return (
-    <div className="px-4 pt-3 pb-1 flex items-center gap-2 flex-wrap">
-      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${colorClass}`}>{label}</span>
-      {hasA && hasB ? (
-        <div className="ml-auto flex gap-1">
-          <button
-            onClick={() => onSelect(labelA.toLowerCase())}
-            className={`px-3 py-0.5 text-xs font-bold rounded-full border transition-all ${
-              active === labelA.toLowerCase()
-                ? `${colorA} shadow-sm`
-                : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"
-            }`}
-          >
-            {labelA}
-          </button>
-          <button
-            onClick={() => onSelect(labelB.toLowerCase())}
-            className={`px-3 py-0.5 text-xs font-bold rounded-full border transition-all ${
-              active === labelB.toLowerCase()
-                ? `${colorB} shadow-sm`
-                : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"
-            }`}
-          >
-            {labelB}
-          </button>
-        </div>
-      ) : (
-        <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${hasA ? colorA : colorB}`}>
-          {hasA ? labelA : labelB}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export default function Recommend() {
   const [budget, setBudget] = useState(1000000);
+  const [cpuBrand, setCpuBrand] = useState("amd");
+  const [gpuBrand, setGpuBrand] = useState("nvidia");
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pollCount, setPollCount] = useState(0);
   const [waitMsg, setWaitMsg] = useState("");
-  const [cpuBrand, setCpuBrand] = useState("amd");
-  const [gpuBrand, setGpuBrand] = useState("nvidia");
   const pollRef = useRef(null);
   const navigate = useNavigate();
 
@@ -83,25 +47,18 @@ export default function Recommend() {
 
   useEffect(() => () => clearTimeout(pollRef.current), []);
 
-  // 결과가 바뀌면 기본 브랜드를 사용 가능한 것으로 초기화
-  useEffect(() => {
-    if (!results) return;
-    if (cpuBrand === "amd" && !results.parts.cpuAmd && results.parts.cpuIntel) setCpuBrand("intel");
-    if (cpuBrand === "intel" && !results.parts.cpuIntel && results.parts.cpuAmd) setCpuBrand("amd");
-    if (gpuBrand === "amd" && !results.parts.gpuAmd && results.parts.gpuNvidia) setGpuBrand("nvidia");
-    if (gpuBrand === "nvidia" && !results.parts.gpuNvidia && results.parts.gpuAmd) setGpuBrand("amd");
-  }, [results]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchV2 = async (selectedBudget, attempt = 0) => {
+  const fetchV2 = async (selectedBudget, selectedCpuBrand, selectedGpuBrand, attempt = 0) => {
     try {
-      const res = await fetch(`/api/recommend/budget-set-v2?budget=${selectedBudget}`);
+      const res = await fetch(
+        `/api/recommend/budget-set-v2?budget=${selectedBudget}&cpuBrand=${selectedCpuBrand}&gpuBrand=${selectedGpuBrand}`
+      );
       if (res.ok) {
         const data = await res.json();
-        const parts = {};
-        for (const [key, part] of Object.entries(data.parts || {})) {
-          if (part) parts[key] = { ...part, category: part.category || key };
-        }
-        setResults({ parts, basePrice: data.basePrice || 0, summary: data.summary });
+        setResults({
+          parts: data.parts || {},
+          totalPrice: data.totalPrice || 0,
+          summary: data.summary,
+        });
         setLoading(false);
         setPollCount(0);
         setWaitMsg("");
@@ -118,7 +75,10 @@ export default function Recommend() {
         }
         setPollCount(nextAttempt);
         setWaitMsg(`AI가 견적을 생성 중입니다... (${nextAttempt}/${MAX_POLL})`);
-        pollRef.current = setTimeout(() => fetchV2(selectedBudget, nextAttempt), POLL_INTERVAL);
+        pollRef.current = setTimeout(
+          () => fetchV2(selectedBudget, selectedCpuBrand, selectedGpuBrand, nextAttempt),
+          POLL_INTERVAL
+        );
         return;
       }
       const body = await res.json().catch(() => ({}));
@@ -139,52 +99,18 @@ export default function Recommend() {
     setResults(null);
     setPollCount(0);
     setWaitMsg("AI 견적을 불러오는 중...");
-    fetchV2(budget, 0);
-  };
-
-  // 선택된 CPU 플랫폼 (cpu + board + mem)
-  const getSelectedCpuParts = (res) => {
-    if (!res) return null;
-    if (cpuBrand === "amd" && res.parts.cpuAmd)
-      return { cpu: res.parts.cpuAmd, board: res.parts.boardAmd, mem: res.parts.memAmd };
-    if (cpuBrand === "intel" && res.parts.cpuIntel)
-      return { cpu: res.parts.cpuIntel, board: res.parts.boardIntel, mem: res.parts.memIntel };
-    // fallback
-    if (res.parts.cpuAmd)
-      return { cpu: res.parts.cpuAmd, board: res.parts.boardAmd, mem: res.parts.memAmd };
-    if (res.parts.cpuIntel)
-      return { cpu: res.parts.cpuIntel, board: res.parts.boardIntel, mem: res.parts.memIntel };
-    return null;
-  };
-
-  // 선택된 GPU
-  const getSelectedGpu = (res) => {
-    if (!res) return null;
-    if (gpuBrand === "amd" && res.parts.gpuAmd) return res.parts.gpuAmd;
-    if (gpuBrand === "nvidia" && res.parts.gpuNvidia) return res.parts.gpuNvidia;
-    return res.parts.gpuNvidia || res.parts.gpuAmd || null;
-  };
-
-  // 선택 조합의 총합
-  const getDisplayTotal = (res) => {
-    if (!res) return 0;
-    const cpuParts = getSelectedCpuParts(res);
-    const gpu = getSelectedGpu(res);
-    return (res.basePrice || 0)
-      + (cpuParts?.cpu?.price || 0)
-      + (cpuParts?.board?.price || 0)
-      + (cpuParts?.mem?.price || 0)
-      + (gpu?.price || 0);
+    fetchV2(budget, cpuBrand, gpuBrand, 0);
   };
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">✨ AI PC 견적 추천</h1>
-        <p className="text-gray-500">예산을 선택하면 AI가 최고 가성비 부품 조합을 추천합니다.</p>
+        <p className="text-gray-500">예산과 브랜드를 선택하면 AI가 최고 가성비 부품 조합을 추천합니다.</p>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-6 shadow-sm">
+        {/* 예산 선택 */}
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-3">예산 선택</label>
           <div className="flex flex-wrap gap-1.5">
@@ -216,6 +142,50 @@ export default function Recommend() {
               PC 견적 빌더
             </button>
             를 이용해 직접 구성해 주세요.
+          </div>
+        </div>
+
+        {/* 브랜드 선택 */}
+        <div className="mb-5 grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">CPU 브랜드</label>
+            <div className="flex gap-2">
+              {[["amd", "AMD"], ["intel", "Intel"]].map(([val, lbl]) => (
+                <button
+                  key={val}
+                  onClick={() => setCpuBrand(val)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                    cpuBrand === val
+                      ? val === "amd"
+                        ? "bg-red-500 text-white border-transparent shadow-sm"
+                        : "bg-blue-500 text-white border-transparent shadow-sm"
+                      : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">GPU 브랜드</label>
+            <div className="flex gap-2">
+              {[["nvidia", "NVIDIA"], ["amd", "AMD"]].map(([val, lbl]) => (
+                <button
+                  key={val}
+                  onClick={() => setGpuBrand(val)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                    gpuBrand === val
+                      ? val === "nvidia"
+                        ? "bg-green-600 text-white border-transparent shadow-sm"
+                        : "bg-red-500 text-white border-transparent shadow-sm"
+                      : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+                  }`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -256,115 +226,14 @@ export default function Recommend() {
           )}
 
           <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-            {Object.entries(PART_LABELS).map(([key]) => {
-              const { parts } = results;
-
-              /* ── CPU 섹션: AMD / Intel 토글 ── */
-              if (key === "cpu") {
-                const hasAmd   = !!parts.cpuAmd;
-                const hasIntel = !!parts.cpuIntel;
-                if (!hasAmd && !hasIntel) return null;
-
-                const activeCpu = (cpuBrand === "amd" && hasAmd) || !hasIntel ? "amd" : "intel";
-                const displayCpu = activeCpu === "amd" ? parts.cpuAmd : parts.cpuIntel;
-
-                return (
-                  <div key="cpu" className="border-b border-gray-100">
-                    <BrandToggle
-                      label="CPU"
-                      colorClass={PART_COLORS.cpu}
-                      hasA={hasAmd} hasB={hasIntel}
-                      labelA="AMD" labelB="Intel"
-                      active={activeCpu}
-                      onSelect={setCpuBrand}
-                      colorA="bg-red-500 text-white border-transparent"
-                      colorB="bg-blue-500 text-white border-transparent"
-                    />
-                    {displayCpu && (
-                      <PartCard
-                        part={displayCpu}
-                        onClick={() => navigate(`/detail/cpu/${encodeURIComponent(displayCpu.name)}`)}
-                      />
-                    )}
-                  </div>
-                );
-              }
-
-              /* ── GPU 섹션: AMD / NVIDIA 토글 ── */
-              if (key === "gpu") {
-                const hasAmd    = !!parts.gpuAmd;
-                const hasNvidia = !!parts.gpuNvidia;
-                if (!hasAmd && !hasNvidia) return null;
-
-                const activeGpu = (gpuBrand === "amd" && hasAmd) || !hasNvidia ? "amd" : "nvidia";
-                const displayGpu = activeGpu === "amd" ? parts.gpuAmd : parts.gpuNvidia;
-
-                return (
-                  <div key="gpu" className="border-b border-gray-100">
-                    <BrandToggle
-                      label="GPU"
-                      colorClass={PART_COLORS.gpu}
-                      hasA={hasAmd} hasB={hasNvidia}
-                      labelA="AMD" labelB="NVIDIA"
-                      active={activeGpu}
-                      onSelect={setGpuBrand}
-                      colorA="bg-red-500 text-white border-transparent"
-                      colorB="bg-green-600 text-white border-transparent"
-                    />
-                    {displayGpu && (
-                      <PartCard
-                        part={displayGpu}
-                        onClick={() => navigate(`/detail/gpu/${encodeURIComponent(displayGpu.name)}`)}
-                      />
-                    )}
-                  </div>
-                );
-              }
-
-              /* ── 메인보드: 선택된 CPU 브랜드에 맞는 것 표시 ── */
-              if (key === "motherboard") {
-                const activeCpu = (cpuBrand === "amd" && !!parts.cpuAmd) || !parts.cpuIntel ? "amd" : "intel";
-                const board = activeCpu === "amd" ? parts.boardAmd : parts.boardIntel;
-                if (!board) return null;
-                return (
-                  <div key="motherboard" className="border-b border-gray-100">
-                    <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS.motherboard}`}>메인보드</span>
-                    </div>
-                    <PartCard
-                      part={board}
-                      onClick={() => navigate(`/detail/motherboard/${encodeURIComponent(board.name)}`)}
-                    />
-                  </div>
-                );
-              }
-
-              /* ── 메모리: 선택된 CPU 브랜드에 맞는 것 표시 ── */
-              if (key === "memory") {
-                const activeCpu = (cpuBrand === "amd" && !!parts.cpuAmd) || !parts.cpuIntel ? "amd" : "intel";
-                const mem = activeCpu === "amd" ? parts.memAmd : parts.memIntel;
-                if (!mem) return null;
-                return (
-                  <div key="memory" className="border-b border-gray-100">
-                    <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS.memory}`}>메모리</span>
-                    </div>
-                    <PartCard
-                      part={mem}
-                      onClick={() => navigate(`/detail/memory/${encodeURIComponent(mem.name)}`)}
-                    />
-                  </div>
-                );
-              }
-
-              /* ── 보조 부품 (공통) ── */
-              const part = parts[key];
+            {Object.entries(PART_LABELS).map(([key, label]) => {
+              const part = results.parts[key];
               if (!part) return null;
               return (
                 <div key={key} className="border-b border-gray-100 last:border-b-0">
                   <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS[key]}`}>
-                      {PART_LABELS[key]}
+                      {label}
                     </span>
                   </div>
                   <PartCard
@@ -378,7 +247,7 @@ export default function Recommend() {
             <div className="px-5 py-4 bg-gray-50 flex items-center justify-between">
               <span className="text-gray-500 text-sm">총 견적</span>
               <span className="text-xl font-bold text-gray-900">
-                {getDisplayTotal(results).toLocaleString()}원
+                {(results.totalPrice || 0).toLocaleString()}원
               </span>
             </div>
           </div>
