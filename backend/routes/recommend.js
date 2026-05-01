@@ -636,6 +636,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const isGpuBrand = gpuBrand === "amd"   ? isAmdGpu   : isNvidiaGpu;
 
   // CPU 상한 = purpose별 비율 (게이밍 35% / 작업용 55%)
+  const remaining = budget - secondaryTotal;
   const cpuRatio = CPU_RATIO_BY_PURPOSE[purpose] || 0.35;
   const maxCpuComboAllowed = remaining * cpuRatio;
 
