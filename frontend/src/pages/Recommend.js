@@ -95,8 +95,6 @@ export default function Recommend() {
     fetchV2(budget, 0);
   };
 
-  const navigableCats = ["cpu", "gpu", "motherboard", "memory", "storage"];
-
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto">
       <div className="mb-8">
@@ -188,11 +186,7 @@ export default function Recommend() {
                   </div>
                   <PartCard
                     part={part}
-                    onClick={
-                      navigableCats.includes(key)
-                        ? () => navigate(`/detail/${part.category || key}/${encodeURIComponent(part.name)}`)
-                        : undefined
-                    }
+                    onClick={() => navigate(`/detail/${part.category || key}/${encodeURIComponent(part.name)}`)}
                   />
                 </div>
               );

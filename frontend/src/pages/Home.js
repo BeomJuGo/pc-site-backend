@@ -150,13 +150,17 @@ function FeaturedRecommend() {
       )}
       <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden">
         {parts.map(({ key, label, part }) => (
-          <div key={key} className="flex items-center gap-3 px-4 py-3 bg-white">
+          <Link
+            key={key}
+            to={`/detail/${key}/${encodeURIComponent(part.name)}`}
+            className="flex items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50 transition-colors group"
+          >
             <span className="text-xs font-semibold text-gray-500 w-16 flex-shrink-0">{label}</span>
-            <span className="text-sm text-gray-900 truncate flex-1">{part.name}</span>
+            <span className="text-sm text-gray-900 truncate flex-1 group-hover:text-blue-600 transition-colors">{part.name}</span>
             <span className="text-sm font-semibold text-gray-900 flex-shrink-0">
               {Number(part.price).toLocaleString()}원
             </span>
-          </div>
+          </Link>
         ))}
         <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
           <span className="text-sm text-gray-500">총 견적</span>
