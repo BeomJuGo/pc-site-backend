@@ -36,6 +36,7 @@ export default function Recommend() {
   const [error, setError] = useState(null);
   const [pollCount, setPollCount] = useState(0);
   const [waitMsg, setWaitMsg] = useState("");
+  const [gpuBrand, setGpuBrand] = useState("nvidia");
   const pollRef = useRef(null);
   const navigate = useNavigate();
 
@@ -54,7 +55,12 @@ export default function Recommend() {
         for (const [key, part] of Object.entries(data.parts || {})) {
           if (part) parts[key] = { ...part, category: part.category || key };
         }
-        setResults({ parts, totalPrice: data.totalPrice, summary: data.summary });
+        setResults({
+          parts,
+          basePrice: data.basePrice || 0,
+          totalPrice: data.totalPrice,
+          summary: data.summary,
+        });
         setLoading(false);
         setPollCount(0);
         setWaitMsg("");
@@ -93,6 +99,20 @@ export default function Recommend() {
     setPollCount(0);
     setWaitMsg("AI 견적을 불러오는 중...");
     fetchV2(budget, 0);
+  };
+
+  // GPU 선택 계산
+  const getDisplayGpu = (res) => {
+    if (!res) return null;
+    const preferred = gpuBrand === "amd" ? res.parts.gpuAmd : res.parts.gpuNvidia;
+    const fallback  = gpuBrand === "amd" ? res.parts.gpuNvidia : res.parts.gpuAmd;
+    return preferred || fallback || null;
+  };
+
+  const getDisplayTotal = (res) => {
+    if (!res) return 0;
+    const gpu = getDisplayGpu(res);
+    return (res.basePrice || 0) + (gpu?.price || 0);
   };
 
   return (
@@ -175,6 +195,64 @@ export default function Recommend() {
 
           <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
             {Object.entries(PART_LABELS).map(([key, label]) => {
+              /* ── GPU 전용 섹션: AMD / NVIDIA 토글 ── */
+              if (key === "gpu") {
+                const hasAmd    = !!results.parts.gpuAmd;
+                const hasNvidia = !!results.parts.gpuNvidia;
+                if (!hasAmd && !hasNvidia) return null;
+
+                const displayGpu = getDisplayGpu(results);
+                const activeBrand = (gpuBrand === "amd" && hasAmd) || !hasNvidia ? "amd" : "nvidia";
+
+                return (
+                  <div key="gpu" className="border-b border-gray-100">
+                    <div className="px-4 pt-3 pb-1 flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS.gpu}`}>
+                        GPU
+                      </span>
+                      {hasAmd && hasNvidia && (
+                        <div className="ml-auto flex gap-1">
+                          <button
+                            onClick={() => setGpuBrand("amd")}
+                            className={`px-3 py-0.5 text-xs font-bold rounded-full border transition-all ${
+                              activeBrand === "amd"
+                                ? "bg-red-500 text-white border-transparent shadow-sm"
+                                : "bg-white text-gray-500 border-gray-300 hover:border-red-400 hover:text-red-500"
+                            }`}
+                          >
+                            AMD
+                          </button>
+                          <button
+                            onClick={() => setGpuBrand("nvidia")}
+                            className={`px-3 py-0.5 text-xs font-bold rounded-full border transition-all ${
+                              activeBrand === "nvidia"
+                                ? "bg-green-600 text-white border-transparent shadow-sm"
+                                : "bg-white text-gray-500 border-gray-300 hover:border-green-500 hover:text-green-600"
+                            }`}
+                          >
+                            NVIDIA
+                          </button>
+                        </div>
+                      )}
+                      {(!hasAmd || !hasNvidia) && (
+                        <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${
+                          hasNvidia ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                        }`}>
+                          {hasNvidia ? "NVIDIA" : "AMD"}
+                        </span>
+                      )}
+                    </div>
+                    {displayGpu && (
+                      <PartCard
+                        part={displayGpu}
+                        onClick={() => navigate(`/detail/gpu/${encodeURIComponent(displayGpu.name)}`)}
+                      />
+                    )}
+                  </div>
+                );
+              }
+
+              /* ── 일반 부품 ── */
               const part = results.parts[key];
               if (!part) return null;
               return (
@@ -195,7 +273,7 @@ export default function Recommend() {
             <div className="px-5 py-4 bg-gray-50 flex items-center justify-between">
               <span className="text-gray-500 text-sm">총 견적</span>
               <span className="text-xl font-bold text-gray-900">
-                {Number(results.totalPrice || 0).toLocaleString()}원
+                {getDisplayTotal(results).toLocaleString()}원
               </span>
             </div>
           </div>

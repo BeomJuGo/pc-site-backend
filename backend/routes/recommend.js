@@ -560,8 +560,9 @@ export async function saveBudgetSetToDb(db, budget, purpose, result) {
 const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function buildCompatibleSetWithAIV2(budget, db, {
-  minCpuScore = 0, minGpuScore = 0,
-  prevCpuComboPrice = 0, prevGpuPrice = 0,
+  minCpuScore = 0, prevCpuComboPrice = 0,
+  minAmdGpuScore = 0, prevAmdGpuPrice = 0,
+  minNvidiaGpuScore = 0, prevNvidiaGpuPrice = 0,
 } = {}) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
 
@@ -621,7 +622,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
   // ─── Phase 3: GPU 목록 — 가격 오름차순 ──────────────────────────────────
   const allGpus = [...gpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
 
-  // ─── Phase 4: CPU+GPU 공동 최적화 (둘 다 단조 증가 보장) ──────────────────
+  // ─── Phase 4: CPU+AMD/NVIDIA GPU 공동 최적화 (브랜드별 단조 증가 보장) ────
   const remaining = budget - secondaryTotal;
 
   const cpuRatioTarget =
@@ -629,7 +630,50 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
     budget < 1500000 ? 0.40 : 0.48;
   const cpuBudgetMax = remaining * cpuRatioTarget;
 
-  // 점수 기준 내림차순 정렬된 CPU 후보 (예산 비율 내)
+  // GPU 브랜드 판별
+  const isAmdGpu    = (g) => /라데온|radeon|\brx\b|rx\d/i.test(g.name || '');
+  const isNvidiaGpu = (g) => /지포스|geforce|rtx|gtx/i.test(g.name || '');
+
+  // CPU 플로어 판정
+  const cpuMeetsFloor = (c) => {
+    const s = getCpuScore(c.cpu);
+    if (s > 0 && minCpuScore > 0) return s >= minCpuScore;
+    if (prevCpuComboPrice > 0) return c.comboPrice >= prevCpuComboPrice;
+    return true;
+  };
+
+  // 브랜드별 GPU 플로어 판정
+  const amdFloor = (g) => {
+    const s = getGpuScore(g);
+    if (s > 0 && minAmdGpuScore > 0) return s >= minAmdGpuScore;
+    if (prevAmdGpuPrice > 0) return g.price >= prevAmdGpuPrice;
+    return true;
+  };
+  const nvidiaFloor = (g) => {
+    const s = getGpuScore(g);
+    if (s > 0 && minNvidiaGpuScore > 0) return s >= minNvidiaGpuScore;
+    if (prevNvidiaGpuPrice > 0) return g.price >= prevNvidiaGpuPrice;
+    return true;
+  };
+
+  // 이 CPU 조합에서 사용 가능한 AMD/NVIDIA GPU 각각 최선 반환
+  const brandedGpus = (cpuComboPrice) => {
+    const cap = maxBudget - secondaryTotal - cpuComboPrice;
+    const byScore = [...allGpus]
+      .filter(g => g.price < cap)
+      .sort((a, b) => {
+        const sa = getGpuScore(a), sb = getGpuScore(b);
+        if (sa !== sb) return sb - sa;
+        return b.price - a.price;
+      });
+    const amdPool    = byScore.filter(isAmdGpu);
+    const nvidiaPool = byScore.filter(isNvidiaGpu);
+    const amd    = amdPool.find(amdFloor)    ?? amdPool[0]    ?? null;
+    const nvidia = nvidiaPool.find(nvidiaFloor) ?? nvidiaPool[0] ?? null;
+    return { amd, nvidia };
+  };
+
+  // 점수 기준 내림차순 정렬된 CPU 후보
   const eligibleCombos = [...allCombos]
     .filter(c => c.comboPrice <= cpuBudgetMax)
     .sort((a, b) => {
@@ -638,64 +682,46 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
       return b.comboPrice - a.comboPrice;
     });
 
-  // CPU/GPU 플로어 판정 헬퍼
-  const cpuMeetsFloor = (c) => {
-    const s = getCpuScore(c.cpu);
-    if (s > 0 && minCpuScore > 0) return s >= minCpuScore;
-    if (prevCpuComboPrice > 0) return c.comboPrice >= prevCpuComboPrice;
-    return true;
-  };
-  const gpuMeetsFloor = (g) => {
-    const s = getGpuScore(g);
-    if (s > 0 && minGpuScore > 0) return s >= minGpuScore;
-    if (prevGpuPrice > 0) return g.price >= prevGpuPrice;
-    return true;
-  };
-  const bestGpuForCpu = (cpuComboPrice) => {
-    const cap = maxBudget - secondaryTotal - cpuComboPrice;
-    return [...allGpus]
-      .filter(g => g.price < cap)
-      .sort((a, b) => {
-        const sa = getGpuScore(a), sb = getGpuScore(b);
-        if (sa !== sb) return sb - sa;
-        return b.price - a.price;
-      });
-  };
+  let chosen = null, chosenAmdGpu = null, chosenNvidiaGpu = null;
 
-  let chosen = null, chosenGpu = null;
-
-  // 1순위: CPU 플로어 ∧ GPU 플로어 둘 다 만족하는 최고 CPU 조합
+  // 1순위: CPU 플로어 ∧ AMD 또는 NVIDIA 중 하나 이상 브랜드 플로어 충족
   for (const combo of eligibleCombos) {
     if (!cpuMeetsFloor(combo)) continue;
-    const gpuPool = bestGpuForCpu(combo.comboPrice);
-    const validGpu = gpuPool.find(gpuMeetsFloor);
-    if (validGpu) { chosen = combo; chosenGpu = gpuPool[0]; break; }
+    const { amd, nvidia } = brandedGpus(combo.comboPrice);
+    if ((amd && amdFloor(amd)) || (nvidia && nvidiaFloor(nvidia))) {
+      chosen = combo; chosenAmdGpu = amd; chosenNvidiaGpu = nvidia; break;
+    }
   }
 
   // 2순위: CPU 플로어만 만족 (GPU 플로어 완화)
   if (!chosen) {
-    const floorCombos = eligibleCombos.filter(cpuMeetsFloor);
-    if (floorCombos.length > 0) {
-      chosen = floorCombos[0];
-      chosenGpu = bestGpuForCpu(chosen.comboPrice)[0] ?? null;
+    const fc = eligibleCombos.filter(cpuMeetsFloor);
+    if (fc.length > 0) {
+      chosen = fc[0];
+      ({ amd: chosenAmdGpu, nvidia: chosenNvidiaGpu } = brandedGpus(chosen.comboPrice));
     }
   }
 
-  // 3순위: 플로어 무시, 예산 내 최고 CPU+GPU
+  // 3순위: 플로어 무시, 예산 내 최고
   if (!chosen) {
     chosen = eligibleCombos[0] ?? allCombos[0];
-    chosenGpu = bestGpuForCpu(chosen.comboPrice)[0] ?? null;
+    ({ amd: chosenAmdGpu, nvidia: chosenNvidiaGpu } = brandedGpus(chosen.comboPrice));
   }
 
-  // ─── Phase 5: Gap fill — 소폭 미달 시 보조부품 업그레이드 ────────────────
+  // gap fill 기준 GPU: 점수가 더 높은 쪽 (동점이면 NVIDIA 우선)
+  const refGpu = (chosenAmdGpu && chosenNvidiaGpu)
+    ? (getGpuScore(chosenAmdGpu) > getGpuScore(chosenNvidiaGpu) ? chosenAmdGpu : chosenNvidiaGpu)
+    : (chosenAmdGpu || chosenNvidiaGpu);
+
+  // ─── Phase 5: Gap fill — refGpu 기준으로 소폭 미달 시 보조부품 업그레이드 ─
   let fillStorage = preStorage, fillPsu = prePsu, fillCase = preCase, fillCooler = preCooler;
 
   const calcTotal = () =>
     fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price +
-    chosen.comboPrice + (chosenGpu?.price || 0);
+    chosen.comboPrice + (refGpu?.price || 0);
 
   if (calcTotal() < minBudget) {
-    const window = maxBudget - minBudget; // 100,000원
+    const window = maxBudget - minBudget;
     const fillCandidates = [
       { arr: storages, get: () => fillStorage, set: (v) => { fillStorage = v; } },
       { arr: psus,     get: () => fillPsu,     set: (v) => { fillPsu = v;     } },
@@ -716,7 +742,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
     }
   }
 
-  // ─── AI: 요약문 생성 (선택 알고리즘과 분리) ──────────────────────────────
+  // ─── AI: 요약문 생성 ─────────────────────────────────────────────────────
   let aiSummary = null;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -726,7 +752,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
         model: "gpt-5.4",
         messages: [{
           role: "user",
-          content: `다음 PC 견적을 30자 이내 한 줄로 요약해줘 (용도·특징 포함):\n예산: ${budget.toLocaleString()}원\nCPU: ${chosen.cpu.name}\nGPU: ${chosenGpu?.name || "없음(내장그래픽)"}`,
+          content: `다음 PC 견적을 30자 이내 한 줄로 요약해줘 (용도·특징 포함):\n예산: ${budget.toLocaleString()}원\nCPU: ${chosen.cpu.name}\nAMD GPU: ${chosenAmdGpu?.name || "없음"} / NVIDIA GPU: ${chosenNvidiaGpu?.name || "없음"}`,
         }],
         max_completion_tokens: 80,
       }),
@@ -738,32 +764,46 @@ export async function buildCompatibleSetWithAIV2(budget, db, {
     }
   } catch (_) { /* summary fallback */ }
 
-  const parts = {
-    cpu:         { name: chosen.cpu.name,   price: chosen.cpu.price,   image: chosen.cpu.image || null,   category: "cpu" },
-    motherboard: { name: chosen.board.name, price: chosen.board.price, image: chosen.board.image || null, category: "motherboard" },
-    memory:      { name: chosen.mem.name,   price: chosen.mem.price,   image: chosen.mem.image || null,   category: "memory" },
-    storage:     { name: fillStorage.name,  price: fillStorage.price,  image: fillStorage.image || null,  category: "storage" },
-    psu:         { name: fillPsu.name,      price: fillPsu.price,      image: fillPsu.image || null,      category: "psu" },
-    cooler:      { name: fillCooler.name,   price: fillCooler.price,   image: fillCooler.image || null,   category: "cooler" },
-    case:        { name: fillCase.name,     price: fillCase.price,     image: fillCase.image || null,     category: "case" },
-  };
-  if (chosenGpu) parts.gpu = { name: chosenGpu.name, price: chosenGpu.price, image: chosenGpu.image || null, category: "gpu" };
+  const toPartObj = (p, cat) => p ? { name: p.name, price: p.price, image: p.image || null, category: cat } : null;
 
-  const finalTotal = Object.values(parts).reduce((s, p) => s + (p?.price || 0), 0);
-  logger.info(`[V2] 예산 ${budget.toLocaleString()}원 → CPU: ${chosen.cpu.name} / GPU: ${chosenGpu?.name || "없음"} / 총합: ${finalTotal.toLocaleString()}원 (${finalTotal >= minBudget && finalTotal < maxBudget ? "✅" : "⚠️"})`);
+  const basePrice =
+    chosen.cpu.price + chosen.board.price + chosen.mem.price +
+    fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price;
+
+  const parts = {
+    cpu:         toPartObj(chosen.cpu,   "cpu"),
+    motherboard: toPartObj(chosen.board, "motherboard"),
+    memory:      toPartObj(chosen.mem,   "memory"),
+    storage:     toPartObj(fillStorage,  "storage"),
+    psu:         toPartObj(fillPsu,      "psu"),
+    cooler:      toPartObj(fillCooler,   "cooler"),
+    case:        toPartObj(fillCase,     "case"),
+    ...(chosenAmdGpu    && { gpuAmd:    toPartObj(chosenAmdGpu,    "gpu") }),
+    ...(chosenNvidiaGpu && { gpuNvidia: toPartObj(chosenNvidiaGpu, "gpu") }),
+  };
+
+  const finalTotal = basePrice + (refGpu?.price || 0);
+  logger.info(
+    `[V2] 예산 ${budget.toLocaleString()}원 → CPU: ${chosen.cpu.name}` +
+    ` / AMD: ${chosenAmdGpu?.name || "없음"} / NVIDIA: ${chosenNvidiaGpu?.name || "없음"}` +
+    ` / 총합: ${finalTotal.toLocaleString()}원 (${finalTotal >= minBudget && finalTotal < maxBudget ? "✅" : "⚠️"})`
+  );
 
   return {
     budget,
+    basePrice,
     totalPrice: finalTotal,
     computedAt: new Date().toISOString(),
     parts,
     summary: aiSummary || `${budget.toLocaleString()}원 최적 가성비 PC`,
     compatibilityVerified: true,
     _meta: {
-      cpuScore: getCpuScore(chosen.cpu),
-      gpuScore: chosenGpu ? getGpuScore(chosenGpu) : 0,
-      cpuComboPrice: chosen.comboPrice,
-      gpuPrice: chosenGpu?.price || 0,
+      cpuScore:       getCpuScore(chosen.cpu),
+      cpuComboPrice:  chosen.comboPrice,
+      amdGpuScore:    chosenAmdGpu    ? getGpuScore(chosenAmdGpu)    : 0,
+      amdGpuPrice:    chosenAmdGpu?.price    || 0,
+      nvidiaGpuScore: chosenNvidiaGpu ? getGpuScore(chosenNvidiaGpu) : 0,
+      nvidiaGpuPrice: chosenNvidiaGpu?.price || 0,
     },
   };
 }
