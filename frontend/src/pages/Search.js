@@ -30,7 +30,7 @@ export default function Search() {
   const debounceRef = useRef(null);
 
   useEffect(() => {
-    document.title = q ? `"${q}" 검색 결과 | GoodPricePC` : "부품 검색 | GoodPricePC";
+    document.title = q ? `"${q}" 검색 결과 | 가성비PC` : "부품 검색 | 가성비PC";
   }, [q]);
 
   useEffect(() => { setInputValue(q); }, [q]);

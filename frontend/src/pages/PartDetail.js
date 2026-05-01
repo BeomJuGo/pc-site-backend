@@ -59,7 +59,7 @@ export default function PartDetail() {
   }, [category, slug]);
 
   useEffect(() => {
-    if (part?.name) document.title = `GoodPricePC | ${part.name}`;
+    if (part?.name) document.title = `가성비PC | ${part.name}`;
   }, [part]);
 
   const handleCreateAlert = async () => {

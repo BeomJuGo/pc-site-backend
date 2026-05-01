@@ -11,7 +11,7 @@ export default function Privacy() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">1. 개요</h2>
             <p>
-              GoodPricePC(이하 &quot;사이트&quot;)는 이용자의 개인정보를 소중히 하며, 「개인정보 보호법」 등 관련 법령을 준수합니다.
+              가성비PC(이하 &quot;사이트&quot;)는 이용자의 개인정보를 소중히 하며, 「개인정보 보호법」 등 관련 법령을 준수합니다.
               본 방침은 사이트에서 수집하는 정보, 이용 목적, 보관 기간 및 이용자 권리에 대해 안내합니다.
             </p>
           </div>

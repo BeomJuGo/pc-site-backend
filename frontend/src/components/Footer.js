@@ -8,16 +8,16 @@ export default function Footer() {
       <div className="px-4 sm:px-6 lg:px-8 py-8 text-sm text-gray-500">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div className="flex items-center space-x-2">
-            <span className="text-blue-600">💻</span>
+            <span className="text-blue-600">·</span>
             <span>벤치마크 기준: PassMark, 3DMark, Cinebench</span>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-indigo-600">ℹ️</span>
+            <span className="text-indigo-600">·</span>
             <span>표시된 점수와 가격은 참고용이며 실제 제품과 차이가 있을 수 있습니다.</span>
           </div>
           <div className="sm:text-right flex items-center justify-end space-x-2">
-            <span className="text-blue-600">📅</span>
-            <span>© {year} GoodPricePC</span>
+            <span className="text-blue-600">·</span>
+            <span>© {year} 가성비PC</span>
           </div>
         </div>
 

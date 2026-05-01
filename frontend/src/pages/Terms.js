@@ -11,7 +11,7 @@ export default function Terms() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">제1조 (목적)</h2>
             <p>
-              본 약관은 GoodPricePC(이하 &quot;사이트&quot;)가 제공하는 PC 부품 비교·AI 견적 추천 등 서비스(이하 &quot;서비스&quot;)의 이용 조건 및 절차,
+              본 약관은 가성비PC(이하 &quot;사이트&quot;)가 제공하는 PC 부품 비교·AI 견적 추천 등 서비스(이하 &quot;서비스&quot;)의 이용 조건 및 절차,
               이용자와 사이트 간의 권리·의무 관계를 규정함을 목적으로 합니다.
             </p>
           </div>

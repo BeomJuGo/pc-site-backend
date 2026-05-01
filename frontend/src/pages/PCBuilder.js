@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Cpu, Monitor, CircuitBoard, MemoryStick, HardDrive, Package, Wind, Zap } from "lucide-react";
 
 const SLOTS = [
-  { key: "cpu", label: "CPU", icon: "🖥️" },
-  { key: "gpu", label: "GPU", icon: "🎮" },
-  { key: "motherboard", label: "메인보드", icon: "🔌" },
-  { key: "memory", label: "메모리", icon: "💾" },
-  { key: "storage", label: "저장장치", icon: "💿" },
-  { key: "case", label: "케이스", icon: "📦" },
-  { key: "cooler", label: "쿨러", icon: "❄️" },
-  { key: "psu", label: "파워", icon: "⚡" },
+  { key: "cpu", label: "CPU", Icon: Cpu },
+  { key: "gpu", label: "GPU", Icon: Monitor },
+  { key: "motherboard", label: "메인보드", Icon: CircuitBoard },
+  { key: "memory", label: "메모리", Icon: MemoryStick },
+  { key: "storage", label: "저장장치", Icon: HardDrive },
+  { key: "case", label: "케이스", Icon: Package },
+  { key: "cooler", label: "쿨러", Icon: Wind },
+  { key: "psu", label: "파워", Icon: Zap },
 ];
 
 const BASE_SORT_OPTIONS = [
@@ -203,7 +204,7 @@ export default function PCBuilder() {
   }, [partsCache]);
 
   useEffect(() => {
-    document.title = "PC 견적 빌더 | GoodPricePC";
+    document.title = "PC 견적 빌더 | 가성비PC";
   }, []);
 
   useEffect(() => {
@@ -243,7 +244,7 @@ export default function PCBuilder() {
       return p ? `${label}: ${p.name} (${Number(p.price).toLocaleString()}원)` : null;
     }).filter(Boolean);
     if (!lines.length) return;
-    const text = `[GoodPricePC 견적]\n${lines.join("\n")}\n총합: ${totalPrice.toLocaleString()}원`;
+    const text = `[가성비PC 견적]\n${lines.join("\n")}\n총합: ${totalPrice.toLocaleString()}원`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
@@ -272,7 +273,7 @@ export default function PCBuilder() {
 
       {/* Build slots */}
       <div className="border border-gray-200 rounded-2xl bg-white overflow-hidden divide-y divide-gray-100 mb-4 shadow-sm">
-        {SLOTS.map(({ key, label, icon }) => {
+        {SLOTS.map(({ key, label, Icon }) => {
           const part = build[key];
           return (
             <div
@@ -280,7 +281,9 @@ export default function PCBuilder() {
               onClick={() => openModal({ key, label })}
               className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors group"
             >
-              <span className="text-2xl w-8 text-center flex-shrink-0">{icon}</span>
+              <span className="w-8 flex justify-center flex-shrink-0">
+                <Icon className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+              </span>
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-gray-400 mb-0.5">{label}</div>
                 {part ? (

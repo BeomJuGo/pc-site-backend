@@ -40,7 +40,7 @@ export default function Recommend() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = "AI PC 견적 추천 | GoodPricePC";
+    document.title = "AI PC 견적 추천 | 가성비PC";
   }, []);
 
   useEffect(() => () => clearTimeout(pollRef.current), []);

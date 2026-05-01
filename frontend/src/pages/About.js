@@ -6,7 +6,7 @@ export default function About() {
     <div className="px-4 sm:px-6 lg:px-8 py-12 max-w-3xl mx-auto">
       <div className="space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-3">GoodPricePC 소개</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">가성비PC 소개</h1>
           <p className="text-lg text-gray-600">
             가성비 PC 부품 비교와 AI 추천으로 최적의 조립 PC를 찾아드립니다.
           </p>
@@ -16,7 +16,7 @@ export default function About() {
           <CardHeader>
             <CardTitle className="text-gray-900">사이트 목적</CardTitle>
             <CardDescription className="text-gray-600">
-              GoodPricePC는 CPU, GPU, 메모리, 메인보드, 저장장치, 케이스, 쿨러, 파워서플라이 등 PC 부품의
+              가성비PC는 CPU, GPU, 메모리, 메인보드, 저장장치, 케이스, 쿨러, 파워서플라이 등 PC 부품의
               가격과 성능(벤치마크) 데이터를 한곳에서 비교할 수 있도록 제공합니다.
               AI 추천 기능을 통해 예산과 용도에 맞는 부품 구성을 추천받을 수 있습니다.
             </CardDescription>

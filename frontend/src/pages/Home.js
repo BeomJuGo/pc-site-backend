@@ -1,24 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
+import {
+  Cpu, Monitor, MemoryStick, CircuitBoard, HardDrive, Package, Wind, Zap,
+  TrendingDown, Sparkles, Bot, ChevronRight, Database, RefreshCw, Search,
+} from "lucide-react";
 
 const CATEGORIES = [
-  { title: "CPU", description: "프로세서 성능과 가격을 비교해보세요", href: "/category/cpu", icon: "🖥️", gradient: "from-blue-500 to-cyan-500" },
-  { title: "GPU", description: "그래픽카드 성능과 가격을 확인하세요", href: "/category/gpu", icon: "🎮", gradient: "from-violet-500 to-purple-500" },
-  { title: "메모리", description: "RAM 용량과 속도를 비교해보세요", href: "/category/memory", icon: "💾", gradient: "from-green-500 to-emerald-500" },
-  { title: "메인보드", description: "호환성과 확장성을 고려한 선택", href: "/category/motherboard", icon: "🔌", gradient: "from-orange-500 to-red-500" },
-  { title: "저장장치", description: "SSD와 HDD의 속도와 용량 비교", href: "/category/storage", icon: "💿", gradient: "from-indigo-500 to-blue-500" },
-  { title: "케이스", description: "PC 케이스 크기와 쿨링 성능", href: "/category/case", icon: "📦", gradient: "from-gray-500 to-slate-500" },
-  { title: "쿨러", description: "CPU 쿨러와 케이스 팬 성능", href: "/category/cooler", icon: "❄️", gradient: "from-cyan-500 to-blue-500" },
-  { title: "파워", description: "파워서플라이 효율과 안정성", href: "/category/psu", icon: "⚡", gradient: "from-yellow-500 to-orange-500" },
+  { title: "CPU", href: "/category/cpu", Icon: Cpu, color: "text-blue-600" },
+  { title: "GPU", href: "/category/gpu", Icon: Monitor, color: "text-violet-600" },
+  { title: "메모리", href: "/category/memory", Icon: MemoryStick, color: "text-green-600" },
+  { title: "메인보드", href: "/category/motherboard", Icon: CircuitBoard, color: "text-orange-600" },
+  { title: "저장장치", href: "/category/storage", Icon: HardDrive, color: "text-indigo-600" },
+  { title: "케이스", href: "/category/case", Icon: Package, color: "text-gray-600" },
+  { title: "쿨러", href: "/category/cooler", Icon: Wind, color: "text-cyan-600" },
+  { title: "파워", href: "/category/psu", Icon: Zap, color: "text-yellow-600" },
+];
+
+const STATS = [
+  { label: "800+ 부품 데이터", Icon: Database },
+  { label: "매일 가격 업데이트", Icon: RefreshCw },
+  { label: "AI 가성비 분석", Icon: Bot },
+  { label: "무료 사용", Icon: Sparkles },
 ];
 
 const FEATURES = [
-  { title: "실시간 가격 비교", description: "다양한 쇼핑몰의 최신 가격을 실시간으로 비교합니다", icon: "📊" },
-  { title: "성능 데이터", description: "벤치마크 점수와 실제 성능 데이터를 제공합니다", icon: "⚡" },
-  { title: "AI 추천", description: "예산과 용도에 맞는 최적의 부품을 추천합니다", icon: "🤖" },
+  { title: "실시간 가격 비교", description: "다양한 쇼핑몰의 최신 가격을 실시간으로 비교합니다", Icon: TrendingDown },
+  { title: "성능 데이터", description: "벤치마크 점수와 실제 성능 데이터를 제공합니다", Icon: Zap },
+  { title: "AI 추천", description: "예산과 용도에 맞는 최적의 부품을 추천합니다", Icon: Bot },
 ];
 
 const CAT_LABEL = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
@@ -134,7 +145,7 @@ function FeaturedRecommend() {
     <div>
       {data.summary && (
         <div className="mb-4 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm text-center">
-          💡 {data.summary}
+          {data.summary}
         </div>
       )}
       <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden">
@@ -167,33 +178,69 @@ function FeaturedRecommend() {
 
 export default function Home() {
   const navigate = useNavigate();
+  const [heroSearch, setHeroSearch] = useState("");
+  const heroInputRef = useRef(null);
 
   useEffect(() => {
-    document.title = "GoodPricePC - AI 기반 가성비 PC 견적 추천";
+    document.title = "가성비PC - AI 기반 가성비 PC 견적 추천";
   }, []);
+
+  const handleHeroSearch = (e) => {
+    e.preventDefault();
+    if (heroSearch.trim()) {
+      navigate(`/search?q=${encodeURIComponent(heroSearch.trim())}`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Hero */}
+      {/* Hero + 검색 */}
       <section className="px-4 sm:px-6 lg:px-8 py-20 bg-gradient-to-b from-gray-50 to-white">
         <div className="max-w-4xl mx-auto text-center">
           <Badge variant="secondary" className="mb-4 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 transition-all animate-fade-in-up">
-            ✨ 새로운 PC 부품 비교 사이트
+            AI 기반 가성비 PC 견적 추천
           </Badge>
           <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent animate-fade-in-up" style={{ animationDelay: "0.2s" }}>
-            GoodPricePC
+            가성비PC
           </h1>
           <p className="text-xl text-gray-600 leading-relaxed mb-8 max-w-2xl mx-auto font-medium animate-fade-in-up" style={{ animationDelay: "0.4s" }}>
             신뢰할 수 있는 가격과 성능 데이터를 바탕으로 PC 부품을 탐색할 수 있는 사이트입니다.
             <span className="text-blue-600 font-semibold"> 최적의 가성비</span>를 찾아보세요.
           </p>
+
+          {/* 인라인 검색창 */}
+          <form
+            onSubmit={handleHeroSearch}
+            className="flex items-center gap-2 max-w-xl mx-auto mb-6 animate-fade-in-up"
+            style={{ animationDelay: "0.5s" }}
+          >
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <input
+                ref={heroInputRef}
+                type="text"
+                value={heroSearch}
+                onChange={(e) => setHeroSearch(e.target.value)}
+                placeholder="부품명 검색 (예: RTX 4070, Ryzen 7 9800X3D)"
+                className="w-full pl-10 pr-4 py-3 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-5 py-3 text-sm font-medium bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm flex-shrink-0"
+            >
+              검색
+            </button>
+          </form>
+
           <div className="flex flex-col sm:flex-row gap-3 justify-center animate-fade-in-up" style={{ animationDelay: "0.6s" }}>
             <Button
               size="lg"
               className="text-base px-8 bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
               onClick={() => navigate("/ai-recommend")}
             >
-              ✨ AI 추천 받기
+              <Sparkles className="w-4 h-4 mr-2" />
+              AI 추천 받기
             </Button>
             <Button
               size="lg"
@@ -201,18 +248,57 @@ export default function Home() {
               className="text-base px-8 border-gray-300 text-gray-700 hover:bg-gray-50"
               onClick={() => navigate("/pc-builder")}
             >
-              🛠️ 직접 견적 짜기
+              직접 견적 짜기
             </Button>
           </div>
         </div>
       </section>
 
-      {/* Featured AI Recommend */}
-      <section className="px-4 sm:px-6 lg:px-8 py-12">
+      {/* 통계 스트립 */}
+      <section className="border-y border-gray-100 bg-gray-50">
+        <div className="px-4 sm:px-6 lg:px-8 py-5 max-w-4xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {STATS.map(({ label, Icon }, i) => (
+              <div key={i} className="flex items-center justify-center gap-2 text-gray-600 text-sm font-medium">
+                <Icon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                {label}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 카테고리 */}
+      <section className="px-4 sm:px-6 lg:px-8 py-16">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold mb-3 text-gray-900">카테고리별 탐색</h2>
+            <p className="text-base text-gray-500">원하는 부품 카테고리를 선택하여 가격·성능을 비교하세요</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {CATEGORIES.map(({ title, href, Icon, color }, i) => (
+              <Link
+                key={i}
+                to={href}
+                className="group flex items-center gap-3 px-4 py-4 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all duration-200 animate-fade-in-up"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <Icon className={`w-5 h-5 ${color} flex-shrink-0 group-hover:scale-110 transition-transform duration-200`} />
+                <span className="text-sm font-semibold text-gray-800 group-hover:text-blue-700 transition-colors">{title}</span>
+                <ChevronRight className="w-4 h-4 text-gray-300 ml-auto group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* AI 추천 예시 */}
+      <section className="px-4 sm:px-6 lg:px-8 py-12 bg-gray-50">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-8">
             <Badge variant="secondary" className="mb-3 bg-indigo-50 border-indigo-200 text-indigo-700">
-              ✨ AI 추천 예시
+              <Sparkles className="w-3.5 h-3.5 mr-1" />
+              AI 추천 예시
             </Badge>
             <h2 className="text-3xl font-bold text-gray-900 mb-2">150만원 최적 가성비 견적</h2>
             <p className="text-gray-500">AI가 DB 실제 가격 기준으로 선정한 가성비 최강 조합입니다.</p>
@@ -225,12 +311,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Price Drops */}
-      <section className="px-4 sm:px-6 lg:px-8 py-12 bg-gray-50">
+      {/* 가격 하락 */}
+      <section className="px-4 sm:px-6 lg:px-8 py-12">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-8">
             <Badge variant="secondary" className="mb-3 bg-green-50 border-green-200 text-green-700">
-              📉 실시간 가격 정보
+              <TrendingDown className="w-3.5 h-3.5 mr-1" />
+              실시간 가격 정보
             </Badge>
             <h2 className="text-3xl font-bold text-gray-900 mb-2">최근 가격 하락 TOP 10</h2>
             <p className="text-gray-500">최근 30일 대비 가격이 가장 많이 내린 부품입니다.</p>
@@ -243,58 +330,28 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Categories */}
-      <section className="px-4 sm:px-6 lg:px-8 py-16">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4 text-gray-900">카테고리별 탐색</h2>
-            <p className="text-lg text-gray-500 font-medium">원하는 부품 카테고리를 선택하여 상세 정보를 확인하세요</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {CATEGORIES.map((cat, i) => (
-              <Card
-                key={i}
-                className="group hover:shadow-md transition-all duration-300 cursor-pointer bg-white border-gray-200 hover:border-gray-300 hover:scale-105 hover:-translate-y-1 animate-fade-in-up"
-                style={{ animationDelay: `${i * 100}ms` }}
-                onClick={() => navigate(cat.href)}
-              >
-                <CardHeader className="text-center pb-4">
-                  <div className="text-5xl mb-3 group-hover:scale-110 transition-transform duration-300">{cat.icon}</div>
-                  <CardTitle className="text-xl font-bold text-gray-900">{cat.title}</CardTitle>
-                  <CardDescription className="text-gray-500 font-medium">{cat.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="text-center pt-0">
-                  <Button
-                    variant="outline"
-                    className={`w-full bg-gradient-to-r ${cat.gradient} text-white border-0 hover:shadow-md transition-all duration-300 hover:scale-105`}
-                  >
-                    탐색하기
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
+      {/* 주요 기능 */}
       <section className="px-4 sm:px-6 lg:px-8 py-16 bg-gray-50">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4 text-gray-900">주요 기능</h2>
-            <p className="text-lg text-gray-500 font-medium">GoodPricePC만의 특별한 기능들을 만나보세요</p>
+            <h2 className="text-3xl font-bold mb-3 text-gray-900">주요 기능</h2>
+            <p className="text-base text-gray-500 font-medium">가성비PC만의 특별한 기능들을 만나보세요</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {FEATURES.map((feature, i) => (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {FEATURES.map(({ title, description, Icon }, i) => (
               <Card
                 key={i}
                 className="text-center bg-white border-gray-200 hover:shadow-md transition-all duration-300 hover:scale-105 animate-fade-in-up"
                 style={{ animationDelay: `${i * 200}ms` }}
               >
                 <CardHeader>
-                  <div className="text-4xl mb-3">{feature.icon}</div>
-                  <CardTitle className="text-xl font-bold text-gray-900">{feature.title}</CardTitle>
-                  <CardDescription className="text-base text-gray-500 font-medium">{feature.description}</CardDescription>
+                  <div className="flex justify-center mb-3">
+                    <div className="p-3 rounded-xl bg-blue-50">
+                      <Icon className="w-6 h-6 text-blue-600" />
+                    </div>
+                  </div>
+                  <CardTitle className="text-lg font-bold text-gray-900">{title}</CardTitle>
+                  <p className="text-sm text-gray-500 font-medium">{description}</p>
                 </CardHeader>
               </Card>
             ))}
@@ -307,10 +364,15 @@ export default function Home() {
         <div className="max-w-4xl mx-auto text-center">
           <Card className="bg-gray-900 text-white border-0 shadow-xl hover:shadow-2xl transition-all duration-300 animate-fade-in-up">
             <CardHeader>
-              <CardTitle className="text-4xl mb-4 font-bold">🚀 지금 시작하세요</CardTitle>
-              <CardDescription className="text-gray-300 text-xl font-medium">
+              <div className="flex justify-center mb-4">
+                <div className="p-3 rounded-xl bg-white/10">
+                  <Sparkles className="w-7 h-7 text-white" />
+                </div>
+              </div>
+              <CardTitle className="text-4xl mb-4 font-bold text-white">지금 시작하세요</CardTitle>
+              <p className="text-gray-300 text-xl font-medium">
                 AI 추천을 통해 최적의 PC 구성을 찾아보세요
-              </CardDescription>
+              </p>
             </CardHeader>
             <CardContent className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button
@@ -318,7 +380,8 @@ export default function Home() {
                 className="text-lg px-8 py-4 bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
                 onClick={() => navigate("/ai-recommend")}
               >
-                ✨ AI 추천 받기
+                <Sparkles className="w-5 h-5 mr-2" />
+                AI 추천 받기
               </Button>
               <Button
                 size="lg"
@@ -326,7 +389,7 @@ export default function Home() {
                 className="text-lg px-8 py-4 bg-transparent text-white border-white/30 hover:bg-white/10 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300"
                 onClick={() => navigate("/pc-builder")}
               >
-                🛠️ 직접 견적 짜기
+                직접 견적 짜기
               </Button>
             </CardContent>
           </Card>
