@@ -30,9 +30,9 @@ function extractPSUInfo(name = "", spec = "") {
   else if (/80PLUS\s*BRONZE|BRONZE/i.test(combined)) parts.push("80Plus Bronze");
   else if (/80PLUS/i.test(combined)) parts.push("80Plus");
 
-  if (/\ud480\ubaa8\ub4c8\ub7ec|FULL\s*MODULAR/i.test(combined)) parts.push("\ud480\ubaa8\ub4c8\ub7ec");
-  else if (/\uc138\ubbf8\ubaa8\ub4c8\ub7ec|SEMI\s*MODULAR/i.test(combined)) parts.push("\uc138\ubbf8\ubaa8\ub4c8\ub7ec");
-  else parts.push("\ub17c\ubaa8\ub4c8\ub7ec");
+  if (/풀모듈러|FULL\s*MODULAR/i.test(combined)) parts.push("풀모듈러");
+  else if (/세미모듈러|SEMI\s*MODULAR/i.test(combined)) parts.push("세미모듈러");
+  else parts.push("논모듈러");
 
   if (/SFX-L/i.test(combined)) parts.push("SFX-L");
   else if (/SFX/i.test(combined)) parts.push("SFX");
@@ -43,7 +43,7 @@ function extractPSUInfo(name = "", spec = "") {
 }
 
 async function crawlDanawaPSUs(maxPages = 10) {
-  console.log(`\uD83D\uDD0D \ub2e4\ub098\uc640 PSU \ud06c\ub864\ub9c1 \uc2dc\uc791 (\ucd5c\ub300 ${maxPages}\ud398\uc774\uc9c0)`);
+  console.log(`🔍 다나와 PSU 크롤링 시작 (최대 ${maxPages}페이지)`);
 
   let browser;
   const products = [];
@@ -52,11 +52,11 @@ async function crawlDanawaPSUs(maxPages = 10) {
     browser = await launchBrowser();
     const page = await browser.newPage();
     await setupPage(page, 60000);
-    page.on('pageerror', (error) => console.log('\u26A0\uFE0F \ud398\uc774\uc9c0 \uc5d0\ub7ec:', error.message));
-    page.on('requestfailed', (request) => console.log('\u26A0\uFE0F \uc694\uccad \uc2e4\ud328:', request.url(), request.failure()?.errorText));
+    page.on('pageerror', (error) => console.log('⚠️ 페이지 에러:', error.message));
+    page.on('requestfailed', (request) => console.log('⚠️ 요청 실패:', request.url(), request.failure()?.errorText));
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-      console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
+      console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
 
       try {
         if (pageNum === 1) {
@@ -79,7 +79,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
                     await page.waitForSelector('.main_prodlist, .product_list', { timeout: 20000 });
                     return true;
                   } catch (e) {
-                    console.log('\u26A0\uFE0F \ucd08\uae30 \ub124\ube44\uac8c\uc774\uc158 \uc2e4\ud328:', e.message);
+                    console.log('⚠️ 초기 네비게이션 실패:', e.message);
                     if (!attempts) throw e;
                   }
                 }
@@ -98,13 +98,13 @@ async function crawlDanawaPSUs(maxPages = 10) {
 
               if (hasContent) {
                 loaded = true;
-                console.log('\u2705 \ud398\uc774\uc9c0 \ub85c\ub529 \uc644\ub8cc');
+                console.log('✅ 페이지 로딩 완료');
               } else {
-                throw new Error('\ud398\uc774\uc9c0 \ucf58\ud150\uce20 \ub85c\ub529 \uc2e4\ud328');
+                throw new Error('페이지 콘텐츠 로딩 실패');
               }
             } catch (e) {
               retries--;
-              console.log(`\u26A0\uFE0F \ub85c\ub529 \uc7ac\uc2dc\ub3c4 (\ub0a8\uc740 \ud69f\uc218: ${retries}): ${e.message}`);
+              console.log(`⚠️ 로딩 재시도 (남은 횟수: ${retries}): ${e.message}`);
               if (retries === 0) throw e;
               await sleep(5000);
             }
@@ -117,7 +117,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
           try {
             await navigateToDanawaPage(page, pageNum, '.main_prodlist .prod_item');
           } catch (navError) {
-            console.log(`\u274C \ud398\uc774\uc9c0 ${pageNum} \uc774\ub3d9 \uc2e4\ud328: ${navError.message}`);
+            console.log(`❌ 페이지 ${pageNum} 이동 실패: ${navError.message}`);
             continue;
           }
         }
@@ -166,7 +166,7 @@ async function crawlDanawaPSUs(maxPages = 10) {
                 if (codeMatch) { const prodCode = codeMatch[1]; const cp = prodCode.match(/(\d{2})(\d{2})(\d{2})/); if (cp) { const [_, a, b, c] = cp; image = `https://img.danawa.com/prod_img/500000/${a}${b}${c}/img/${prodCode}_1.jpg?shrink=130:130`; } }
               }
               const specEl = item.querySelector('.spec_list');
-              const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/\ub354\ubcf4\uae30/g, '');
+              const spec = specEl?.textContent?.trim().replace(/\s+/g, ' ').replace(/더보기/g, '');
               const priceEl = item.querySelector('.price_sect a strong');
               let price = 0;
               if (priceEl) price = parseInt(priceEl.textContent.replace(/[^0-9]/g, ''), 10) || 0;
@@ -176,34 +176,34 @@ async function crawlDanawaPSUs(maxPages = 10) {
           return results;
         });
 
-        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${pageProducts.length}\uac1c \uc218\uc9d1`);
-        if (pageProducts.length === 0) { console.log('\u26A0\uFE0F \ud398\uc774\uc9c0\uc5d0\uc11c \uc81c\ud488\uc744 \ucc3e\uc9c0 \ubabb\ud568'); break; }
+        console.log(`✅ 페이지 ${pageNum}: ${pageProducts.length}개 수집`);
+        if (pageProducts.length === 0) { console.log('⚠️ 페이지에서 제품을 찾지 못함'); break; }
         products.push(...pageProducts);
         const hasNext = await page.evaluate(() => {
           const nextBtn = document.querySelector('.nav_next');
           return nextBtn && !nextBtn.classList.contains('disabled');
         });
-        if (!hasNext && pageNum < maxPages) { console.log(`\u23F9\uFE0F \ub9c8\uc9c0\ub9c9 \ud398\uc774\uc9c0 \ub3c4\ub2ec (\ud398\uc774\uc9c0 ${pageNum})`); break; }
+        if (!hasNext && pageNum < maxPages) { console.log(`⏹️ 마지막 페이지 도달 (페이지 ${pageNum})`); break; }
         await sleep(2000);
       } catch (e) {
-        console.error(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328:`, e.message);
+        console.error(`❌ 페이지 ${pageNum} 처리 실패:`, e.message);
         if (pageNum === 1) break;
       }
     }
   } catch (error) {
-    console.error("\u274C \ud06c\ub864\ub9c1 \uc2e4\ud328:", error.message);
+    console.error("❌ 크롤링 실패:", error.message);
   } finally {
     if (browser) await browser.close();
   }
 
-  console.log(`\uD83C\uDF89 \ucd1d ${products.length}\uac1c \uc81c\ud488 \uc218\uc9d1 \uc644\ub8cc`);
+  console.log(`🎉 총 ${products.length}개 제품 수집 완료`);
   return products;
 }
 
-// \ucf00\uc774\ube14, \uc5b4\ub311\ud130 \ub4f1 PSU \ubd80\uc18d\ud488 \ud0a4\uc6cc\ub4dc \u2014 \uc774\ub984\uc5d0 \ud3ec\ud568\ub418\uba74 \uc2e4\uc81c PSU\uac00 \uc544\ub2d8
-const ACCESSORY_PATTERN = /\ucf00\uc774\ube14|\uc804\uc120|\uc2ac\ub9ac\ube0c|\uc2a4\ud50c\ub9ac\ud130|\uc5b4\ub311\ud130|\ud53c\ud305|\uc5f0\uc7a5\uc120|\uc5f0\uc7a5\s*\ucf00\uc774\ube14|\ubcc0\ud658\s*\ucf00\uc774\ube14|\ucee4\ub125\ud130|connector|cable|splitter|adapter|sleeve|extension|PSU\uc6a9|\ud30c\uc6cc\uc6a9/i;
+// 케이블, 어댑터 등 PSU 부속품 키워드 — 이름에 포함되면 실제 PSU가 아님
+const ACCESSORY_PATTERN = /케이블|전선|슬리브|스플리터|어댑터|피팅|연장선|연장\s*케이블|변환\s*케이블|커넥터|connector|cable|splitter|adapter|sleeve|extension|PSU용|파워용/i;
 
-// \uc640\ud2b8 \ub300\ube44 \uac00\uaca9\uc774 \ube44\uc815\uc0c1\uc801\uc73c\ub85c \ub0ae\uc73c\uba74 \ubd80\uc18d\ud488 \uc758\uc2ec (40\uc6d0/W \ubbf8\ub9cc)
+// 와트 대비 가격이 비정상적으로 낮으면 부속품 의심 (40원/W 미만)
 function hasSuspiciousWattPrice(name, price) {
   const m = name.match(/(\d{3,4})\s*W(?!\w)/i) || name.match(/\b(3[0-9]{2}|[4-9]\d{2}|[12]\d{3})\b/);
   if (!m) return false;
@@ -213,34 +213,37 @@ function hasSuspiciousWattPrice(name, price) {
 }
 
 async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
-  if (psus.length === 0) { console.log("\u26d4 \ud06c\ub864\ub9c1 \ub370\uc774\ud130 \uc5c6\uc74c \u2014 DB \uc0ad\uc81c \uac74\ub108\ub700"); return; }
+  if (psus.length === 0) { console.log("⛔ 크롤링 데이터 없음 — DB 삭제 건너뜀"); return; }
   const db = getDB();
   const col = db.collection("parts");
 
-  // \uae30\uc874 DB\uc5d0\uc11c \ubd80\uc18d\ud488\uc73c\ub85c \uc798\ubabb \ub4e4\uc5b4\uac04 \ub808\ucf54\ub4dc \uc989\uc2dc \uc0ad\uc81c
-  const accessoryCleanup = await col.deleteMany({ category: "psu", name: ACCESSORY_PATTERN });
-  if (accessoryCleanup.deletedCount > 0)
-    console.log(`\ud83e\uddf9 \ubd80\uc18d\ud488 \ub808\ucf54\ub4dc \uc815\ub9ac: ${accessoryCleanup.deletedCount}\uac1c \uc0ad\uc81c`);
-
   const existing = await col.find({ category: "psu" }).toArray();
   const byName = new Map(existing.map((x) => [x.name, x]));
+
+  // JS에서 필터링 후 $in으로 삭제 (MongoDB에 regex 직접 전달 시 PCRE2 /i + Unicode 오류 발생)
+  const accessoryNames = existing.filter(d => ACCESSORY_PATTERN.test(d.name)).map(d => d.name);
+  if (accessoryNames.length > 0) {
+    const accessoryCleanup = await col.deleteMany({ category: "psu", name: { $in: accessoryNames } });
+    if (accessoryCleanup.deletedCount > 0)
+      console.log(`🧹 부속품 레코드 정리: ${accessoryCleanup.deletedCount}개 삭제`);
+  }
 
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const psu of psus) {
     if (!psu.price || psu.price === 0 || psu.price > 600000) {
       skipped++;
-      console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${psu.price?.toLocaleString()}\uc6d0): ${psu.name}`);
+      console.log(`⏭️  건너뜀 (가격 이상: ${psu.price?.toLocaleString()}원): ${psu.name}`);
       continue;
     }
     if (ACCESSORY_PATTERN.test(psu.name)) {
       skipped++;
-      console.log(`\u23ED  \uac74\ub108\ub700 (\ubd80\uc18d\ud488 \ud0a4\uc6cc\ub4dc): ${psu.name}`);
+      console.log(`⏭  건너뜀 (부속품 키워드): ${psu.name}`);
       continue;
     }
     if (hasSuspiciousWattPrice(psu.name, psu.price)) {
       skipped++;
-      console.log(`\u23ED  \uac74\ub108\ub700 (\uc640\ud2b8 \ub300\ube44 \uac00\uaca9 \uc774\uc0c1 \u2014 ${psu.price.toLocaleString()}\uc6d0): ${psu.name}`);
+      console.log(`⏭  건너뜀 (와트 대비 가격 이상 — ${psu.price.toLocaleString()}원): ${psu.name}`);
       continue;
     }
 
@@ -258,7 +261,7 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
           if (aiRes.review) review = aiRes.review;
           if (aiRes.specSummary) specSummary = aiRes.specSummary;
         } catch (e) {
-          console.error(`AI \uC0DD\uC131 \uC2E4\uD328: ${psu.name} \u2014 ${e.message}`);
+          console.error(`AI 생성 실패: ${psu.name} — ${e.message}`);
         }
       }
     }
@@ -271,12 +274,12 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
     if (old) {
       await col.updateOne({ _id: old._id }, { $set: update });
       updated++;
-      console.log(`\uD83D\uDD01 \uc5c5\ub370\uc774\ud2b8: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
+      console.log(`🔁 업데이트: ${psu.name} (가격: ${psu.price.toLocaleString()}원)`);
     } else {
       const today = new Date().toISOString().slice(0, 10);
       await col.insertOne({ name: psu.name, ...update, price: psu.price, mallCount: 0, priceHistory: psu.price > 0 ? [{ date: today, price: psu.price }] : [] });
       inserted++;
-      console.log(`\uD83C\uDD95 \uc0bd\uc785: ${psu.name} (\uac00\uaca9: ${psu.price.toLocaleString()}\uc6d0)`);
+      console.log(`🆕 삽입: ${psu.name} (가격: ${psu.price.toLocaleString()}원)`);
     }
 
     if (ai) await sleep(400);
@@ -285,13 +288,13 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
   const currentNames = new Set(psus.map((p) => p.name));
   const toDelete = existing.filter((e) => !currentNames.has(e.name)).map((e) => e.name);
   if (toDelete.length >= existing.length * 0.5) {
-    console.log(`\u26a0\uFE0F \uc0ad\uc81c \ub300\uc0c1 ${toDelete.length}\uac1c / \uae30\uc874 ${existing.length}\uac1c \u2014 50% \ucd08\uacfc\ub85c \uc0ad\uc81c \ucde8\uc18c (\ubd80\ubd84 \ud06c\ub864\ub9c1 \uc758\uc2ec)`);
+    console.log(`⚠️ 삭제 대상 ${toDelete.length}개 / 기존 ${existing.length}개 — 50% 초과로 삭제 취소 (부분 크롤링 의심)`);
   } else if (toDelete.length > 0) {
     await col.deleteMany({ category: "psu", name: { $in: toDelete } });
-    console.log(`\uD83D\uDDD1\uFE0F \uc0ad\uc81c\ub428: ${toDelete.length}\uac1c`);
+    console.log(`🗑️ 삭제됨: ${toDelete.length}개`);
   }
 
-  console.log(`\n\uD83D\uDCC8 \ucd5c\uc885 \uacb0\uacfc: \uc0bd\uc785 ${inserted}\uac1c, \uc5c5\ub370\uc774\ud2b8 ${updated}\uac1c, \uc0ad\uc81c ${toDelete.length}\uac1c, \uac74\ub108\ub700 ${skipped}\uac1c`);
+  console.log(`\n📈 최종 결과: 삽입 ${inserted}개, 업데이트 ${updated}개, 삭제 ${toDelete.length}개, 건너뜀 ${skipped}개`);
 }
 
 router.post("/sync-psu", async (req, res) => {
@@ -301,22 +304,22 @@ router.post("/sync-psu", async (req, res) => {
     const ai = req?.body?.ai !== false;
     const force = !!req?.body?.force;
 
-    res.json({ message: `\u2705 \ub2e4\ub098\uc640 PSU \ub3d9\uae30\ud654 \uc2dc\uc791 (pages=${maxPages}, ai=${ai}, \uac00\uaca9 \ud3ec\ud568)` });
+    res.json({ message: `✅ 다나와 PSU 동기화 시작 (pages=${maxPages}, ai=${ai}, 가격 포함)` });
 
     setImmediate(async () => {
       try {
         const psus = await crawlDanawaPSUs(maxPages);
-        if (psus.length === 0) { console.log("\u26D4 \ud06c\ub864\ub9c1\ub41c \ub370\uc774\ud130 \uc5c6\uc74c"); return; }
+        if (psus.length === 0) { console.log("⛔ 크롤링된 데이터 없음"); return; }
         await saveToMongoDB(psus, { ai, force });
         invalidatePartsCache();
-        console.log("\uD83C\uDF89 PSU \ub3d9\uae30\ud654 \uc644\ub8cc");
+        console.log("🎉 PSU 동기화 완료");
       } catch (err) {
-        console.error("\u274C \ub3d9\uae30\ud654 \uc2e4\ud328:", err);
+        console.error("❌ 동기화 실패:", err);
       } finally { releaseLock("psu"); }
     });
   } catch (err) {
-    console.error("\u274C sync-psu \uc2e4\ud328", err);
-    res.status(500).json({ error: "sync-psu \uc2e4\ud328" });
+    console.error("❌ sync-psu 실패", err);
+    res.status(500).json({ error: "sync-psu 실패" });
   }
 });
 
