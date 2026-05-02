@@ -30,10 +30,10 @@ const PURPOSE_INFO = {
   gaming: {
     icon: "🎮",
     label: "게이밍용",
-    cpuPct: 25,
-    gpuPct: 55,
+    cpuPct: 30,
+    gpuPct: 50,
     secPct: 20,
-    desc: "FPS·RPG 등 고사양 게임에 최적화된 구성입니다. GPU 성능에 예산을 집중하여 높은 해상도와 안정적인 프레임을 경험할 수 있습니다. 게임을 주 목적으로 하는 분께 추천합니다.",
+    desc: "FPS·RPG 등 고사양 게임에 최적화. 예산이 충분하면 X3D(3D V-Cache) CPU를 우선 선택해 프레임 방어 성능을 극대화하고, 나머지를 GPU·메모리에 배분합니다.",
     activeClass: "border-indigo-500 bg-indigo-50",
     badgeClass: "bg-indigo-100 text-indigo-700",
   },
@@ -43,7 +43,7 @@ const PURPOSE_INFO = {
     cpuPct: 45,
     gpuPct: 35,
     secPct: 20,
-    desc: "영상 편집·3D 렌더링·프로그래밍·AI 학습 등 CPU 집약적 작업에 최적화된 구성입니다. 멀티코어 성능에 예산을 집중하며 GPU는 보조 역할로 구성됩니다. 창작·개발 작업이 주 목적인 분께 추천합니다.",
+    desc: "영상편집·3D 렌더링·AI·인코딩 등 멀티코어 작업에 최적화. X3D 시리즈 대신 코어 수가 많은 멀티코어 CPU를 우선 선택하며, GPU는 가속용으로 35% 이내로 제한합니다.",
     activeClass: "border-orange-500 bg-orange-50",
     badgeClass: "bg-orange-100 text-orange-700",
   },
@@ -217,7 +217,12 @@ export default function Recommend() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">GPU 브랜드</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              GPU 브랜드
+              {purpose === "work" && (
+                <span className="ml-2 text-xs font-normal text-amber-600">(작업용은 NVIDIA 권장)</span>
+              )}
+            </label>
             <div className="flex gap-2">
               {[["nvidia", "NVIDIA"], ["amd", "AMD"]].map(([val, lbl]) => (
                 <button
@@ -269,8 +274,24 @@ export default function Recommend() {
       {results && (
         <div className="space-y-3">
           {results.summary && (
-            <div className="px-5 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm">
+            <div className="px-5 py-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm font-medium">
               💡 {results.summary}
+            </div>
+          )}
+
+          {results.reasoning && (
+            <div className="px-5 py-4 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-base">🤖</span>
+                <span className="text-sm font-semibold text-violet-900">AI 추천 이유</span>
+              </div>
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{results.reasoning}</p>
+            </div>
+          )}
+
+          {purpose === "work" && gpuBrand === "amd" && (
+            <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs leading-relaxed">
+              ⚠️ <span className="font-semibold">참고:</span> 영상편집 가속(NVENC), AI/ML(CUDA), 3D 렌더링은 NVIDIA가 더 강력합니다. 작업용으로 GPU 가속이 중요하다면 NVIDIA 선택을 고려해주세요.
             </div>
           )}
 
