@@ -79,7 +79,7 @@ export default function Recommend() {
       );
       if (res.ok) {
         const data = await res.json();
-        setResults({ parts: data.parts || {}, totalPrice: data.totalPrice || 0, summary: data.summary });
+        setResults({ parts: data.parts || {}, totalPrice: data.totalPrice || 0, summary: data.summary, reasoning: data.reasoning });
         setLoading(false);
         setPollCount(0);
         setWaitMsg("");
