@@ -163,12 +163,20 @@ async function crawlDanawaMotherboards(maxPages = 10) {
   return products;
 }
 
+const KNOWN_CHIPSETS = /a320|a520|a620|b350|b450|b550|b650|b850|x370|x470|x570|x670|x870|h81|h97|h110|h170|h270|h310|h370|h410|h470|h510|h610|h810|b150|b250|b360|b365|b460|b560|b660|b760|b840|b860|z170|z270|z370|z390|z490|z590|z690|z790|z890|trx|wrx|w790|w880|w680|w790e|x299|x13s|c621/i;
+
 async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
   if (motherboards.length === 0) { console.log("\u26d4 \ud06c\ub864\ub9c1 \ub370\uc774\ud130 \uc5c6\uc74c \u2014 DB \uc0ad\uc81c \uac74\ub108\ub700"); return; }
   const db = getDB();
   const col = db.collection("parts");
   const existing = await col.find({ category: "motherboard" }).toArray();
   const byName = new Map(existing.map((x) => [x.name, x]));
+
+  // \uc54c\ub824\uc9c4 \uce69\uc14b \ud328\ud134 \uc5c6\ub294 \ud488\ubaa9(\uc544\ub450\uc774\ub178, \ub77c\uc988\ubca0\ub9ac\ud30c\uc774 \ub4f1) \ud544\ud130\ub9c1
+  const filtered = motherboards.filter((b) => KNOWN_CHIPSETS.test(b.name));
+  const removed = motherboards.length - filtered.length;
+  if (removed > 0) console.log(`\ud83e\uddf9 \ube44\uba54\uc778\ubcf4\ub4dc \ud488\ubaa9 ${removed}\uac1c \uc81c\uc678`);
+  motherboards = filtered;
 
   let inserted = 0, updated = 0, skipped = 0;
 
