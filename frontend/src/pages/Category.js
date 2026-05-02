@@ -25,6 +25,7 @@ const CHIPSET_MAP = {
 };
 
 const MEMORY_CAPS = ["4GB", "8GB", "16GB", "32GB", "64GB"];
+const MEMORY_DDRS = ["DDR4", "DDR5"];
 const PSU_WATTS = [500, 600, 700, 750, 850, 1000];
 const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
 const STORAGE_CAPS = [
@@ -98,6 +99,7 @@ export default function Category() {
   const [brandFilter, setBrandFilter] = useState("all");
   const [chipsetFilter, setChipsetFilter] = useState("all");
   const [memCapFilter, setMemCapFilter] = useState("all");
+  const [memDdrFilter, setMemDdrFilter] = useState("all");
   const [storageCapFilter, setStorageCapFilter] = useState("all");
   const [caseFormFilter, setCaseFormFilter] = useState("all");
   const [psuWattFilter, setPsuWattFilter] = useState("all");
@@ -120,13 +122,14 @@ export default function Category() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, storageCapFilter, caseFormFilter, psuWattFilter]);
+  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, memDdrFilter, storageCapFilter, caseFormFilter, psuWattFilter]);
   useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
 
   useEffect(() => {
     setBrandFilter("all");
     setChipsetFilter("all");
     setMemCapFilter("all");
+    setMemDdrFilter("all");
     setStorageCapFilter("all");
     setCaseFormFilter("all");
     setPsuWattFilter("all");
@@ -150,6 +153,7 @@ export default function Category() {
       if (!matchBrand(p, category, brandFilter)) return false;
       if (category === "motherboard" && chipsetFilter !== "all" && !nm.includes(chipsetFilter)) return false;
       if (category === "memory" && !matchMemCap(p, memCapFilter)) return false;
+      if (category === "memory" && memDdrFilter !== "all" && !partText(p).includes(memDdrFilter.toLowerCase())) return false;
       if (category === "storage" && !matchStorageCap(p, storageCapFilter)) return false;
       if (category === "case" && !matchCaseForm(p, caseFormFilter)) return false;
       if (category === "psu" && !matchPsuWatt(p, psuWattFilter)) return false;
@@ -279,23 +283,36 @@ export default function Category() {
         )}
 
         {category === "memory" && (
-          <div className="flex gap-1 flex-wrap">
-            <button
-              onClick={() => setMemCapFilter("all")}
-              className={`${pillBase} ${memCapFilter === "all" ? pillActive : pillIdle}`}
-            >
-              전체
-            </button>
-            {MEMORY_CAPS.map((cap) => (
+          <>
+            <div className="flex gap-1 flex-wrap">
+              {MEMORY_DDRS.map((ddr) => (
+                <button
+                  key={ddr}
+                  onClick={() => setMemDdrFilter(memDdrFilter === ddr ? "all" : ddr)}
+                  className={`${pillBase} ${memDdrFilter === ddr ? pillActive : pillIdle}`}
+                >
+                  {ddr}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 flex-wrap">
               <button
-                key={cap}
-                onClick={() => setMemCapFilter(cap)}
-                className={`${pillBase} ${memCapFilter === cap ? pillActive : pillIdle}`}
+                onClick={() => setMemCapFilter("all")}
+                className={`${pillBase} ${memCapFilter === "all" ? pillActive : pillIdle}`}
               >
-                {cap}
+                전체
               </button>
-            ))}
-          </div>
+              {MEMORY_CAPS.map((cap) => (
+                <button
+                  key={cap}
+                  onClick={() => setMemCapFilter(cap)}
+                  className={`${pillBase} ${memCapFilter === cap ? pillActive : pillIdle}`}
+                >
+                  {cap}
+                </button>
+              ))}
+            </div>
+          </>
         )}
 
         {category === "storage" && (
