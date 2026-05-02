@@ -16,15 +16,17 @@ const isValidSpec = (s) =>
   (s.match(/\//g) || []).length >= 2 &&
   (/:\s/.test(s) || /^(AMD|NVIDIA|Intel)/i.test(s));
 
-function extractMemoryInfo(spec = "") {
+function extractMemoryInfo(name = "", spec = "") {
+  const combined = `${name} ${spec}`;
   const parts = [];
-  const ddrMatch = spec.match(/DDR[2-5]/i);
+  const ddrMatch = combined.match(/DDR[2-5]/i);
   if (ddrMatch) parts.push(`Type: ${ddrMatch[0].toUpperCase()}`);
-  const speedMatch = spec.match(/(\d{4,5})\s*MHz/i);
+  const speedMatch = combined.match(/(\d{4,5})\s*MHz/i);
   if (speedMatch) parts.push(`Speed: ${speedMatch[1]} MHz`);
-  const capacityMatch = spec.match(/(\d+GB(?:\(\d+Gx\d+\))?)/i);
-  if (capacityMatch) parts.push(`Capacity: ${capacityMatch[1]}`);
-  const timingMatch = spec.match(/CL(\d+(?:-\d+)*)/i);
+  // 용량 패턴: "16GB(16GB×1)", "32GB(16Gx2)", "16GB", "16 GB" 등
+  const capacityMatch = combined.match(/(\d+)\s*GB(?:\s*\([^)]*\))?/i);
+  if (capacityMatch) parts.push(`Capacity: ${capacityMatch[1]}GB`);
+  const timingMatch = combined.match(/CL(\d+(?:-\d+)*)/i);
   if (timingMatch) parts.push(`CL: ${timingMatch[1]}`);
   return parts.join(", ");
 }
@@ -195,7 +197,7 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
     }
 
     const old = byName.get(memory.name);
-    const info = extractMemoryInfo(memory.spec);
+    const info = extractMemoryInfo(memory.name, memory.spec);
     const memoryScore = calculateMemoryScore(memory.name, memory.spec);
 
     let review = old?.review || "";

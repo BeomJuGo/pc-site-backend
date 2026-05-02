@@ -57,8 +57,8 @@ function matchBrand(p, category, brand) {
 
 function matchMemCap(p, cap) {
   if (cap === "all") return true;
-  const text = partText(p);
   const n = cap.replace("GB", "");
+  const text = [p.name, p.info, p.specSummary, p.spec].filter(Boolean).join(" ");
   return new RegExp(`\\b${n}\\s*gb\\b`, "i").test(text);
 }
 
