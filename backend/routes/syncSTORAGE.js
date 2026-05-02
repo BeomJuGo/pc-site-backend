@@ -131,6 +131,8 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
     const page = await browser.newPage();
     await setupPage(page, 60000);
 
+    let consecutiveFails = 0;
+
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       console.log(`\uD83D\uDCC4 \ud398\uc774\uc9c0 ${pageNum}/${maxPages} \ucc98\ub9ac \uc911...`);
 
@@ -162,8 +164,14 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
         } else {
           try {
             await navigateToDanawaPage(page, pageNum, 'ul.product_list > li.prod_item');
+            consecutiveFails = 0;
           } catch (navError) {
             console.log(`\u274C \ud398\uc774\uc9c0 ${pageNum} \uc774\ub3d9 \uc2e4\ud328: ${navError.message}`);
+            consecutiveFails++;
+            if (consecutiveFails >= 2) {
+              console.log(`\uD83D\uded1 \uc5f0\uc18d ${consecutiveFails}\ud68c \uc2e4\ud328 \u2014 \ub9c8\uc9c0\ub9c9 \ud398\uc774\uc9c0 \ub3c4\ub2ec\ub85c \ud310\ub2e8\ud558\uace0 \uc885\ub8cc`);
+              break;
+            }
             continue;
           }
           await sleep(2000);
@@ -223,8 +231,13 @@ async function crawlDanawaStorage(url, type = "SSD", maxPages = 10) {
           });
         });
 
-        products.push(...items.filter((p) => p.name));
-        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${items.length}\uac1c \uc218\uc9d1 \uc644\ub8cc`);
+        const validItems = items.filter((p) => p.name);
+        products.push(...validItems);
+        console.log(`\u2705 \ud398\uc774\uc9c0 ${pageNum}: ${validItems.length}\uac1c \uc218\uc9d1 \uc644\ub8cc`);
+        if (validItems.length === 0) {
+          console.log(`\ud83d\uded1 \uc218\uc9d1\ub41c \uc81c\ud488 \uc5c6\uc74c \u2014 \ub9c8\uc9c0\ub9c9 \ud398\uc774\uc9c0 \ub3c4\ub2ec\ub85c \ud310\ub2e8\ud558\uace0 \uc885\ub8cc`);
+          break;
+        }
         await sleep(2000);
       } catch (e) {
         console.error(`\u274C \ud398\uc774\uc9c0 ${pageNum} \ucc98\ub9ac \uc2e4\ud328:`, e.message);
