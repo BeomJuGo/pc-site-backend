@@ -35,6 +35,9 @@ const CHIPSET_MAP = {
 const MEMORY_CAPS = ["8GB", "16GB", "32GB", "64GB"];
 const MEMORY_DDRS = ["DDR4", "DDR5"];
 const PSU_WATTS = [500, 600, 650, 700, 750, 800, 850, 1000, 1200];
+const STORAGE_TYPES = ["SSD", "HDD"];
+const STORAGE_IFACES = ["NVMe", "SATA"];
+const CPU_SOCKETS = ["AM4", "AM5", "LGA1700", "LGA1851"];
 const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
 const STORAGE_CAPS = [
   { label: "128GB",  patterns: ["128gb"] },
@@ -97,6 +100,26 @@ function matchCaseForm(p, ff) {
   return list.some((f) => String(f).toLowerCase() === target) || text.includes(target);
 }
 
+function matchStorageType(p, type) {
+  if (type === "all") return true;
+  const dbType = String(p.specs?.type || "").toUpperCase();
+  if (dbType) return dbType === type.toUpperCase();
+  return partText(p).includes(type.toLowerCase());
+}
+
+function matchStorageIface(p, iface) {
+  if (iface === "all") return true;
+  const dbIface = String(p.specs?.interface || "").toLowerCase();
+  if (dbIface) return dbIface.includes(iface.toLowerCase());
+  return partText(p).includes(iface.toLowerCase());
+}
+
+function matchCpuSocket(p, socket) {
+  if (socket === "all") return true;
+  const text = partText(p);
+  return new RegExp(`\\b${socket.replace(/(\d)/g, "[$1]")}\\b`, "i").test(text);
+}
+
 function matchPsuWatt(p, watt) {
   if (watt === "all") return true;
   // info 필드의 "Wattage: XXXW" 패턴 우선 (가장 정확)
@@ -121,6 +144,9 @@ export default function Category() {
   const [memCapFilter, setMemCapFilter] = useState("all");
   const [memDdrFilter, setMemDdrFilter] = useState("all");
   const [storageCapFilter, setStorageCapFilter] = useState("all");
+  const [storageTypeFilter, setStorageTypeFilter] = useState("all");
+  const [storageIfaceFilter, setStorageIfaceFilter] = useState("all");
+  const [cpuSocketFilter, setCpuSocketFilter] = useState("all");
   const [caseFormFilter, setCaseFormFilter] = useState("all");
   const [psuWattFilter, setPsuWattFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -142,7 +168,7 @@ export default function Category() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, memDdrFilter, storageCapFilter, caseFormFilter, psuWattFilter]);
+  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter]);
   useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
 
   useEffect(() => {
@@ -151,6 +177,9 @@ export default function Category() {
     setMemCapFilter("all");
     setMemDdrFilter("all");
     setStorageCapFilter("all");
+    setStorageTypeFilter("all");
+    setStorageIfaceFilter("all");
+    setCpuSocketFilter("all");
     setCaseFormFilter("all");
     setPsuWattFilter("all");
     setSearch("");
@@ -175,6 +204,9 @@ export default function Category() {
       if (category === "memory" && !matchMemCap(p, memCapFilter)) return false;
       if (category === "memory" && memDdrFilter !== "all" && !partText(p).includes(memDdrFilter.toLowerCase())) return false;
       if (category === "storage" && !matchStorageCap(p, storageCapFilter)) return false;
+      if (category === "storage" && !matchStorageType(p, storageTypeFilter)) return false;
+      if (category === "storage" && !matchStorageIface(p, storageIfaceFilter)) return false;
+      if (category === "cpu" && !matchCpuSocket(p, cpuSocketFilter)) return false;
       if (category === "case" && !matchCaseForm(p, caseFormFilter)) return false;
       if (category === "psu" && !matchPsuWatt(p, psuWattFilter)) return false;
       return true;
@@ -282,6 +314,20 @@ export default function Category() {
           </div>
         )}
 
+        {category === "cpu" && (
+          <div className="flex gap-1 flex-wrap">
+            {CPU_SOCKETS.map((socket) => (
+              <button
+                key={socket}
+                onClick={() => setCpuSocketFilter(cpuSocketFilter === socket ? "all" : socket)}
+                className={`${pillBase} ${cpuSocketFilter === socket ? pillActive : pillIdle}`}
+              >
+                {socket}
+              </button>
+            ))}
+          </div>
+        )}
+
         {category === "motherboard" && brandFilter !== "all" && chipsetOptions.length > 0 && (
           <div className="flex gap-1 flex-wrap">
             <button
@@ -336,23 +382,47 @@ export default function Category() {
         )}
 
         {category === "storage" && (
-          <div className="flex gap-1 flex-wrap">
-            <button
-              onClick={() => setStorageCapFilter("all")}
-              className={`${pillBase} ${storageCapFilter === "all" ? pillActive : pillIdle}`}
-            >
-              전체
-            </button>
-            {STORAGE_CAPS.map((c) => (
+          <>
+            <div className="flex gap-1 flex-wrap">
+              {STORAGE_TYPES.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setStorageTypeFilter(storageTypeFilter === t ? "all" : t)}
+                  className={`${pillBase} ${storageTypeFilter === t ? pillActive : pillIdle}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {STORAGE_IFACES.map((iface) => (
+                <button
+                  key={iface}
+                  onClick={() => setStorageIfaceFilter(storageIfaceFilter === iface ? "all" : iface)}
+                  className={`${pillBase} ${storageIfaceFilter === iface ? pillActive : pillIdle}`}
+                >
+                  {iface}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 flex-wrap">
               <button
-                key={c.label}
-                onClick={() => setStorageCapFilter(c.label)}
-                className={`${pillBase} ${storageCapFilter === c.label ? pillActive : pillIdle}`}
+                onClick={() => setStorageCapFilter("all")}
+                className={`${pillBase} ${storageCapFilter === "all" ? pillActive : pillIdle}`}
               >
-                {c.label}
+                전체
               </button>
-            ))}
-          </div>
+              {STORAGE_CAPS.map((c) => (
+                <button
+                  key={c.label}
+                  onClick={() => setStorageCapFilter(c.label)}
+                  className={`${pillBase} ${storageCapFilter === c.label ? pillActive : pillIdle}`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
 
         {category === "case" && (

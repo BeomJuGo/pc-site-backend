@@ -309,7 +309,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
-        model: "gpt-5.4",
+        model: "gpt-4o-mini",
         messages: [{
           role: "user",
           content: `다음 PC 견적을 30자 이내 한 줄로 요약해줘 (용도·특징 포함):\n예산: ${budget.toLocaleString()}원\n용도: ${purpose === "gaming" ? "게이밍용" : "작업용"}\nCPU: ${chosenCombo.cpu.name}\nGPU: ${chosenGpu?.name || "없음"}`,
