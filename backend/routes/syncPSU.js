@@ -53,7 +53,12 @@ async function crawlDanawaPSUs(maxPages = 10) {
     const page = await browser.newPage();
     await setupPage(page, 60000);
     page.on('pageerror', (error) => console.log('⚠️ 페이지 에러:', error.message));
-    page.on('requestfailed', (request) => console.log('⚠️ 요청 실패:', request.url(), request.failure()?.errorText));
+    page.on('requestfailed', (request) => {
+      const url = request.url();
+      if (!url.includes('font') && !url.includes('/ads/') && !url.includes('ad.') && !url.includes('gtag') && !url.includes('doubleclick') && !url.includes('analytics')) {
+        console.log('⚠️ 요청 실패:', url, request.failure()?.errorText);
+      }
+    });
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       console.log(`📄 페이지 ${pageNum}/${maxPages} 처리 중...`);
