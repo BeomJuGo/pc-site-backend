@@ -175,7 +175,7 @@ async function syncCasesToDB(cases, { ai = true, force = false } = {}) {
 
   for (const caseItem of cases) {
     try {
-      if (!caseItem.price || caseItem.price === 0) {
+      if (!caseItem.price || caseItem.price === 0 || caseItem.price < 10000) {
         skipped++;
         console.log(`\u23ed\ufe0f  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${caseItem.name}`);
         continue;

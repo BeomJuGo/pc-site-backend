@@ -192,7 +192,7 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const memory of filteredMemories) {
-    if (!memory.price || memory.price === 0 || memory.price > 1000000) {
+    if (!memory.price || memory.price === 0 || memory.price < 8000 || memory.price > 1000000) {
       skipped++;
       console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${memory.price?.toLocaleString()}\uc6d0): ${memory.name}`);
       continue;

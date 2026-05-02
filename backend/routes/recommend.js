@@ -165,17 +165,27 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const maxBudget = budget + 100000;
 
   // ─── 헬퍼 ────────────────────────────────────────────────────────────────
-  const popularFirst = (arr, category, priceCap) =>
-    [...arr]
+  const TOP_N = 20; // 인기 상위 N개 풀에서 우선 선택
+
+  // 인기순 정렬 후 상위 N개 → 없으면 전체로 폴백
+  const popularTop = (arr, category, priceCap, n = TOP_N) => {
+    const sorted = [...arr]
       .filter(p => p.price > 0 && p.price <= priceCap)
       .sort((a, b) => getPopularityScore(b, category, brandWeightMap) - getPopularityScore(a, category, brandWeightMap));
+    return { top: sorted.slice(0, n), all: sorted };
+  };
 
-  // ─── Phase 1: 보조부품 — 인기순 (예산의 약 22% 범위 내) ──────────────────
+  const pickPopular = (arr, category, priceCap) => {
+    const { top, all } = popularTop(arr, category, priceCap);
+    return top[0] ?? all[0]; // 상위 20개 중 1위, 없으면 전체 1위
+  };
+
+  // ─── Phase 1: 보조부품 — 인기 상위 20개 풀에서 1순위 선택 ────────────────
   const secCap = budget * 0.22;
-  const preStorage = popularFirst(storages, "storage", secCap * 0.40)[0];
-  const prePsu     = popularFirst(psus,     "psu",     secCap * 0.35)[0];
-  const preCase    = popularFirst(cases,    "case",    secCap * 0.28)[0];
-  const preCooler  = popularFirst(coolers,  "cooler",  secCap * 0.22)[0];
+  const preStorage = pickPopular(storages, "storage", secCap * 0.40);
+  const prePsu     = pickPopular(psus,     "psu",     secCap * 0.35);
+  const preCase    = pickPopular(cases,    "case",    secCap * 0.28);
+  const preCooler  = pickPopular(coolers,  "cooler",  secCap * 0.22);
 
   if (!preStorage || !prePsu || !preCase || !preCooler)
     throw new Error("필수 보조 부품(PSU/저장장치/케이스/쿨러)을 찾을 수 없음");
@@ -183,27 +193,41 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const secondaryTotal = preStorage.price + prePsu.price + preCase.price + preCooler.price;
 
   // ─── Phase 2: CPU 조합 목록 — 가격 오름차순 ──────────────────────────────
-  // 각 CPU마다 가장 저렴한 호환 보드 + 가장 저렴한 호환 메모리 조합 생성
+  // 메모리·보드도 인기 상위 20개 풀에서 호환 가능한 것 우선 선택, 없으면 전체 폴백
   const allCombos = [];
   const cpusSorted = [...cpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
 
+  const popularBoards = [...boards]
+    .filter(b => b.price > 0)
+    .sort((a, b) => getPopularityScore(b, "motherboard", brandWeightMap) - getPopularityScore(a, "motherboard", brandWeightMap));
+  const popularMemories = [...memories]
+    .filter(m => m.price > 0)
+    .sort((a, b) => getPopularityScore(b, "memory", brandWeightMap) - getPopularityScore(a, "memory", brandWeightMap));
+  const top20Boards    = popularBoards.slice(0, TOP_N);
+  const top20Memories  = popularMemories.slice(0, TOP_N);
+
+  const pickBoard = (socket) => {
+    const compatible = (pool) => pool.filter(b => isSocketCompatible(socket, extractBoardSocket(b)));
+    return compatible(top20Boards)[0] ?? compatible(popularBoards)[0];
+  };
+  const pickMemory = (board) => {
+    const compatible = (pool) => pool.filter(m => isMemoryCompatible(m, board));
+    return compatible(top20Memories)[0] ?? compatible(popularMemories)[0];
+  };
+
   for (const cpu of cpusSorted) {
-    if (cpu.price > budget * 0.65) break; // CPU가 예산 65% 초과 시 중단
+    if (cpu.price > budget * 0.65) break;
 
     const socket = extractCpuSocket(cpu);
-    const cheapBoard = [...boards]
-      .filter(b => b.price > 0 && isSocketCompatible(socket, extractBoardSocket(b)))
-      .sort((a, b) => a.price - b.price)[0];
-    if (!cheapBoard) continue;
+    const bestBoard = pickBoard(socket);
+    if (!bestBoard) continue;
 
-    const cheapMem = [...memories]
-      .filter(m => m.price > 0 && isMemoryCompatible(m, cheapBoard))
-      .sort((a, b) => a.price - b.price)[0];
-    if (!cheapMem) continue;
+    const bestMem = pickMemory(bestBoard);
+    if (!bestMem) continue;
 
     allCombos.push({
-      cpu, board: cheapBoard, mem: cheapMem,
-      comboPrice: cpu.price + cheapBoard.price + cheapMem.price,
+      cpu, board: bestBoard, mem: bestMem,
+      comboPrice: cpu.price + bestBoard.price + bestMem.price,
     });
   }
 

@@ -236,7 +236,7 @@ async function saveToMongoDB(psus, { ai = true, force = false } = {}) {
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const psu of psus) {
-    if (!psu.price || psu.price === 0 || psu.price > 600000) {
+    if (!psu.price || psu.price === 0 || psu.price < 15000 || psu.price > 600000) {
       skipped++;
       console.log(`⏭️  건너뜀 (가격 이상: ${psu.price?.toLocaleString()}원): ${psu.name}`);
       continue;

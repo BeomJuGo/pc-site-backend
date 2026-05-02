@@ -181,7 +181,7 @@ async function saveToMongoDB(motherboards, { ai = true, force = false } = {}) {
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const board of motherboards) {
-    if (!board.price || board.price === 0 || board.price > 2000000) {
+    if (!board.price || board.price === 0 || board.price < 30000 || board.price > 2000000) {
       skipped++;
       console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${board.price?.toLocaleString()}\uc6d0): ${board.name}`);
       continue;

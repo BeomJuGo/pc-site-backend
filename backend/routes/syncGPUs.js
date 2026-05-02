@@ -283,7 +283,7 @@ async function saveToDB(gpus, danawaProducts, options = {}) {
   }
 
   for (const p of danawaProducts) {
-    if (!p.price || p.price === 0 || p.price > 6000000) {
+    if (!p.price || p.price === 0 || p.price < 30000 || p.price > 6000000) {
       console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${p.price?.toLocaleString()}\uc6d0): ${p.name}`);
       continue;
     }

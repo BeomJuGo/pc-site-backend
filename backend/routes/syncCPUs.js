@@ -480,7 +480,7 @@ async function saveToMongoDB(cpus, benchmarks, { ai = true, force = false } = {}
   let inserted = 0, updated = 0, withScore = 0, skipped = 0;
 
   for (const cpu of cpus) {
-    if (!cpu.price || cpu.price === 0 || cpu.price > 3000000) { skipped++; continue; }
+    if (!cpu.price || cpu.price === 0 || cpu.price < 20000 || cpu.price > 3000000) { skipped++; continue; }
     const old = byName.get(cpu.name);
     const baseInfo = extractCpuInfo(cpu.name, cpu.spec);
     const crawledSpec = cpu.spec?.trim() || '';

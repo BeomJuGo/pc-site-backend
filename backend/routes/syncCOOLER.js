@@ -214,7 +214,7 @@ async function saveToMongoDB(coolers, { ai = true, force = false } = {}) {
   let inserted = 0, updated = 0, skipped = 0;
 
   for (const cooler of coolers) {
-    if (!cooler.price || cooler.price === 0 || cooler.price > 400000) {
+    if (!cooler.price || cooler.price === 0 || cooler.price < 5000 || cooler.price > 400000) {
       skipped++;
       console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \uc774\uc0c1: ${cooler.price?.toLocaleString()}\uc6d0): ${cooler.name}`);
       continue;
