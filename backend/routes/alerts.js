@@ -22,10 +22,11 @@ async function sendAlertEmail(to, partName, targetPrice, currentPrice) {
       service: "gmail",
       auth: { user: smtpUser, pass: smtpPass },
     });
+    const safeName = (partName || "").replace(/[\r\n]/g, "");
     await transporter.sendMail({
       from: smtpUser,
       to,
-      subject: `[PC견적] ${partName} 가격 알림`,
+      subject: `[PC견적] ${safeName} 가격 알림`,
       html: `<h2>가격 하락 알림</h2>
 <p><strong>${partName}</strong>의 가격이 목표 가격 이하로 내려왔습니다.</p>
 <p>목표 가격: ${targetPrice.toLocaleString()}원</p>

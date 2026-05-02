@@ -36,7 +36,12 @@ app.set("trust proxy", 1);
 const allowedOrigins = config.allowedOrigins;
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 app.use(compression());
@@ -57,7 +62,7 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -114,6 +119,14 @@ const adminLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too Many Requests", message: "어드민 요청은 1시간에 최대 10번입니다." },
+});
+
+const naverPriceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too Many Requests", message: "1분에 최대 30번 요청 가능합니다." },
 });
 
 app.use("/api", apiLimiter);
@@ -228,7 +241,7 @@ app.post("/api/admin/check-price-alerts", requireAdminKey, (req, res) => {
   });
 });
 
-app.get("/api/naver-price", validate(naverPriceQuerySchema, "query"), async (req, res) => {
+app.get("/api/naver-price", naverPriceLimiter, validate(naverPriceQuerySchema, "query"), async (req, res) => {
   const { query, partName, referencePrice } = req.query;
   const url = `https://openapi.naver.com/v1/search/shop.json?query=${encodeURIComponent(query)}`;
   try {

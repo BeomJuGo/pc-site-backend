@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchFullPartData } from "../utils/api";
 import PartCard from "../components/PartCard";
+import SkeletonCard from "../components/SkeletonCard";
 
 const CATEGORY_NAMES = {
   cpu: "CPU",
@@ -193,7 +194,7 @@ export default function Category() {
 
   const chipsetOptions = category === "motherboard" ? CHIPSET_MAP[brandFilter] || [] : [];
 
-  const filtered = parts
+  const filtered = useMemo(() => parts
     .filter((p) => {
       const nm = String(p.name || "").toLowerCase();
       const s = search.toLowerCase();
@@ -236,7 +237,9 @@ export default function Category() {
         return bV - aV;
       }
       return String(a.name).localeCompare(String(b.name));
-    });
+    }),
+  [parts, search, sortBy, category, brandFilter, chipsetFilter, memCapFilter, memDdrFilter,
+   storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter]);
 
   const startIdx = (currentPage - 1) * itemsPerPage;
   const pageItems = filtered.slice(startIdx, startIdx + itemsPerPage);
@@ -245,8 +248,11 @@ export default function Category() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
+        <div className="h-8 w-32 bg-gray-200 rounded animate-pulse mb-5" />
+        <div className="space-y-2">
+          {Array(8).fill(0).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
       </div>
     );
   }

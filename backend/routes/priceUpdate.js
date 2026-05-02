@@ -3,6 +3,7 @@ import { getDB } from "../db.js";
 import { searchNaverShopping } from "../utils/naverShopping.js";
 import { validateNaverPrice } from "../utils/priceValidator.js";
 import logger from "../utils/logger.js";
+import { invalidatePrefix } from "../utils/responseCache.js";
 
 const router = express.Router();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -50,6 +51,8 @@ export async function runDailyPriceUpdate() {
   }
 
   logger.info(`Daily Price Update 완료 — 업데이트 ${updated}개, 스킵 ${skipped}개, 실패 ${failed}개 / 전체 ${parts.length}개`);
+  invalidatePrefix("parts:");
+  invalidatePrefix("prices:");
   return { total: parts.length, updated, skipped, failed };
 }
 

@@ -1,7 +1,8 @@
+import { memo } from "react";
 import { useCompare } from "../context/CompareContext";
 import { useFavorites } from "../hooks/useFavorites";
 
-export default function PartCard({ part, onClick }) {
+function PartCard({ part, onClick }) {
   const { add: addCompare, remove: removeCompare, has: inCompare } = useCompare();
   const { toggle: toggleFavorite, isFavorite } = useFavorites();
 
@@ -73,7 +74,8 @@ export default function PartCard({ part, onClick }) {
           {part.image && !part.image.includes("noImg") && !part.image.includes("noData") ? (
             <img
               src={part.image}
-              alt={name}
+              alt={name || "부품 이미지"}
+              loading="lazy"
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
               onError={(e) => {
@@ -100,3 +102,5 @@ export default function PartCard({ part, onClick }) {
     </div>
   );
 }
+
+export default memo(PartCard);

@@ -27,6 +27,8 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [inputValue, setInputValue] = useState(q);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
   const debounceRef = useRef(null);
 
   useEffect(() => {
@@ -40,7 +42,7 @@ export default function Search() {
     setLoading(true);
     setSearched(true);
     fetchSearch({ q, category: category || undefined, sort })
-      .then(setResults)
+      .then((data) => { setResults(data); setCurrentPage(1); })
       .finally(() => setLoading(false));
   }, [q, category, sort]);
 
@@ -124,20 +126,44 @@ export default function Search() {
         </div>
       )}
 
-      {!loading && results.length > 0 && (
-        <>
-          <p className="text-gray-500 text-sm mb-3">{results.length}개 결과</p>
-          <div className="border border-gray-200 rounded-xl bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
-            {results.map((part) => (
-              <PartCard
-                key={part._id || part.name}
-                part={part}
-                onClick={() => navigate(`/detail/${part.category}/${encodeURIComponent(part.name)}`)}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      {!loading && results.length > 0 && (() => {
+        const totalPages = Math.max(1, Math.ceil(results.length / itemsPerPage));
+        const startIdx = (currentPage - 1) * itemsPerPage;
+        const pageItems = results.slice(startIdx, startIdx + itemsPerPage);
+        return (
+          <>
+            <p className="text-gray-500 text-sm mb-3">총 {results.length}개 결과</p>
+            <div className="border border-gray-200 rounded-xl bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
+              {pageItems.map((part) => (
+                <PartCard
+                  key={part._id || part.name}
+                  part={part}
+                  onClick={() => navigate(`/detail/${part.category}/${encodeURIComponent(part.name)}`)}
+                />
+              ))}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex justify-center mt-6 gap-2 items-center">
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+                >
+                  이전
+                </button>
+                <span className="px-4 py-2 text-sm text-gray-500">{currentPage} / {totalPages}</span>
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
+                >
+                  다음
+                </button>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {!searched && (
         <div className="text-center py-16 text-gray-400">

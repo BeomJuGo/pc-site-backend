@@ -1,7 +1,7 @@
 import { LRUCache } from "lru-cache";
 import logger from "./logger.js";
 
-const lru = new LRUCache({ max: 200, ttl: 5 * 60 * 1000 });
+const lru = new LRUCache({ max: 1000, ttl: 5 * 60 * 1000 });
 let redis = null;
 
 export async function connectRedisCache() {

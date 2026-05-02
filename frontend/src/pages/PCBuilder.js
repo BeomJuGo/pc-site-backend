@@ -193,7 +193,7 @@ export default function PCBuilder() {
     if (!partsCache[slot.key]) {
       setLoadingCat(slot.key);
       try {
-        const res = await fetch(`/api/parts?category=${slot.key}&limit=200`);
+        const res = await fetch(`/api/parts?category=${slot.key}&limit=2000`);
         const data = await res.json();
         setPartsCache((prev) => ({ ...prev, [slot.key]: data }));
       } catch {
