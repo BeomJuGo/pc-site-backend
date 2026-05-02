@@ -149,6 +149,8 @@ const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // purpose별 CPU 조합 예산 비율 (remaining 기준)
 const CPU_RATIO_BY_PURPOSE = { gaming: 0.35, work: 0.55 };
+// purpose별 GPU 절대 상한 비율 (총 예산 기준, null = 제한 없음)
+const GPU_RATIO_BY_PURPOSE = { gaming: null, work: 0.35 };
 
 export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", gpuBrand = "nvidia", purpose = "gaming", {
   minCpuScore = 0, prevCpuComboPrice = 0,
@@ -286,8 +288,9 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   const chosenCombo = comboPool.find(cpuFloor) ?? comboPool[0];
 
-  // GPU 예산: 이 CPU 조합 기준으로 정확하게 계산
-  const gpuCap = maxBudget - secondaryTotal - chosenCombo.comboPrice;
+  // GPU 예산: 이 CPU 조합 기준으로 계산 + purpose별 하드캡 (작업용 35%)
+  const gpuAbsoluteCap = GPU_RATIO_BY_PURPOSE[purpose] != null ? budget * GPU_RATIO_BY_PURPOSE[purpose] : Infinity;
+  const gpuCap = Math.min(maxBudget - secondaryTotal - chosenCombo.comboPrice, gpuAbsoluteCap);
   const gpuPool = [...allGpus]
     .filter(g => isGpuBrand(g) && g.price < gpuCap)
     .sort((a, b) => {
