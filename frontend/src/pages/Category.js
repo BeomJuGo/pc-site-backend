@@ -34,14 +34,17 @@ const CHIPSET_MAP = {
 
 const MEMORY_CAPS = ["8GB", "16GB", "32GB", "64GB"];
 const MEMORY_DDRS = ["DDR4", "DDR5"];
-const PSU_WATTS = [500, 600, 700, 750, 850, 1000];
+const PSU_WATTS = [500, 600, 650, 700, 750, 800, 850, 1000, 1200];
 const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
 const STORAGE_CAPS = [
-  { label: "250GB", patterns: ["250gb"] },
-  { label: "500GB", patterns: ["500gb", "512gb"] },
-  { label: "1TB", patterns: ["1tb", "1000gb", "1gb"] },
-  { label: "2TB", patterns: ["2tb", "2000gb", "2gb"] },
-  { label: "4TB", patterns: ["4tb", "4000gb", "4gb"] },
+  { label: "128GB",  patterns: ["128gb"] },
+  { label: "256GB",  patterns: ["256gb", "240gb"] },
+  { label: "500GB",  patterns: ["500gb", "512gb"] },
+  { label: "1TB",    patterns: ["1tb"] },
+  { label: "2TB",    patterns: ["2tb"] },
+  { label: "4TB",    patterns: ["4tb"] },
+  { label: "8TB",    patterns: ["8tb"] },
+  { label: "12TB+",  patterns: ["12tb", "14tb", "16tb", "18tb", "20tb", "22tb", "24tb"] },
 ];
 
 function partText(p) {
@@ -70,13 +73,19 @@ function matchMemCap(p, cap) {
   return new RegExp(`\\b${n}\\s*gb\\b`, "i").test(text);
 }
 
+const BOGUS_CAPS = new Set(["1gb","2gb","4gb","5gb","6gb","8gb","16gb","32gb"]);
+
 function matchStorageCap(p, cap) {
   if (cap === "all") return true;
   const entry = STORAGE_CAPS.find((c) => c.label === cap);
   if (!entry) return false;
-  const capValue = String(p.specs?.capacity || "").toLowerCase();
-  const text = partText(p);
-  return entry.patterns.some((pat) => capValue.includes(pat) || text.includes(pat));
+  const rawCap = String(p.specs?.capacity || "").toLowerCase();
+  // 파싱 버그로 잘못 저장된 소용량 capacity는 신뢰하지 않음
+  const validCap = rawCap && !BOGUS_CAPS.has(rawCap);
+  if (validCap && entry.patterns.some((pat) => rawCap === pat)) return true;
+  // 제품명에서 word-boundary 검색 (오탐 방지)
+  const text = [p.name].filter(Boolean).join(" ").toLowerCase();
+  return entry.patterns.some((pat) => new RegExp(`\\b${pat}\\b`).test(text));
 }
 
 function matchCaseForm(p, ff) {
@@ -90,9 +99,12 @@ function matchCaseForm(p, ff) {
 
 function matchPsuWatt(p, watt) {
   if (watt === "all") return true;
-  const text = partText(p);
-  const m = text.match(/(\d{3,4})\s*w\b/);
-  return m && Number(m[1]) === Number(watt);
+  // info 필드의 "Wattage: XXXW" 패턴 우선 (가장 정확)
+  const infoMatch = (p.info || "").match(/wattage:\s*(\d{3,4})\s*w/i);
+  if (infoMatch) return Number(infoMatch[1]) === Number(watt);
+  // 제품명에서 숫자W 패턴 검색
+  const nameMatch = (p.name || "").match(/(\d{3,4})\s*w(?:\b|$)/i);
+  return nameMatch && Number(nameMatch[1]) === Number(watt);
 }
 
 export default function Category() {

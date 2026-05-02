@@ -33,13 +33,19 @@ function parseStorageSpecs(name = "", spec = "", type = "SSD") {
   const combined = `${name} ${spec}`;
   const parts = [];
 
-  const capacityMatch = combined.match(/(\d+(?:\.\d+)?)\s*(TB|GB)/i);
+  // Gb/s(\uae30\uac00\ube44\ud2b8/\ucd08) \uac19\uc740 \uc18d\ub3c4 \ud45c\uae30\ub97c \uba3c\uc800 \uc81c\uac70\ud558\uace0 \uc6a9\ub7c9\ub9cc \ud30c\uc2f1
+  const noSpeed = combined.replace(/\d+(?:\.\d+)?\s*(?:MB|GB|Gb|Tb)\/s/gi, "");
+  const capacityMatch = noSpeed.match(/(\d+(?:\.\d+)?)\s*(TB|GB)/i);
   let capacity = "";
   if (capacityMatch) {
     const value = parseFloat(capacityMatch[1]);
     const unit = capacityMatch[2].toUpperCase();
-    capacity = `${value}${unit}`;
-    parts.push(`\uc6a9\ub7c9: ${capacity}`);
+    // \ube44\uc815\uc0c1\uc801\uc73c\ub85c \uc791\uc740 GB \uac12\uc740 \uc6a9\ub7c9\uc774 \uc544\ub2d8 (\uce90\uc2dc, DRAM \ub4f1) \u2014 SSD \ucd5c\uc18c 128GB, HDD \ucd5c\uc18c 250GB
+    const isPlausible = unit === "TB" || (unit === "GB" && value >= 120);
+    if (isPlausible) {
+      capacity = `${value}${unit}`;
+      parts.push(`\uc6a9\ub7c9: ${capacity}`);
+    }
   }
 
   if (type === "SSD") {
