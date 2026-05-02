@@ -51,7 +51,7 @@ router.get("/", setCacheHeaders(300, 3600), async (req, res) => {
     // 메인보드는 허위매물(5만원 미만) 필터링
     if (category === "motherboard") query.price = { $gte: 50000 };
     const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 100));
+    const limitNum = Math.min(2000, Math.max(1, parseInt(limit) || 2000));
     const skip = (pageNum - 1) * limitNum;
 
     const [parts, total] = await Promise.all([

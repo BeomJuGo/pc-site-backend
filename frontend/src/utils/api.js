@@ -5,7 +5,7 @@ export const nameToSlug = (name) => encodeURIComponent(cleanName(name || ""));
 
 export const fetchParts = async (category) => {
   try {
-    const res = await fetch(`${BASE_URL}/api/parts?category=${category}`);
+    const res = await fetch(`${BASE_URL}/api/parts?category=${category}&limit=2000`);
     const data = await res.json();
     return data.map((part, i) => ({ id: i + 1, ...part }));
   } catch (e) {
