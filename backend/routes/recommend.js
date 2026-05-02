@@ -99,7 +99,7 @@ function isSocketCompatible(a, b) {
 }
 
 function extractDdrType(text = "") {
-  const m = text.toUpperCase().match(/DDR([45])/);
+  const m = text.toUpperCase().match(/DDR([345])/);
   return m ? `DDR${m[1]}` : "";
 }
 
@@ -128,8 +128,9 @@ function extractBoardMemorySpeedRange(board) {
 }
 
 function isMemoryCompatible(memory, board) {
-  const bDdr = extractDdrType(board.info || board.specSummary || "");
   const mDdr = extractDdrType(memory.name || memory.info || "");
+  if (mDdr === "DDR3") return false; // DDR3 메모리는 추천 제외
+  const bDdr = extractDdrType(board.info || board.specSummary || "");
   if (bDdr && mDdr && bDdr !== mDdr) return false;
   const spd = extractMemorySpeed(memory.name || memory.info || "");
   if (spd > 0) {

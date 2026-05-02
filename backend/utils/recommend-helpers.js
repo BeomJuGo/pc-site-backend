@@ -14,7 +14,7 @@ export async function loadParts(db) {
   const [cpus, gpus, memories, boards, psus, coolers, storages, cases] = await Promise.all([
     col.find({ category: "cpu",         price: { $gt: 0 } }, { projection }).toArray(),
     col.find({ category: "gpu",         price: { $gt: 0 } }, { projection }).toArray(),
-    col.find({ category: "memory",      price: { $gt: 0 } }, { projection }).toArray(),
+    col.find({ category: "memory", price: { $gt: 0 }, name: { $not: /DDR3/i } }, { projection }).toArray(),
     col.find({ category: "motherboard", price: { $gt: 0 } }, { projection }).toArray(),
     col.find({ category: "psu",         price: { $gt: 0 } }, { projection }).toArray(),
     col.find({ category: "cooler",      price: { $gt: 0 } }, { projection }).toArray(),

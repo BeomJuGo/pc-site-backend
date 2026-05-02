@@ -184,7 +184,9 @@ async function saveToMongoDB(memories, { ai = true, force = false } = {}) {
 
   const filteredMemories = memories.filter(m => {
     const combined = `${m.name} ${m.spec || ''}`.toLowerCase();
-    return !combined.includes('sodimm') && !combined.includes('so-dimm') && !combined.includes('노트북');
+    if (combined.includes('sodimm') || combined.includes('so-dimm') || combined.includes('노트북')) return false;
+    if (/ddr3/i.test(combined)) return false; // DDR3 저장 제외
+    return true;
   });
 
   let inserted = 0, updated = 0, skipped = 0;

@@ -32,7 +32,7 @@ const CHIPSET_MAP = {
   ],
 };
 
-const MEMORY_CAPS = ["4GB", "8GB", "16GB", "32GB", "64GB"];
+const MEMORY_CAPS = ["8GB", "16GB", "32GB", "64GB"];
 const MEMORY_DDRS = ["DDR4", "DDR5"];
 const PSU_WATTS = [500, 600, 700, 750, 850, 1000];
 const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
