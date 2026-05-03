@@ -309,11 +309,13 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   });
 
   // ─── Phase 1: 보조부품 — 인기 상위 20개 풀에서 1순위 선택 ────────────────
-  const secCap = budget * 0.22;
-  const preStorage = pickPopular(realStorages, "storage", secCap * 0.40);
-  const prePsu     = pickPopular(psus,         "psu",     secCap * 0.35);
-  const preCase    = pickPopular(cases,        "case",    secCap * 0.28);
-  const preCooler  = pickPopular(coolers,      "cooler",  secCap * 0.22);
+  // 부품별 cap 비율 합 = 1.0 (정규화) → 4개 합이 secCap (budget의 20%) 이내
+  // 이전 cap 합 1.25였던 버그로 27% 초과 발생 → 0.45/0.25/0.18/0.12로 수정
+  const secCap = budget * 0.20;
+  const preStorage = pickPopular(realStorages, "storage", secCap * 0.45);
+  const prePsu     = pickPopular(psus,         "psu",     secCap * 0.25);
+  const preCase    = pickPopular(cases,        "case",    secCap * 0.18);
+  const preCooler  = pickPopular(coolers,      "cooler",  secCap * 0.12);
 
   if (!preStorage || !prePsu || !preCase || !preCooler)
     throw new Error("필수 보조 부품(PSU/저장장치/케이스/쿨러)을 찾을 수 없음");
@@ -502,21 +504,22 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const TRUSTED_PSU_BRANDS = /마이크로닉스|시소닉|seasonic|\bFSP\b|SuperFlower|슈퍼플라워|COUGAR|쿠거|ANTEC|안텍|CORSAIR|커세어|NZXT|EVGA|대원|MSI|XPG|ADATA|에너맥스|Enermax|Thermaltake|써멀테이크/i;
   const TRUSTED_COOLER_BRANDS = /DEEPCOOL|딥쿨|NOCTUA|녹투아|Thermalright|써멀라이트|쿨러마스터|Cooler\s*Master|잘만|Zalman|NZXT|크라켄|kraken|발키리|valkyrie|3RSYS|PentaWave|ARCTIC|아틱|MSI|CORSAIR|TRYX/i;
 
-  // PSU 와트 충족 PSU로 교체 (신뢰 브랜드 우선, 폴백 cheapest)
+  // PSU 와트 충족 PSU로 교체 (보조부품 cap 안에서, 신뢰 브랜드 우선)
+  // 보조부품 비율 20% 유지를 위해 PSU도 secCap의 일정 비율 이내로 제한
   if (extractPsuWatt(fillPsu) < requiredWatt) {
-    const psuBudget = maxBudget - currentTotalWithoutPart(fillPsu);
+    const psuCap = Math.min(secCap * 0.45, maxBudget - currentTotalWithoutPart(fillPsu));
     const candidates = psus
-      .filter(p => p.price > 0 && extractPsuWatt(p) >= requiredWatt && p.price <= psuBudget);
+      .filter(p => p.price > 0 && extractPsuWatt(p) >= requiredWatt && p.price <= psuCap);
     const trusted = candidates.filter(p => TRUSTED_PSU_BRANDS.test(p.name)).sort((a, b) => a.price - b.price);
     const upgraded = trusted[0] ?? candidates.sort((a, b) => a.price - b.price)[0];
     if (upgraded) fillPsu = upgraded;
   }
 
-  // 쿨러 등급 충족 쿨러로 교체 (신뢰 브랜드 우선)
+  // 쿨러 등급 충족 쿨러로 교체 (보조부품 cap 안에서, 신뢰 브랜드 우선)
   if (coolerRank(fillCooler) < requiredCoolerTier) {
-    const coolerBudget = maxBudget - currentTotalWithoutPart(fillCooler);
+    const coolerCap = Math.min(secCap * 0.30, maxBudget - currentTotalWithoutPart(fillCooler));
     const candidates = coolers
-      .filter(c => c.price > 0 && coolerRank(c) >= requiredCoolerTier && c.price <= coolerBudget);
+      .filter(c => c.price > 0 && coolerRank(c) >= requiredCoolerTier && c.price <= coolerCap);
     const trusted = candidates.filter(c => TRUSTED_COOLER_BRANDS.test(c.name)).sort((a, b) => a.price - b.price);
     const upgraded = trusted[0] ?? candidates.sort((a, b) => a.price - b.price)[0];
     if (upgraded) fillCooler = upgraded;
@@ -530,21 +533,24 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   if (calcTotal() < minBudget) {
     const window = maxBudget - minBudget;
+    // Phase 1과 동일한 부품별 cap을 gap-fill에도 적용
+    // (gap-fill이 storage를 800K짜리로 업글하던 버그 차단 — 보조부품 비율 20% 유지)
     const fillCandidates = [
-      { arr: storages, get: () => fillStorage, set: (v) => { fillStorage = v; } },
-      { arr: psus,     get: () => fillPsu,     set: (v) => { fillPsu = v;     } },
-      { arr: cases,    get: () => fillCase,    set: (v) => { fillCase = v;    } },
-      { arr: coolers,  get: () => fillCooler,  set: (v) => { fillCooler = v;  } },
+      { arr: realStorages, get: () => fillStorage, set: (v) => { fillStorage = v; }, cap: secCap * 0.45 },
+      { arr: psus,         get: () => fillPsu,     set: (v) => { fillPsu = v;     }, cap: secCap * 0.25 },
+      { arr: cases,        get: () => fillCase,    set: (v) => { fillCase = v;    }, cap: secCap * 0.18 },
+      { arr: coolers,      get: () => fillCooler,  set: (v) => { fillCooler = v;  }, cap: secCap * 0.12 },
     ];
-    for (const { arr, get, set } of fillCandidates) {
+    for (const { arr, get, set, cap } of fillCandidates) {
       const gap = minBudget - calcTotal();
       if (gap <= 0) break;
       const cur = get();
+      // cap 초과 업그레이드 차단
       const upgrade = arr
-        .filter(p => p.price >= cur.price + gap && p.price < cur.price + gap + window)
+        .filter(p => p.price >= cur.price + gap && p.price < cur.price + gap + window && p.price <= cap)
         .sort((a, b) => a.price - b.price)[0]
         ?? arr
-          .filter(p => p.price > cur.price && p.price <= cur.price + gap + window)
+          .filter(p => p.price > cur.price && p.price <= Math.min(cur.price + gap + window, cap))
           .sort((a, b) => b.price - a.price)[0];
       if (upgrade && upgrade.price > cur.price) set(upgrade);
     }
