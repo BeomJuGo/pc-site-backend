@@ -125,8 +125,8 @@ export default function PartDetail() {
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
       {/* 헤더 */}
-      <div className="flex items-start gap-5 mb-6">
-        <div className="w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+      <div className="flex gap-4 mb-6">
+        <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
           {part.image ? (
             <img src={part.image} alt={part.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
           ) : (
@@ -134,18 +134,22 @@ export default function PartDetail() {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-bold text-gray-900 mb-3 truncate">{part.name}</h1>
-          <div className="mt-2 flex flex-wrap gap-2 text-sm">
+          <h1 className="text-base sm:text-3xl font-bold text-gray-900 mb-2 break-words leading-snug">{part.name}</h1>
+          <div className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">
+            {Number.isFinite(Number(part.price)) ? `${Number(part.price).toLocaleString()}원` : "가격 정보 없음"}
+          </div>
+          {priceHistory?.length > 1 && <div className="text-xs text-gray-500 mb-2">최근 {priceHistory.length}개 시점 데이터</div>}
+          <div className="flex flex-wrap gap-2 text-sm mb-2">
             {category === "gpu" && (
-              <span className="px-3 py-1.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-700 font-medium">3DMark {n(part?.benchmarkScore?.["3dmarkscore"])}</span>
+              <span className="px-2 py-1 rounded-lg border border-gray-200 bg-gray-100 text-gray-700 text-xs font-medium">3DMark {n(part?.benchmarkScore?.["3dmarkscore"])}</span>
             )}
             {category === "cpu" && (
-              <span className="px-3 py-1.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-700 font-medium">
+              <span className="px-2 py-1 rounded-lg border border-gray-200 bg-gray-100 text-gray-700 text-xs font-medium">
                 PassMark {n(part?.benchScore || part?.benchmarkScore?.passmarkscore)}
               </span>
             )}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             {alertDone ? (
               <span className="text-xs text-green-600 font-medium">✅ 가격 알림이 등록되었습니다</span>
             ) : (
@@ -198,12 +202,6 @@ export default function PartDetail() {
               </div>
             </div>
           )}
-        </div>
-        <div className="text-right flex-shrink-0">
-          <div className="text-2xl font-bold text-gray-900 mb-1">
-            {Number.isFinite(Number(part.price)) ? `${Number(part.price).toLocaleString()}원` : "가격 정보 없음"}
-          </div>
-          {priceHistory?.length > 1 && <div className="text-sm text-gray-500 mt-1">최근 {priceHistory.length}개 시점 데이터</div>}
         </div>
       </div>
 

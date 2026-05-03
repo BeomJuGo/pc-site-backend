@@ -88,10 +88,10 @@ function PartCard({ part, onClick }) {
           )}
           <span className="text-xs text-gray-400 hidden">NO IMG</span>
         </div>
-        <div className="flex-1 min-w-0 pr-16">
-          <h3 className="text-[15px] font-semibold text-gray-900 break-words leading-snug">{name}</h3>
+        <div className="flex-1 min-w-0 pr-2 sm:pr-16">
+          <h3 className="text-[13px] font-semibold text-gray-900 line-clamp-2 leading-snug">{name}</h3>
           {part.review && (
-            <p className="mt-1 text-[12px] text-gray-500 truncate leading-relaxed">{part.review}</p>
+            <p className="mt-1 text-[11px] text-gray-500 line-clamp-1 leading-relaxed">{part.review}</p>
           )}
         </div>
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
