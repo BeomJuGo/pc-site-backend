@@ -130,7 +130,7 @@ export default function Recommend() {
         {/* 사용 목적 선택 */}
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-3">사용 목적</label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-3">
             {Object.entries(PURPOSE_INFO).map(([key, pi]) => (
               <button
                 key={key}
