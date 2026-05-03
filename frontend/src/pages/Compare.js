@@ -35,7 +35,7 @@ export default function Compare() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
         <div className="text-5xl mb-4">📋</div>
         <h2 className="text-2xl font-bold text-gray-900 mb-3">비교할 부품이 없습니다</h2>
-        <p className="text-gray-500 mb-6">카테고리 페이지에서 부품 카드에 마우스를 올려<br />비교 버튼을 클릭하세요.</p>
+        <p className="text-gray-500 mb-6">카테고리 페이지에서 부품 카드 우측의<br />비교 버튼을 눌러 추가하세요.</p>
         <button
           onClick={() => navigate("/category/cpu")}
           className="px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all"

@@ -39,8 +39,8 @@ function PartCard({ part, onClick }) {
       onClick={onClick}
       className="w-full cursor-pointer px-4 py-4 hover:bg-gray-50 transition-colors relative group"
     >
-      {/* Hover action buttons */}
-      <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+      {/* Desktop hover buttons */}
+      <div className="hidden sm:flex absolute top-3 right-3 gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
         <button
           onClick={handleFavorite}
           title={favorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
@@ -69,8 +69,8 @@ function PartCard({ part, onClick }) {
         </button>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="w-16 h-16 flex-shrink-0 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden">
+      <div className="flex items-center gap-3">
+        <div className="w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden">
           {part.image && !part.image.includes("noImg") && !part.image.includes("noData") ? (
             <img
               src={part.image}
@@ -88,15 +88,40 @@ function PartCard({ part, onClick }) {
           )}
           <span className="text-xs text-gray-400 hidden">NO IMG</span>
         </div>
-        <div className="flex-1 min-w-0 pr-2 sm:pr-16">
+        <div className="flex-1 min-w-0">
           <h3 className="text-[13px] font-semibold text-gray-900 line-clamp-2 leading-snug">{name}</h3>
           {part.review && (
-            <p className="mt-1 text-[11px] text-gray-500 line-clamp-1 leading-relaxed">{part.review}</p>
+            <p className="mt-0.5 text-[11px] text-gray-500 line-clamp-1 leading-relaxed">{part.review}</p>
           )}
         </div>
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <div className="text-[16px] font-bold text-gray-900">{priceText}</div>
-          {subScore && <div className="text-[12px] text-gray-500">{subScore}</div>}
+          <div className="text-[15px] font-bold text-gray-900">{priceText}</div>
+          {subScore && <div className="text-[11px] text-gray-500">{subScore}</div>}
+          {/* Mobile-only action buttons */}
+          <div className="flex gap-1 sm:hidden">
+            <button
+              onClick={handleFavorite}
+              title={favorited ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+              className={`p-1 rounded-md transition-colors ${
+                favorited ? "text-pink-500" : "text-gray-300 active:text-pink-500"
+              }`}
+            >
+              <svg className="w-4 h-4" fill={favorited ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </button>
+            <button
+              onClick={handleCompare}
+              title={comparing ? "비교 제거" : "비교 추가"}
+              className={`p-1 rounded-md transition-colors ${
+                comparing ? "text-blue-600" : "text-gray-300 active:text-blue-600"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>

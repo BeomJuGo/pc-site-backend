@@ -24,7 +24,7 @@ export default function Favorites() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="text-5xl mb-4">🤍</div>
           <h2 className="text-xl font-semibold text-gray-900 mb-3">저장된 즐겨찾기가 없습니다</h2>
-          <p className="text-gray-500 mb-6">부품 카드에 마우스를 올려 하트 버튼을 클릭하세요.</p>
+          <p className="text-gray-500 mb-6">부품 카드 우측의 ♥ 하트 버튼을 눌러 추가하세요.</p>
           <button
             onClick={() => navigate("/category/cpu")}
             className="px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-all"
