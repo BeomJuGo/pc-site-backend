@@ -151,7 +151,7 @@ const BUDGET_SET_V2_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // gaming 0.50: X3D CPU(7500X3D 350K, 9800X3D 570K)이 1.5M+ 예산에서 선택될 수 있도록 상향
 const CPU_RATIO_BY_PURPOSE = { gaming: 0.50, work: 0.55 };
 // purpose별 GPU 절대 상한 비율 (총 예산 기준, null = 제한 없음)
-const GPU_RATIO_BY_PURPOSE = { gaming: null, work: 0.35 };
+const GPU_RATIO_BY_PURPOSE = { gaming: null, work: 0.42 };
 
 // X3D CPU 판별 (게이밍은 우선, 작업용은 배제)
 const isX3dCpu = (cpu) => /X3D/i.test(cpu?.name || '');
@@ -180,9 +180,8 @@ const minCpuScoreByBudget = (b) => {
 // CPU 단일 가격 상한 (예산 대비 %, 전문가 권장 10~20% 비율 기반)
 // 13900K가 1.5M 예산에서 선택되는 등 오버킬 방지
 // 저예산(<800K)은 plus 10% 완화: i3-14100F 등 14만원대 CPU 포함 보장
-const cpuPriceCapRatio = (b, purpose) => {
-  const base = purpose === "gaming" ? 0.25 : 0.22;
-  return b < 800000 ? base + 0.10 : base; // 500~700K는 cap 35%/32%
+const cpuPriceCapRatio = (b) => {
+  return b < 800000 ? 0.35 : 0.25; // 저예산 완화 35%, 일반 25% (작업/게이밍 동일)
 };
 
 // 메모리 단일 가격 상한 (32GB DDR5 같은 고가 메모리 폭주 방지)
@@ -282,7 +281,8 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const brandWeightMap = Object.fromEntries(brandWeightDocs.map((d) => [d.category, d.weights || {}]));
 
   const minBudget = budget;
-  const maxBudget = budget + 100000;
+  // 110% 상한 준수: 저예산(≤1M)에서 budget+100K가 110%보다 커지는 경우 방지
+  const maxBudget = Math.min(budget + 100000, Math.ceil(budget * 1.10));
 
   // ─── 헬퍼 ────────────────────────────────────────────────────────────────
   const TOP_N = 20; // 인기 상위 N개 풀에서 우선 선택
@@ -303,8 +303,23 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   // 스토리지 필터: 실제 SSD/HDD만 (컨버터·어댑터·케이스·방열판 등 액세서리 배제)
   const realStorages = storages.filter(s => {
     const n = s.name || '';
-    if (/컨버터|어댑터|adapter|케이스|enclosure|방열판|heatsink|도크|dock|케이블|cable|충전|확장카드/i.test(n)) return false;
+    if (/컨버터|어댑터|adapter|케이스|enclosure|방열판|heatsink|도크|dock|케이블|cable|충전|확장카드|보관함|보관케이스|컨트롤러|controller/i.test(n)) return false;
+    // USB3·외장 어댑터 배제: "U3 SATA", "SATA U3" 등 패턴 (단어경계 없이)
+    if (/U3\s+SATA|SATA\s+U3|USB3?\.?0\s+to\s+SATA/i.test(n)) return false;
     if (!/SSD|HDD|NVMe|M\.?2|SATA|디스크|disk|GB|TB/i.test(n)) return false;
+    return true;
+  });
+
+  // 쿨러 필터: 실제 쿨러만 (소켓 브라켓·마운팅 키트·써멀 그리스 등 쿨러 아닌 액세서리 배제)
+  const realCoolers = coolers.filter(c => {
+    const n = c.name || '';
+    // BCF(Back Contact Frame), 세이프티 브라켓, 소켓 프레임 등 비쿨러 액세서리 배제
+    if (/\bBCF\b|back.?contact.?frame|secure\s*frame|paste.?guard|페이스트.?가드|세이프티\s*(?:브라켓|frame)|써멀\s*(?:그리스|페이스트)|thermal\s*(?:grease|paste)|팬\s*허브|fan\s*hub/i.test(n)) return false;
+    // "브라켓"인데 팬·쿨러·히트싱크 관련 단어가 없으면 배제
+    if (/브라켓/i.test(n) && !/팬|fan|쿨러|cooler|cpu|타워|tower|히트싱크|heatsink/i.test(n)) return false;
+    // 소켓 불일치 쿨러 배제: AMD 빌드에서 Intel 전용, Intel 빌드에서 AMD 전용
+    if (cpuBrand === 'amd'   && /LGA\s*1[0-9]{3}[0-9]+\s*ONLY|1700\s*ONLY|1200\s*ONLY|1151\s*ONLY/i.test(n)) return false;
+    if (cpuBrand === 'intel' && /AM[45]\s*ONLY|AM[45]\s*전용/i.test(n)) return false;
     return true;
   });
 
@@ -315,7 +330,9 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const preStorage = pickPopular(realStorages, "storage", secCap * 0.45);
   const prePsu     = pickPopular(psus,         "psu",     secCap * 0.25);
   const preCase    = pickPopular(cases,        "case",    secCap * 0.18);
-  const preCooler  = pickPopular(coolers,      "cooler",  secCap * 0.12);
+  // realCoolers 우선, 없으면 coolers 전체로 폴백 (저예산 12K cap에서 실제 쿨러 없는 경우)
+  const preCooler  = pickPopular(realCoolers, "cooler", secCap * 0.12)
+                  ?? pickPopular(coolers,     "cooler", secCap * 0.12);
 
   if (!preStorage || !prePsu || !preCase || !preCooler)
     throw new Error("필수 보조 부품(PSU/저장장치/케이스/쿨러)을 찾을 수 없음");
@@ -374,7 +391,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   };
 
   // CPU 가격 상한 (오버킬 방지)
-  const cpuPriceCap = budget * cpuPriceCapRatio(budget, purpose);
+  const cpuPriceCap = budget * cpuPriceCapRatio(budget);
 
   for (const cpu of cpusSorted) {
     if (cpu.price > cpuPriceCap) continue;
@@ -472,7 +489,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   if (comboPool.length === 0)
     throw new Error(`${budget.toLocaleString()}원 예산에서 ${cpuBrand.toUpperCase()} CPU 조합을 찾을 수 없음`);
 
-  const chosenCombo = comboPool.find(cpuFloor) ?? comboPool[0];
+  let chosenCombo = comboPool.find(cpuFloor) ?? comboPool[0];
 
   // GPU 예산: 이 CPU 조합 기준으로 계산 + purpose별 하드캡 (작업용 35%)
   const gpuAbsoluteCap = GPU_RATIO_BY_PURPOSE[purpose] != null ? budget * GPU_RATIO_BY_PURPOSE[purpose] : Infinity;
@@ -484,7 +501,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
       if (sa !== sb) return sb - sa;
       return b.price - a.price;
     });
-  const chosenGpu = gpuPool.find(gpuFloor) ?? gpuPool[0] ?? null;
+  let chosenGpu = gpuPool.find(gpuFloor) ?? gpuPool[0] ?? null;
 
   // ─── Phase 4.5: PSU·쿨러 TDP 매칭 (전문가 의견 반영) ─────────────────────
   // CPU/GPU TDP 기반으로 권장 PSU 와트와 쿨러 등급 계산.
@@ -518,7 +535,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   // 쿨러 등급 충족 쿨러로 교체 (보조부품 cap 안에서, 신뢰 브랜드 우선)
   if (coolerRank(fillCooler) < requiredCoolerTier) {
     const coolerCap = Math.min(secCap * 0.30, maxBudget - currentTotalWithoutPart(fillCooler));
-    const candidates = coolers
+    const candidates = realCoolers
       .filter(c => c.price > 0 && coolerRank(c) >= requiredCoolerTier && c.price <= coolerCap);
     const trusted = candidates.filter(c => TRUSTED_COOLER_BRANDS.test(c.name)).sort((a, b) => a.price - b.price);
     const upgraded = trusted[0] ?? candidates.sort((a, b) => a.price - b.price)[0];
@@ -531,30 +548,70 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
     fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price +
     chosenCombo.comboPrice + (chosenGpu?.price || 0);
 
-  if (calcTotal() < minBudget) {
-    const window = maxBudget - minBudget;
-    // Phase 1과 동일한 부품별 cap을 gap-fill에도 적용
-    // (gap-fill이 storage를 800K짜리로 업글하던 버그 차단 — 보조부품 비율 20% 유지)
-    const fillCandidates = [
-      { arr: realStorages, get: () => fillStorage, set: (v) => { fillStorage = v; }, cap: secCap * 0.45 },
-      { arr: psus,         get: () => fillPsu,     set: (v) => { fillPsu = v;     }, cap: secCap * 0.25 },
-      { arr: cases,        get: () => fillCase,    set: (v) => { fillCase = v;    }, cap: secCap * 0.18 },
-      { arr: coolers,      get: () => fillCooler,  set: (v) => { fillCooler = v;  }, cap: secCap * 0.12 },
-    ];
+  // ─── 보조부품 gap fill 헬퍼 (Phase 5 / Phase 6c 공유) ─────────────────────
+  const fillCandidates = [
+    { arr: realStorages, get: () => fillStorage, set: (v) => { fillStorage = v; }, cap: secCap * 0.45 },
+    { arr: psus,         get: () => fillPsu,     set: (v) => { fillPsu = v;     }, cap: secCap * 0.25 },
+    { arr: cases,        get: () => fillCase,    set: (v) => { fillCase = v;    }, cap: secCap * 0.18 },
+    { arr: realCoolers,  get: () => fillCooler,  set: (v) => { fillCooler = v;  }, cap: secCap * 0.12 },
+  ];
+  const runSecondaryGapFill = () => {
+    const gfWindow = maxBudget - minBudget;
     for (const { arr, get, set, cap } of fillCandidates) {
       const gap = minBudget - calcTotal();
       if (gap <= 0) break;
       const cur = get();
-      // cap 초과 업그레이드 차단
       const upgrade = arr
-        .filter(p => p.price >= cur.price + gap && p.price < cur.price + gap + window && p.price <= cap)
+        .filter(p => p.price >= cur.price + gap && p.price < cur.price + gap + gfWindow && p.price <= cap)
         .sort((a, b) => a.price - b.price)[0]
         ?? arr
-          .filter(p => p.price > cur.price && p.price <= Math.min(cur.price + gap + window, cap))
+          .filter(p => p.price > cur.price && p.price <= Math.min(cur.price + gap + gfWindow, cap))
           .sort((a, b) => b.price - a.price)[0];
       if (upgrade && upgrade.price > cur.price) set(upgrade);
     }
+  };
+
+  // ─── Phase 5: Gap fill — 실제 CPU+GPU 기준으로 소폭 미달 시 보조부품 업그레이드 ─
+  if (calcTotal() < minBudget) runSecondaryGapFill();
+
+  // ─── Phase 6: util 90% 미달 시 GPU → CPU → 보조부품 순으로 gap 채우기 ────
+  const utilFloor = budget * 0.90;
+
+  // Phase 6a: GPU 업그레이드 (같은 브랜드, 더 비싼/좋은 GPU로 남은 budget 활용)
+  if (calcTotal() < utilFloor && chosenGpu) {
+    const gpuUpgradeBudget = maxBudget - calcTotal() + chosenGpu.price;
+    const betterGpu = allGpus
+      .filter(g => isGpuBrand(g) && g.price > chosenGpu.price && g.price <= gpuUpgradeBudget)
+      .sort((a, b) => {
+        const sa = getGpuScore(a), sb = getGpuScore(b);
+        return sa !== sb ? sb - sa : b.price - a.price;
+      })[0];
+    if (betterGpu) {
+      chosenGpu = betterGpu;
+      // GPU 교체 후 PSU 와트 재확인
+      const newGpuTdp2 = estimateGpuTdp(chosenGpu);
+      const newRequiredWatt2 = recommendedPsuWatt(cpuTdp, newGpuTdp2);
+      if (extractPsuWatt(fillPsu) < newRequiredWatt2) {
+        const psuUpgradeCap2 = Math.min(secCap * 0.45, maxBudget - calcTotal() + fillPsu.price);
+        const betterPsu2 = psus
+          .filter(p => p.price > 0 && extractPsuWatt(p) >= newRequiredWatt2 && p.price <= psuUpgradeCap2)
+          .sort((a, b) => a.price - b.price)[0];
+        if (betterPsu2) fillPsu = betterPsu2;
+      }
+    }
   }
+
+  // Phase 6b: CPU 콤보 업그레이드 (GPU 업그레이드 후에도 90% 미달)
+  if (calcTotal() < utilFloor) {
+    const comboUpgradeBudget = maxBudget - calcTotal() + chosenCombo.comboPrice;
+    const betterCombo = comboPool
+      .filter(c => c.comboPrice > chosenCombo.comboPrice && c.comboPrice <= comboUpgradeBudget)
+      .sort(scoreDesc)[0];
+    if (betterCombo) chosenCombo = betterCombo;
+  }
+
+  // Phase 6c: 보조부품 gap fill 재실행
+  if (calcTotal() < minBudget) runSecondaryGapFill();
 
   // ─── AI: 요약문 + 상세 추천 이유 생성 ─────────────────────────────────────
   let aiSummary = null;
