@@ -76,7 +76,7 @@ function PriceDrops() {
         >
           <span className="text-gray-400 text-xs w-5 text-center flex-shrink-0">{i + 1}</span>
           {item.image && (
-            <img src={item.image} alt="" className="w-9 h-9 object-contain rounded flex-shrink-0" />
+            <img src={item.image} alt={`${item.name} 이미지`} className="w-9 h-9 object-contain rounded flex-shrink-0" />
           )}
           <div className="flex-1 min-w-0">
             <div className="text-sm text-gray-900 truncate group-hover:text-blue-600 transition-colors">{item.name}</div>

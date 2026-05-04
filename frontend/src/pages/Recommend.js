@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import PartCard from "../components/PartCard";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 
 const BUDGETS = Array.from({ length: 16 }, (_, i) => 500000 + i * 100000);
 
@@ -65,9 +66,10 @@ export default function Recommend() {
   const pollRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    document.title = "AI PC 견적 추천 | 가성비PC";
-  }, []);
+  useSeoMeta({
+    title: "가성비PC | AI PC 견적 추천",
+    description: "예산을 입력하면 AI가 CPU, GPU, 메모리 등 최적 PC 견적을 추천해드립니다. 가성비 좋은 조립PC 구성을 찾아보세요.",
+  });
 
   useEffect(() => () => clearTimeout(pollRef.current), []);
 

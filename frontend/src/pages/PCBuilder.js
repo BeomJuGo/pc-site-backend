@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Cpu, Monitor, CircuitBoard, MemoryStick, HardDrive, Package, Wind, Zap } from "lucide-react";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 
 const SLOTS = [
   { key: "cpu", label: "CPU", Icon: Cpu },
@@ -203,9 +204,10 @@ export default function PCBuilder() {
     }
   }, [partsCache]);
 
-  useEffect(() => {
-    document.title = "PC 견적 빌더 | 가성비PC";
-  }, []);
+  useSeoMeta({
+    title: "가성비PC | PC 견적 빌더",
+    description: "CPU, GPU, 메인보드 등 부품을 직접 선택해 PC 견적을 구성해보세요. 호환성 체크와 실시간 가격을 확인할 수 있습니다.",
+  });
 
   useEffect(() => {
     if (modal) setTimeout(() => searchRef.current?.focus(), 50);
@@ -289,7 +291,7 @@ export default function PCBuilder() {
                 {part ? (
                   <div className="flex items-center gap-2 min-w-0">
                     {part.image && (
-                      <img src={part.image} alt="" className="w-8 h-8 object-contain rounded flex-shrink-0" />
+                      <img src={part.image} alt={part.name ? `${part.name} 이미지` : "부품 이미지"} className="w-8 h-8 object-contain rounded flex-shrink-0" />
                     )}
                     <span className="text-sm text-gray-900 truncate">{part.name}</span>
                   </div>
@@ -446,7 +448,7 @@ export default function PCBuilder() {
                       }`}
                     >
                       {part.image && (
-                        <img src={part.image} alt="" className="w-10 h-10 object-contain rounded flex-shrink-0" />
+                        <img src={part.image} alt={part.name ? `${part.name} 이미지` : "부품 이미지"} className="w-10 h-10 object-contain rounded flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-900 truncate">{part.name}</div>

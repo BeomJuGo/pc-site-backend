@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://goodpricepc.vercel.app/sitemap.xml
+Sitemap: https://gsb-pc.com/sitemap.xml

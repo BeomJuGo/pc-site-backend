@@ -59,7 +59,11 @@ export default function PartDetail() {
   }, [category, slug]);
 
   useEffect(() => {
-    if (part?.name) document.title = `가성비PC | ${part.name}`;
+    if (part?.name) {
+      document.title = `가성비PC | ${part.name}`;
+      const tag = document.querySelector('meta[name="description"]');
+      if (tag) tag.setAttribute("content", `${part.name} 최저가, 성능 벤치마크, 멀티몰 가격비교. 실시간 가격으로 가성비 좋은 구매처를 찾아보세요.`);
+    }
   }, [part]);
 
   const handleCreateAlert = async () => {

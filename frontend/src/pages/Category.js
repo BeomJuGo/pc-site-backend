@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchFullPartData } from "../utils/api";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 import PartCard from "../components/PartCard";
 import SkeletonCard from "../components/SkeletonCard";
 
@@ -153,11 +154,12 @@ export default function Category() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
-  useEffect(() => {
-    const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
-    const label = LABELS[category] || category;
-    document.title = `${label} 가격 비교 | 가성비PC`;
-  }, [category]);
+  const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
+  const categoryLabel = LABELS[category] || category;
+  useSeoMeta({
+    title: `가성비PC | ${categoryLabel} 가격비교`,
+    description: `${categoryLabel} 최저가 및 성능 비교. 실시간 가격과 벤치마크로 가성비 좋은 ${categoryLabel}을 찾아보세요.`,
+  });
 
   useEffect(() => {
     setLoading(true);
