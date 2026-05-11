@@ -1,7 +1,13 @@
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { useSeoMeta } from "../hooks/useSeoMeta";
 
 export default function About() {
+  useSeoMeta({
+    title: "가성비PC 소개 | AI PC 부품 가격비교·견적 추천 서비스",
+    description: "가성비PC는 CPU, GPU, 메모리 등 PC 부품 실시간 가격비교와 AI 기반 견적 추천을 제공하는 서비스입니다.",
+    path: "/about",
+  });
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-12 max-w-3xl mx-auto">
       <div className="space-y-8">
