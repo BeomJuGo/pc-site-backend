@@ -273,6 +273,10 @@ async function saveToMongoDB(storages, { ai = true, force = false } = {}) {
     const price = storage.price || 0;
     if (price === 0) { skipped++; console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 0\uc6d0): ${storage.name}`); continue; }
     if (price > 0 && (price <= 10000 || price >= 1000000)) { skipped++; console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\uac00\uaca9 \ubc94\uc704 \ucd08\uacfc): ${storage.name} (${price.toLocaleString()}\uc6d0)`); continue; }
+    // \ub178\ud2b8\ubd81\uc6a9 \uc800\uc7a5\uc7a5\uce58 \uc81c\uc678 (\ub370\uc2a4\ud06c\ud0d1 PC \uacac\uc801\uc5d0 \ubd80\uc801\ud569)
+    if (/\ub178\ud2b8\ubd81\uc6a9|\ub178\ud2b8\ubd81\s*\uc804\uc6a9|for\s*laptop/i.test(storage.name)) { skipped++; console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\ub178\ud2b8\ubd81\uc6a9): ${storage.name}`); continue; }
+    // \ucee8\ubc84\ud130\u00b7\ubcc0\ud658 \uc561\uc138\uc11c\ub9ac \uc81c\uc678
+    if (/\ucee8\ubc84\ud130|\ubcc0\ud658\s*\ucee8\ubc84\ud130|to\s+sata\s+\ubcc0\ud658|TF\s+to|SD\s+to\s+SATA/i.test(storage.name)) { skipped++; console.log(`\u23ED\uFE0F  \uac74\ub108\ub700 (\ucee8\ubc84\ud130): ${storage.name}`); continue; }
 
     const old = byName.get(storage.name);
     const storageScore = calculateStorageScore(storage.name, storage.spec, storage.specs?.type || "SSD");

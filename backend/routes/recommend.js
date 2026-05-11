@@ -306,6 +306,8 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
     if (/컨버터|어댑터|adapter|케이스|enclosure|방열판|heatsink|도크|dock|케이블|cable|충전|확장카드|보관함|보관케이스|컨트롤러|controller/i.test(n)) return false;
     // USB3·외장 어댑터 배제: "U3 SATA", "SATA U3" 등 패턴 (단어경계 없이)
     if (/U3\s+SATA|SATA\s+U3|USB3?\.?0\s+to\s+SATA/i.test(n)) return false;
+    // 노트북용 저장장치 배제 (데스크탑 PC 견적에 부적합)
+    if (/노트북용|노트북\s*전용|for\s*laptop/i.test(n)) return false;
     if (!/SSD|HDD|NVMe|M\.?2|SATA|디스크|disk|GB|TB/i.test(n)) return false;
     return true;
   });
