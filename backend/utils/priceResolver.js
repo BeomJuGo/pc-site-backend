@@ -2,8 +2,11 @@ import { searchNaverShopping, parseNaverItems } from "./naverShopping.js";
 import { filterValidNaverItems, extractCriticalTokens } from "./priceValidator.js";
 import logger from "./logger.js";
 
-// 중고·리퍼·고장품 등 제외 키워드
-const JUNK_KEYWORDS = ["중고", "리퍼", "refurb", "고장", "파손", "부품용", "as용", "A/S용", "수리용"];
+// 중고·리퍼·고장품·해외구매 등 제외 키워드
+const JUNK_KEYWORDS = ["중고", "리퍼", "refurb", "고장", "파손", "부품용", "as용", "A/S용", "수리용", "해외구매", "해외직구", "병행수입"];
+
+// 제품명 자체에 이 키워드가 있으면 국내 가격 검증 불가 (검색 결과와 매칭 안 됨)
+const DOMESTIC_UNVERIFIABLE_RE = /해외구매|해외직구|병행수입/i;
 
 // 부품명에서 추출할 브랜드/시리즈 지시어 (매치 요구 강화를 위해)
 const BRAND_TERMS = [
@@ -50,7 +53,15 @@ function hasAnyBrandToken(title, brandTokens) {
 export function applyStrictFilters(partName, items) {
   const tokens = extractCriticalTokens(partName);
   const brandTokens = brandTokensInName(partName);
-  let valid = tokens.length > 0 ? filterValidNaverItems(partName, items) : items;
+  // 토큰 유무와 무관하게 병행수입/해외구매/중고 마커 포함 결과는 항상 제외
+  let valid = filterValidNaverItems(partName, items);
+  // 토큰이 있을 때만 토큰 매칭 검증 (토큰이 없으면 위 filterValidNaverItems의 마커 제외만 적용)
+  if (tokens.length === 0) {
+    valid = items.filter(item => {
+      const t = (item.title || "").toLowerCase();
+      return !JUNK_KEYWORDS.some(kw => t.includes(kw.toLowerCase()));
+    });
+  }
   valid = valid.filter((item) => !isJunkListing(item.title));
   valid = valid.filter((item) => hasAnyBrandToken(item.title, brandTokens));
   return valid;
@@ -76,10 +87,17 @@ export function selectRobustLowest(sorted) {
 
 /**
  * 네이버쇼핑 API에서 부품의 검증된 최저가를 조회합니다.
- * 5단계 파이프라인: 토큰 매칭 → 중고/리퍼 제외 → 브랜드 매칭 → 이상치 제거
+ * @param {string} partName
+ * @param {number|null} referencePrice - 기준 가격 (급변 방어용, 없으면 null)
  * @returns {Promise<{price: number, mallCount: number}>}
  */
-export async function fetchNaverPrice(partName) {
+export async function fetchNaverPrice(partName, referencePrice = null) {
+  // 해외구매·병행수입 제품은 국내 네이버쇼핑과 가격 매칭 불가 → 항상 건너뜀
+  if (DOMESTIC_UNVERIFIABLE_RE.test(partName)) {
+    logger.warn(`fetchNaverPrice: 해외구매/병행수입 제품 스킵 (${partName})`);
+    return { price: 0, mallCount: 0 };
+  }
+
   try {
     const data = await searchNaverShopping(partName, 40, "sim");
     const items = parseNaverItems(data);
@@ -98,6 +116,16 @@ export async function fetchNaverPrice(partName) {
     } else if (outlierRemoved === 2) {
       logger.info(`fetchNaverPrice: 이상치2 제거 (${partName}) ${sorted[0].price}/${sorted[1].price} → ${sorted[2].price}`);
     }
+
+    // 기준가 대비 50% 미만 하락 또는 2배 초과 상승 시 이상 가격으로 판단하고 건너뜀
+    if (referencePrice && referencePrice > 0 && price > 0) {
+      const ratio = price / referencePrice;
+      if (ratio < 0.5 || ratio > 2.0) {
+        logger.warn(`fetchNaverPrice: 가격 급변 감지 (${partName}) 기준가 ${referencePrice.toLocaleString()}원 → ${price.toLocaleString()}원 (비율 ${ratio.toFixed(2)}) — 건너뜀`);
+        return { price: 0, mallCount: 0 };
+      }
+    }
+
     const mallCount = new Set(validItems.map((item) => item.mallName).filter(Boolean)).size;
     return { price, mallCount };
   } catch (err) {

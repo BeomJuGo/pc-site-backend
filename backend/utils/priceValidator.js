@@ -28,6 +28,11 @@ export function extractCriticalTokens(partName) {
   // Standalone 4+ digit model numbers: 3950x, 4090, 14900k
   (normalized.match(/\b\d{4,}[a-z]{0,3}\b/g) || []).forEach((t) => tokens.add(t));
 
+  // Storage/SSD model numbers: BX500, MX500, SN770, P3+ etc. (영문1~4자 + 숫자3자리+)
+  (normalized.match(/\b[a-z]{1,4}\d{3}[a-z0-9]{0,5}\b/g) || [])
+    .filter(t => !["ddr3","ddr4","ddr5","sata","nvme","pcie","gddr"].includes(t))
+    .forEach(t => tokens.add(t));
+
   return [...tokens];
 }
 

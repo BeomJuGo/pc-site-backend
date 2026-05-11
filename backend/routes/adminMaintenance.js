@@ -111,7 +111,7 @@ router.post("/update-all-prices", async (req, res) => {
 
     for (const part of parts) {
       try {
-        const { price: naverPrice, mallCount } = await fetchNaverPrice(part.name);
+        const { price: naverPrice, mallCount } = await fetchNaverPrice(part.name, part.price || null);
         if (!naverPrice || naverPrice <= 0) {
           skipped++;
           continue;
