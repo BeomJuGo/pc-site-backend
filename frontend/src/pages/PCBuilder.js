@@ -207,6 +207,7 @@ export default function PCBuilder() {
   useSeoMeta({
     title: "가성비PC | PC 견적 빌더",
     description: "CPU, GPU, 메인보드 등 부품을 직접 선택해 PC 견적을 구성해보세요. 호환성 체크와 실시간 가격을 확인할 수 있습니다.",
+    path: "/pc-builder",
   });
 
   useEffect(() => {

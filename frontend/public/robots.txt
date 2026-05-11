@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://gsb-pc.com/sitemap.xml
+Sitemap: https://www.gsb-pc.com/sitemap.xml

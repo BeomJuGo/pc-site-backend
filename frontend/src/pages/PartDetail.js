@@ -63,8 +63,15 @@ export default function PartDetail() {
       document.title = `가성비PC | ${part.name}`;
       const tag = document.querySelector('meta[name="description"]');
       if (tag) tag.setAttribute("content", `${part.name} 최저가, 성능 벤치마크, 멀티몰 가격비교. 실시간 가격으로 가성비 좋은 구매처를 찾아보세요.`);
+      let link = document.querySelector('link[rel="canonical"]');
+      if (!link) {
+        link = document.createElement("link");
+        link.setAttribute("rel", "canonical");
+        document.head.appendChild(link);
+      }
+      link.setAttribute("href", `https://www.gsb-pc.com/parts/${category}/${slug}`);
     }
-  }, [part]);
+  }, [part, category, slug]);
 
   const handleCreateAlert = async () => {
     if (!alertEmail || !alertPrice) { alert("이메일과 목표 가격을 입력하세요."); return; }

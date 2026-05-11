@@ -159,6 +159,7 @@ export default function Category() {
   useSeoMeta({
     title: `가성비PC | ${categoryLabel} 가격비교`,
     description: `${categoryLabel} 최저가 및 성능 비교. 실시간 가격과 벤치마크로 가성비 좋은 ${categoryLabel}을 찾아보세요.`,
+    path: `/category/${category}`,
   });
 
   useEffect(() => {
