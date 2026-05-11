@@ -34,9 +34,6 @@ export default function Footer() {
           <Link to="/terms" className="text-gray-500 hover:text-gray-900 font-medium transition-colors">
             이용약관
           </Link>
-          <a href="mailto:lom0097@naver.com" className="text-gray-500 hover:text-gray-900 font-medium transition-colors">
-            문의
-          </a>
         </div>
       </div>
     </footer>

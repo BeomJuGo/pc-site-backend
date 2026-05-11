@@ -56,24 +56,6 @@ export default function About() {
           </CardHeader>
         </Card>
 
-        <Card className="bg-white border-gray-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-gray-900">문의</CardTitle>
-            <CardDescription className="text-gray-600">
-              서비스 관련 문의나 개선 사항이 있으시면 아래 연락처로 연락해 주시면 감사하겠습니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <p className="text-gray-700 font-medium">
-              이메일:{" "}
-              <a href="mailto:lom0097@naver.com" className="text-blue-600 hover:underline">
-                lom0097@naver.com
-              </a>
-            </p>
-            <p className="text-gray-500 text-sm mt-1">GitHub 리포지토리 이슈를 통한 문의도 가능합니다.</p>
-          </CardContent>
-        </Card>
-
         <div className="flex flex-wrap gap-4 justify-center pt-4">
           <Link to="/" className="inline-flex items-center px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium transition-colors">
             ← 홈으로
