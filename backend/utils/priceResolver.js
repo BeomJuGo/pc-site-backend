@@ -20,8 +20,10 @@ const BRAND_TERMS = [
   "라데온", "radeon",
   // 메모리
   "ddr3", "ddr4", "ddr5",
-  // 저장장치
-  "nvme", "sata", "ssd", "hdd",
+  // 저장장치 브랜드/인터페이스
+  "nvme", "sata", "ssd", "hdd", "sas",
+  "seagate", "western digital", "wd", "toshiba", "crucial", "kingston", "samsung",
+  "exos", "ironwolf", "barracuda", "firecuda",
   // 메인보드 칩셋
   "a520", "a620", "b450", "b550", "b650", "b850", "x470", "x670", "x870",
   "h510", "h610", "h810", "b660", "b760", "b860", "z690", "z790", "z890",

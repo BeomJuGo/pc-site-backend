@@ -33,6 +33,9 @@ export function extractCriticalTokens(partName) {
     .filter(t => !["ddr3","ddr4","ddr5","sata","nvme","pcie","gddr"].includes(t))
     .forEach(t => tokens.add(t));
 
+  // 숫자-영문-숫자 혼합 모델번호: 10E2400, 16T300 등 엔터프라이즈 HDD
+  (normalized.match(/\b\d{1,4}[a-z]\d{3,}[a-z0-9]*\b/g) || []).forEach(t => tokens.add(t));
+
   return [...tokens];
 }
 
