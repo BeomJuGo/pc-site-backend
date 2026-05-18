@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useCompare } from "../context/CompareContext";
 import { useFavorites } from "../hooks/useFavorites";
+import { detectConditions } from "../utils/productCondition";
 
 function PartCard({ part, onClick }) {
   const { add: addCompare, remove: removeCompare, has: inCompare } = useCompare();
@@ -90,6 +91,18 @@ function PartCard({ part, onClick }) {
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-[13px] font-semibold text-gray-900 line-clamp-2 leading-snug">{name}</h3>
+          {detectConditions(name).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {detectConditions(name).map((c) => (
+                <span
+                  key={c.key}
+                  className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded border ${c.className}`}
+                >
+                  {c.label}
+                </span>
+              ))}
+            </div>
+          )}
           {part.review && (
             <p className="mt-0.5 text-[11px] text-gray-500 line-clamp-1 leading-relaxed">{part.review}</p>
           )}

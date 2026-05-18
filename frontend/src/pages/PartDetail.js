@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { fetchPartDetail, fetchPriceHistory, fetchTrend, fetchMultiMallPrices, createAlert, fetchGptInfo, fetchDanawaUrl } from "../utils/api";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { SkeletonDetail } from "../components/SkeletonCard";
+import { detectConditions } from "../utils/productCondition";
 
 const PERIODS = [
   { label: "30일", days: 30 },
@@ -146,6 +147,18 @@ export default function PartDetail() {
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-base sm:text-3xl font-bold text-gray-900 mb-2 break-words leading-snug">{part.name}</h1>
+          {detectConditions(part.name).length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {detectConditions(part.name).map((c) => (
+                <span
+                  key={c.key}
+                  className={`inline-block text-xs font-semibold px-2 py-0.5 rounded border ${c.className}`}
+                >
+                  {c.label}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">
             {Number.isFinite(Number(part.price)) ? `${Number(part.price).toLocaleString()}원` : "가격 정보 없음"}
           </div>

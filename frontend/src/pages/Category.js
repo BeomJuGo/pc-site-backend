@@ -4,6 +4,7 @@ import { fetchFullPartData } from "../utils/api";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 import PartCard from "../components/PartCard";
 import SkeletonCard from "../components/SkeletonCard";
+import { detectConditions } from "../utils/productCondition";
 
 const CATEGORY_NAMES = {
   cpu: "CPU",
@@ -151,6 +152,9 @@ export default function Category() {
   const [cpuSocketFilter, setCpuSocketFilter] = useState("all");
   const [caseFormFilter, setCaseFormFilter] = useState("all");
   const [psuWattFilter, setPsuWattFilter] = useState("all");
+  const [showUsedOnly, setShowUsedOnly] = useState(false);
+  const [showReferOnly, setShowReferOnly] = useState(false);
+  const [hideParallel, setHideParallel] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
@@ -172,7 +176,7 @@ export default function Category() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter]);
+  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter, showUsedOnly, showReferOnly, hideParallel]);
   useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
 
   useEffect(() => {
@@ -186,6 +190,9 @@ export default function Category() {
     setCpuSocketFilter("all");
     setCaseFormFilter("all");
     setPsuWattFilter("all");
+    setShowUsedOnly(false);
+    setShowReferOnly(false);
+    setHideParallel(false);
     setSearch("");
     setSortBy(["cpu", "gpu"].includes(category) ? "value" : "popularity");
   }, [category]);
@@ -213,6 +220,14 @@ export default function Category() {
       if (category === "cpu" && !matchCpuSocket(p, cpuSocketFilter)) return false;
       if (category === "case" && !matchCaseForm(p, caseFormFilter)) return false;
       if (category === "psu" && !matchPsuWatt(p, psuWattFilter)) return false;
+      const conds = detectConditions(p.name);
+      const isUsed = conds.some((c) => c.key === "used");
+      const isRefer = conds.some((c) => c.key === "refer");
+      const isParallel = conds.some((c) => c.key === "parallel");
+      if (showUsedOnly || showReferOnly) {
+        if (!((showUsedOnly && isUsed) || (showReferOnly && isRefer))) return false;
+      }
+      if (hideParallel && isParallel) return false;
       return true;
     })
     .sort((a, b) => {
@@ -242,7 +257,8 @@ export default function Category() {
       return String(a.name).localeCompare(String(b.name));
     }),
   [parts, search, sortBy, category, brandFilter, chipsetFilter, memCapFilter, memDdrFilter,
-   storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter]);
+   storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
+   showUsedOnly, showReferOnly, hideParallel]);
 
   const startIdx = (currentPage - 1) * itemsPerPage;
   const pageItems = filtered.slice(startIdx, startIdx + itemsPerPage);
@@ -473,6 +489,46 @@ export default function Category() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* 상품 상태 필터 */}
+      <div className="flex flex-wrap gap-3 items-center mb-4">
+        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+          <input
+            type="checkbox"
+            checked={showUsedOnly}
+            onChange={(e) => setShowUsedOnly(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
+          />
+          <span className="inline-flex items-center gap-1">
+            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-200">중고</span>
+            중고만 보기
+          </span>
+        </label>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+          <input
+            type="checkbox"
+            checked={showReferOnly}
+            onChange={(e) => setShowReferOnly(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-purple-500 focus:ring-purple-400 cursor-pointer"
+          />
+          <span className="inline-flex items-center gap-1">
+            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700 border-purple-200">리퍼</span>
+            리퍼만 보기
+          </span>
+        </label>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+          <input
+            type="checkbox"
+            checked={hideParallel}
+            onChange={(e) => setHideParallel(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400 cursor-pointer"
+          />
+          <span className="inline-flex items-center gap-1">
+            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-yellow-100 text-yellow-700 border-yellow-200">병행수입</span>
+            병행수입 제외
+          </span>
+        </label>
       </div>
 
       {pageItems.length === 0 ? (
