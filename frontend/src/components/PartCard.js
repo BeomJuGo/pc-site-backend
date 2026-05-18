@@ -77,6 +77,8 @@ function PartCard({ part, onClick }) {
               src={part.image}
               alt={name || "부품 이미지"}
               loading="lazy"
+              width="64"
+              height="64"
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
               onError={(e) => {

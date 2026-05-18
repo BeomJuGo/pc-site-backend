@@ -3,11 +3,28 @@ const BASE_URL = "";
 export const cleanName = (raw) => raw?.split("\n")[0].split("(")[0].trim();
 export const nameToSlug = (name) => encodeURIComponent(cleanName(name || ""));
 
-export const fetchParts = async (category) => {
+// 5분 TTL 메모리 캐시 (SPA 내 재탐색 시 네트워크 요청 생략)
+const _apiCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+function apiCacheGet(key) {
+  const e = _apiCache.get(key);
+  if (e && Date.now() - e.ts < CACHE_TTL) return e.data;
+  return null;
+}
+function apiCacheSet(key, data) {
+  _apiCache.set(key, { data, ts: Date.now() });
+}
+
+export const fetchParts = async (category, limit = 800) => {
+  const cacheKey = `parts:${category}:${limit}`;
+  const cached = apiCacheGet(cacheKey);
+  if (cached) return cached;
   try {
-    const res = await fetch(`${BASE_URL}/api/parts?category=${category}&limit=2000`);
+    const res = await fetch(`${BASE_URL}/api/parts?category=${category}&limit=${limit}`);
     const data = await res.json();
-    return data.map((part, i) => ({ id: i + 1, ...part }));
+    const result = data.map((part, i) => ({ id: i + 1, ...part }));
+    apiCacheSet(cacheKey, result);
+    return result;
   } catch (e) {
     console.error("[fetchParts] error:", e);
     return [];

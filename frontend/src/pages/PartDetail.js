@@ -140,7 +140,7 @@ export default function PartDetail() {
       <div className="flex gap-4 mb-6">
         <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
           {part.image ? (
-            <img src={part.image} alt={part.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+            <img src={part.image} alt={part.name} width="96" height="96" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
           ) : (
             <span className="text-xs text-gray-400">NO IMAGE</span>
           )}
