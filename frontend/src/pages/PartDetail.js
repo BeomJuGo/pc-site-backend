@@ -23,7 +23,7 @@ export default function PartDetail() {
   const [part, setPart] = useState(null);
   const [priceHistory, setPriceHistory] = useState([]);
   const [trend, setTrend] = useState(null);
-  const [mallPrices, setMallPrices] = useState(null);
+  const [mallPrices, setMallPrices] = useState(undefined); // undefined = 로딩 중, null = 데이터 없음
   const [period, setPeriod] = useState(90);
   const [loading, setLoading] = useState(true);
 
@@ -39,24 +39,31 @@ export default function PartDetail() {
 
   const [danawaLoading, setDanawaLoading] = useState(false);
 
+  // Phase 1: 핵심 데이터 (빠름) — 즉시 페이지 표시
   useEffect(() => {
     const load = async () => {
       try {
-        const [detail, history, trendData, prices] = await Promise.allSettled([
+        const [detail, history, trendData] = await Promise.allSettled([
           fetchPartDetail(category, slug),
           fetchPriceHistory(category, slug),
           fetchTrend(category, slug),
-          fetchMultiMallPrices(category, decodeURIComponent(slug)),
         ]);
         setPart(detail.value ?? null);
         setPriceHistory(history.value || []);
         setTrend(trendData.value ?? null);
-        setMallPrices(prices.value ?? null);
       } finally {
         setLoading(false);
       }
     };
     load();
+  }, [category, slug]);
+
+  // Phase 2: 멀티몰 가격 (느림, 비차단) — 페이지 표시 후 별도 로드
+  useEffect(() => {
+    setMallPrices(undefined);
+    fetchMultiMallPrices(category, decodeURIComponent(slug))
+      .then((prices) => setMallPrices(prices ?? null))
+      .catch(() => setMallPrices(null));
   }, [category, slug]);
 
   useEffect(() => {
@@ -344,8 +351,23 @@ export default function PartDetail() {
         </div>
       </div>
 
-      {/* 멀티몰 가격 비교 */}
-      {mallPrices?.naverMalls?.length > 0 && (
+      {/* 멀티몰 가격 비교 — Phase 2 (비차단 로드) */}
+      {mallPrices === undefined ? (
+        <div className="mt-8">
+          <h3 className="text-lg font-bold text-gray-900 mb-3">
+            멀티몰 가격 비교
+            <span className="text-sm text-gray-500 font-normal ml-2">네이버 쇼핑 기준</span>
+          </h3>
+          <div className="border border-gray-200 rounded-xl bg-white p-5 shadow-sm space-y-3 animate-pulse">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex justify-between items-center">
+                <div className="h-4 bg-gray-200 rounded w-28" />
+                <div className="h-4 bg-gray-200 rounded w-20" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : mallPrices?.naverMalls?.length > 0 ? (
         <div className="mt-8">
           <h3 className="text-lg font-bold text-gray-900 mb-3">
             멀티몰 가격 비교
@@ -381,7 +403,7 @@ export default function PartDetail() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* AI 한줄평 */}
       <div className="mt-8">

@@ -12,7 +12,7 @@ import logger from "../utils/logger.js";
 
 const router = express.Router();
 
-const CACHE_TTL = 60 * 60 * 1000; // 1시간
+const CACHE_TTL = 6 * 60 * 60 * 1000; // 6시간 (가격은 일 1회 업데이트, 긴 캐시로 Naver API 콜 최소화)
 
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -82,7 +82,7 @@ async function getPriceData(category, name) {
 }
 
 // GET /api/prices/:category/:name - 단일 부품 멀티몰 가격 비교
-router.get("/:category/:name", setCacheHeaders(300), async (req, res) => {
+router.get("/:category/:name", setCacheHeaders(3600, 43200), async (req, res) => {
   const { category, name } = req.params;
   const decoded = decodeURIComponent(name);
   try {
