@@ -40,38 +40,165 @@ function computeTrend(priceHistory, days) {
   return { days, min, max, avg, first: prices[0], last: prices.at(-1), change, count: prices.length };
 }
 
-const VALUE_SORT_SCORE = { cpu: "passmarkscore", gpu: "3dmarkscore" };
+// 카테고리 목록 필터를 MongoDB 쿼리로 변환
+function buildCategoryQuery(params) {
+  const {
+    category, q, brand, socket, chipset, memCap, memDdr,
+    storageType, storageIface, storageCap, psuWatt, caseForm,
+    conditionShow, conditionHide,
+  } = params;
 
-// GET /api/parts?category=cpu&page=1&limit=50&sort=value_desc
-router.get("/", setCacheHeaders(300, 3600), async (req, res) => {
-  const { category, page, limit, sort } = req.query;
+  const must = [];
+
+  if (category) must.push({ category });
+  if (category === "motherboard") must.push({ price: { $gte: 50000 } });
+  if (q?.trim()) must.push({ name: { $regex: escapeRegex(q.trim()), $options: "i" } });
+
+  if (brand && brand !== "all") {
+    const AMD_MB = ["a320","a520","a620","b350","b450","b550","b650","b850","x370","x470","x570","x670","x870"].join("|");
+    const INT_MB = ["h81","h97","h110","h170","h270","h310","h370","h410","h470","h510","h610","h810","b150","b250","b360","b365","b460","b560","b660","b760","b840","b860","z170","z270","z370","z390","z490","z590","z690","z790","z890"].join("|");
+    const BRAND_RE = {
+      cpu:  { intel: "인텔|\\bintel\\b|\\bcore\\b|\\bi[3579][ -]", amd: "\\bamd\\b|라이젠|\\bryzen\\b|\\bthreadripper\\b" },
+      gpu:  { nvidia: "지포스|geforce|\\brtx\\b|\\bgtx\\b|\\bnvidia\\b", amd: "라데온|\\bradeon\\b|\\brx\\s*\\d" },
+      motherboard: { amd: `\\b(${AMD_MB})\\b`, intel: `\\b(${INT_MB})\\b` },
+    };
+    const re = BRAND_RE[category]?.[brand.toLowerCase()];
+    if (re) must.push({ name: { $regex: re, $options: "i" } });
+  }
+
+  if (socket && socket !== "all") {
+    const sr = escapeRegex(socket);
+    must.push({ $or: [{ name: { $regex: sr, $options: "i" } }, { info: { $regex: sr, $options: "i" } }, { specSummary: { $regex: sr, $options: "i" } }] });
+  }
+
+  if (chipset && chipset !== "all") {
+    must.push({ name: { $regex: `\\b${escapeRegex(chipset)}\\b`, $options: "i" } });
+  }
+
+  if (memCap && memCap !== "all") {
+    const n = memCap.replace("GB", "");
+    const cr = `\\b${n}\\s*gb\\b`;
+    must.push({ $or: [{ name: { $regex: cr, $options: "i" } }, { info: { $regex: cr, $options: "i" } }, { specSummary: { $regex: cr, $options: "i" } }] });
+  }
+
+  if (memDdr && memDdr !== "all") {
+    must.push({ $or: [{ name: { $regex: memDdr, $options: "i" } }, { info: { $regex: memDdr, $options: "i" } }] });
+  }
+
+  if (storageType && storageType !== "all") {
+    must.push({ $or: [{ "specs.type": { $regex: `^${escapeRegex(storageType)}$`, $options: "i" } }, { name: { $regex: `\\b${escapeRegex(storageType)}\\b`, $options: "i" } }] });
+  }
+
+  if (storageIface && storageIface !== "all") {
+    must.push({ $or: [{ "specs.interface": { $regex: escapeRegex(storageIface), $options: "i" } }, { name: { $regex: `\\b${escapeRegex(storageIface)}\\b`, $options: "i" } }] });
+  }
+
+  const STORAGE_CAP_PATS = {
+    "128GB": ["128gb"], "256GB": ["256gb","240gb"], "500GB": ["500gb","512gb"],
+    "1TB": ["1tb"], "2TB": ["2tb"], "4TB": ["4tb"], "8TB": ["8tb"],
+    "12TB+": ["12tb","14tb","16tb","18tb","20tb","22tb","24tb"],
+  };
+  if (storageCap && storageCap !== "all") {
+    const pats = STORAGE_CAP_PATS[storageCap];
+    if (pats) must.push({ $or: pats.map((p) => ({ name: { $regex: `\\b${p}\\b`, $options: "i" } })) });
+  }
+
+  if (psuWatt && psuWatt !== "all") {
+    const w = escapeRegex(String(psuWatt));
+    must.push({ $or: [{ info: { $regex: `wattage:\\s*${w}\\s*w`, $options: "i" } }, { name: { $regex: `${w}\\s*w(?:\\b|$)`, $options: "i" } }] });
+  }
+
+  if (caseForm && caseForm !== "all") {
+    const CASE_RE = {
+      "ATX":      { match: "\\batx\\b", exclude: "m-?atx|matx|micro|e-?atx|eatx" },
+      "mATX":     { match: "m-?atx|matx|micro.?atx" },
+      "Mini-ITX": { match: "mini.?itx" },
+      "E-ATX":    { match: "e-?atx|eatx" },
+    };
+    const cf = CASE_RE[caseForm];
+    if (cf) {
+      must.push({ $or: [{ name: { $regex: cf.match, $options: "i" } }, { "specs.formFactor": { $regex: cf.match, $options: "i" } }] });
+      if (cf.exclude) must.push({ name: { $not: { $regex: cf.exclude, $options: "i" } } });
+    }
+  }
+
+  const COND_RE = { used: "중고", refer: "리퍼", parallel: "병행수입", multipack: "멀티팩" };
+  if (conditionShow) {
+    const orConds = conditionShow.split(",").filter(Boolean).map((c) => COND_RE[c]).filter(Boolean).map((r) => ({ name: { $regex: r } }));
+    if (orConds.length) must.push({ $or: orConds });
+  }
+  if (conditionHide) {
+    for (const c of conditionHide.split(",").filter(Boolean)) {
+      if (COND_RE[c]) must.push({ name: { $not: { $regex: COND_RE[c] } } });
+    }
+  }
+
+  if (must.length === 0) return {};
+  if (must.length === 1) return must[0];
+  return { $and: must };
+}
+
+function buildSortConfig(sort, category) {
+  const VALUE_SCORE = { cpu: "$benchmarkScore.passmarkscore", gpu: "$benchmarkScore.3dmarkscore" };
+  switch (sort) {
+    case "price":      return { sortDoc: { price: 1 }, isValue: false };
+    case "price-desc": return { sortDoc: { price: -1 }, isValue: false };
+    case "score":      return { sortDoc: { "benchmarkScore.passmarkscore": -1 }, isValue: false };
+    case "3dmark":     return { sortDoc: { "benchmarkScore.3dmarkscore": -1 }, isValue: false };
+    case "name":       return { sortDoc: { name: 1 }, isValue: false };
+    case "value": {
+      const scoreField = VALUE_SCORE[category];
+      if (scoreField) return { isValue: true, scoreField };
+      return { sortDoc: { mallCount: -1 }, isValue: false };
+    }
+    default:
+      return { sortDoc: { mallCount: -1 }, isValue: false };
+  }
+}
+
+// GET /api/parts?category=cpu&page=1&limit=24&sort=value&brand=intel&socket=AM5 ...
+router.get("/", setCacheHeaders(60, 1800), async (req, res) => {
+  const {
+    category, page, limit, sort = "popularity",
+    q, brand, socket, chipset, memCap, memDdr,
+    storageType, storageIface, storageCap, psuWatt, caseForm,
+    conditionShow, conditionHide,
+  } = req.query;
+
   try {
     const db = getDB();
-    const query = category ? { category } : {};
-    // 메인보드는 허위매물(5만원 미만) 필터링
-    if (category === "motherboard") query.price = { $gte: 50000 };
     const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(2000, Math.max(1, parseInt(limit) || 2000));
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 24));
     const skip = (pageNum - 1) * limitNum;
 
-    const [parts, total] = await Promise.all([
-      (() => {
-        const scoreKey = category && VALUE_SORT_SCORE[category];
-        if (sort === "value_desc" && scoreKey) {
-          const scoreField = `$benchmarkScore.${scoreKey}`;
-          return db.collection("parts").aggregate([
-            { $match: { ...query, price: { $gt: 0 }, benchmarkScore: { $exists: true } } },
-            { $addFields: { _vs: { $cond: [{ $gt: [{ $ifNull: [scoreField, 0] }, 0] }, { $divide: [scoreField, "$price"] }, 0] } } },
-            { $sort: { _vs: -1 } },
-            { $skip: skip },
-            { $limit: limitNum },
-            { $project: { priceHistory: 0, _vs: 0 } },
-          ]).toArray();
-        }
-        return db.collection("parts").find(query).project({ priceHistory: 0 }).skip(skip).limit(limitNum).toArray();
-      })(),
-      db.collection("parts").countDocuments(query),
-    ]);
+    const query = buildCategoryQuery({
+      category, q, brand, socket, chipset, memCap, memDdr,
+      storageType, storageIface, storageCap, psuWatt, caseForm,
+      conditionShow, conditionHide,
+    });
+    const sortConfig = buildSortConfig(sort, category);
+
+    let parts, total;
+
+    if (sortConfig.isValue) {
+      const sf = sortConfig.scoreField;
+      const pipeline = [
+        { $match: { ...query, price: { $gt: 0 }, benchmarkScore: { $exists: true } } },
+        { $addFields: { _vs: { $cond: [{ $gt: [{ $ifNull: [sf, 0] }, 0] }, { $divide: [sf, "$price"] }, 0] } } },
+        { $facet: {
+          data: [{ $sort: { _vs: -1 } }, { $skip: skip }, { $limit: limitNum }, { $project: { priceHistory: 0, _vs: 0 } }],
+          count: [{ $count: "total" }],
+        }},
+      ];
+      const [result] = await db.collection("parts").aggregate(pipeline).toArray();
+      parts = result?.data || [];
+      total = result?.count?.[0]?.total || 0;
+    } else {
+      [parts, total] = await Promise.all([
+        db.collection("parts").find(query).project({ priceHistory: 0 }).sort(sortConfig.sortDoc).skip(skip).limit(limitNum).toArray(),
+        db.collection("parts").countDocuments(query),
+      ]);
+    }
 
     res.set("X-Total-Count", String(total));
     res.set("X-Page", String(pageNum));

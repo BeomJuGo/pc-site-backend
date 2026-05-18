@@ -1,10 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { fetchFullPartData } from "../utils/api";
+import { fetchFilteredParts } from "../utils/api";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 import PartCard from "../components/PartCard";
 import SkeletonCard from "../components/SkeletonCard";
-import { detectConditions } from "../utils/productCondition";
 
 const CATEGORY_NAMES = {
   cpu: "CPU",
@@ -15,11 +14,6 @@ const CATEGORY_NAMES = {
   case: "케이스",
   cooler: "쿨러",
   psu: "파워",
-};
-
-const BRAND_KEYWORDS = {
-  cpu: { intel: ["인텔", "intel"], amd: ["amd", "라이젠", "ryzen"] },
-  gpu: { nvidia: ["지포스", "geforce", "rtx", "gtx", "nvidia"], amd: ["라데온", "radeon", "amd"] },
 };
 
 const CHIPSET_MAP = {
@@ -42,105 +36,23 @@ const STORAGE_TYPES = ["SSD", "HDD"];
 const STORAGE_IFACES = ["NVMe", "SATA"];
 const CPU_SOCKETS = ["AM4", "AM5", "LGA1700", "LGA1851"];
 const CASE_FORM_FACTORS = ["ATX", "mATX", "Mini-ITX", "E-ATX"];
-const STORAGE_CAPS = [
-  { label: "128GB",  patterns: ["128gb"] },
-  { label: "256GB",  patterns: ["256gb", "240gb"] },
-  { label: "500GB",  patterns: ["500gb", "512gb"] },
-  { label: "1TB",    patterns: ["1tb"] },
-  { label: "2TB",    patterns: ["2tb"] },
-  { label: "4TB",    patterns: ["4tb"] },
-  { label: "8TB",    patterns: ["8tb"] },
-  { label: "12TB+",  patterns: ["12tb", "14tb", "16tb", "18tb", "20tb", "22tb", "24tb"] },
-];
+const STORAGE_CAPS = ["128GB", "256GB", "500GB", "1TB", "2TB", "4TB", "8TB", "12TB+"];
 
-function partText(p) {
-  return [p.name, p.info, p.specSummary].filter(Boolean).join(" ").toLowerCase();
-}
-
-function matchBrand(p, category, brand) {
-  if (brand === "all") return true;
-  if (category === "cpu" || category === "gpu") {
-    const mfr = String(p.manufacturer || "").toLowerCase();
-    if (mfr === brand) return true;
-    const nm = String(p.name || "").toLowerCase();
-    return (BRAND_KEYWORDS[category]?.[brand] || []).some((k) => nm.includes(k));
-  }
-  if (category === "motherboard") {
-    const nm = String(p.name || "").toLowerCase();
-    return (CHIPSET_MAP[brand] || []).some((cs) => nm.includes(cs));
-  }
-  return true;
-}
-
-function matchMemCap(p, cap) {
-  if (cap === "all") return true;
-  const n = cap.replace("GB", "");
-  const text = [p.name, p.info, p.specSummary, p.spec].filter(Boolean).join(" ");
-  return new RegExp(`\\b${n}\\s*gb\\b`, "i").test(text);
-}
-
-const BOGUS_CAPS = new Set(["1gb","2gb","4gb","5gb","6gb","8gb","16gb","32gb"]);
-
-function matchStorageCap(p, cap) {
-  if (cap === "all") return true;
-  const entry = STORAGE_CAPS.find((c) => c.label === cap);
-  if (!entry) return false;
-  const rawCap = String(p.specs?.capacity || "").toLowerCase();
-  // 파싱 버그로 잘못 저장된 소용량 capacity는 신뢰하지 않음
-  const validCap = rawCap && !BOGUS_CAPS.has(rawCap);
-  if (validCap && entry.patterns.some((pat) => rawCap === pat)) return true;
-  // 제품명에서 word-boundary 검색 (오탐 방지)
-  const text = [p.name].filter(Boolean).join(" ").toLowerCase();
-  return entry.patterns.some((pat) => new RegExp(`\\b${pat}\\b`).test(text));
-}
-
-function matchCaseForm(p, ff) {
-  if (ff === "all") return true;
-  const factors = p.specs?.formFactor;
-  const list = Array.isArray(factors) ? factors : typeof factors === "string" ? [factors] : [];
-  const text = partText(p);
-  const target = ff.toLowerCase();
-  return list.some((f) => String(f).toLowerCase() === target) || text.includes(target);
-}
-
-function matchStorageType(p, type) {
-  if (type === "all") return true;
-  const dbType = String(p.specs?.type || "").toUpperCase();
-  if (dbType) return dbType === type.toUpperCase();
-  return partText(p).includes(type.toLowerCase());
-}
-
-function matchStorageIface(p, iface) {
-  if (iface === "all") return true;
-  const dbIface = String(p.specs?.interface || "").toLowerCase();
-  if (dbIface) return dbIface.includes(iface.toLowerCase());
-  return partText(p).includes(iface.toLowerCase());
-}
-
-function matchCpuSocket(p, socket) {
-  if (socket === "all") return true;
-  const text = partText(p);
-  return new RegExp(`\\b${socket.replace(/(\d)/g, "[$1]")}\\b`, "i").test(text);
-}
-
-function matchPsuWatt(p, watt) {
-  if (watt === "all") return true;
-  // info 필드의 "Wattage: XXXW" 패턴 우선 (가장 정확)
-  const infoMatch = (p.info || "").match(/wattage:\s*(\d{3,4})\s*w/i);
-  if (infoMatch) return Number(infoMatch[1]) === Number(watt);
-  // 제품명에서 숫자W 패턴 검색
-  const nameMatch = (p.name || "").match(/(\d{3,4})\s*w(?:\b|$)/i);
-  return nameMatch && Number(nameMatch[1]) === Number(watt);
-}
+const ITEMS_PER_PAGE = 24;
 
 export default function Category() {
   const { category } = useParams();
   const navigate = useNavigate();
 
   const [parts, setParts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState(() => ["cpu", "gpu"].includes(category) ? "value" : "popularity");
   const [brandFilter, setBrandFilter] = useState("all");
   const [chipsetFilter, setChipsetFilter] = useState("all");
@@ -155,30 +67,14 @@ export default function Category() {
   const [showUsedOnly, setShowUsedOnly] = useState(false);
   const [showReferOnly, setShowReferOnly] = useState(false);
   const [hideParallel, setHideParallel] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
 
-  const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
-  const categoryLabel = LABELS[category] || category;
-  useSeoMeta({
-    title: `가성비PC | ${categoryLabel} 가격비교`,
-    description: `${categoryLabel} 최저가 및 성능 비교. 실시간 가격과 벤치마크로 가성비 좋은 ${categoryLabel}을 찾아보세요.`,
-    path: `/category/${category}`,
-  });
-
+  // 검색 디바운스 400ms
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchFullPartData(category)
-      .then((data) => { setParts(data); setLoading(false); })
-      .catch(() => { setError("데이터를 불러오지 못했습니다."); setLoading(false); });
-  }, [category]);
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, sortBy, brandFilter, chipsetFilter, memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter, showUsedOnly, showReferOnly, hideParallel]);
-  useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
-
+  // 카테고리 변경 시 전체 초기화
   useEffect(() => {
     setBrandFilter("all");
     setChipsetFilter("all");
@@ -194,8 +90,78 @@ export default function Category() {
     setShowReferOnly(false);
     setHideParallel(false);
     setSearch("");
+    setDebouncedSearch("");
     setSortBy(["cpu", "gpu"].includes(category) ? "value" : "popularity");
+    setCurrentPage(1);
   }, [category]);
+
+  // 필터 변경 시 페이지 1로 리셋
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    category, debouncedSearch, sortBy, brandFilter, chipsetFilter,
+    memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
+    storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
+    showUsedOnly, showReferOnly, hideParallel,
+  ]);
+
+  // 브랜드 변경 시 칩셋 초기화
+  useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
+
+  // 서버에서 데이터 fetch
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    const conditionShow = [showUsedOnly && "used", showReferOnly && "refer"].filter(Boolean).join(",");
+    const conditionHide = hideParallel ? "parallel" : "";
+
+    fetchFilteredParts({
+      category,
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      sort: sortBy,
+      q: debouncedSearch,
+      brand: brandFilter,
+      socket: cpuSocketFilter,
+      chipset: chipsetFilter,
+      memCap: memCapFilter,
+      memDdr: memDdrFilter,
+      storageType: storageTypeFilter,
+      storageIface: storageIfaceFilter,
+      storageCap: storageCapFilter,
+      psuWatt: psuWattFilter,
+      caseForm: caseFormFilter,
+      conditionShow,
+      conditionHide,
+    }).then(({ parts: p, total: t, totalPages: tp }) => {
+      if (!active) return;
+      setParts(p);
+      setTotal(t);
+      setTotalPages(tp);
+      setLoading(false);
+    }).catch(() => {
+      if (!active) return;
+      setError("데이터를 불러오지 못했습니다.");
+      setLoading(false);
+    });
+
+    return () => { active = false; };
+  }, [
+    category, currentPage, debouncedSearch, sortBy, brandFilter, chipsetFilter,
+    memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
+    storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
+    showUsedOnly, showReferOnly, hideParallel,
+  ]);
+
+  const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
+  const categoryLabel = LABELS[category] || category;
+  useSeoMeta({
+    title: `가성비PC | ${categoryLabel} 가격비교`,
+    description: `${categoryLabel} 최저가 및 성능 비교. 실시간 가격과 벤치마크로 가성비 좋은 ${categoryLabel}을 찾아보세요.`,
+    path: `/category/${category}`,
+  });
 
   const brandOptions =
     category === "gpu" ? ["all", "nvidia", "amd"] :
@@ -204,77 +170,12 @@ export default function Category() {
 
   const chipsetOptions = category === "motherboard" ? CHIPSET_MAP[brandFilter] || [] : [];
 
-  const filtered = useMemo(() => parts
-    .filter((p) => {
-      const nm = String(p.name || "").toLowerCase();
-      const s = search.toLowerCase();
-      if (!nm.includes(s)) return false;
-      if (category === "motherboard" && p.price > 0 && p.price < 50000) return false;
-      if (!matchBrand(p, category, brandFilter)) return false;
-      if (category === "motherboard" && chipsetFilter !== "all" && !nm.includes(chipsetFilter)) return false;
-      if (category === "memory" && !matchMemCap(p, memCapFilter)) return false;
-      if (category === "memory" && memDdrFilter !== "all" && !partText(p).includes(memDdrFilter.toLowerCase())) return false;
-      if (category === "storage" && !matchStorageCap(p, storageCapFilter)) return false;
-      if (category === "storage" && !matchStorageType(p, storageTypeFilter)) return false;
-      if (category === "storage" && !matchStorageIface(p, storageIfaceFilter)) return false;
-      if (category === "cpu" && !matchCpuSocket(p, cpuSocketFilter)) return false;
-      if (category === "case" && !matchCaseForm(p, caseFormFilter)) return false;
-      if (category === "psu" && !matchPsuWatt(p, psuWattFilter)) return false;
-      const conds = detectConditions(p.name);
-      const isUsed = conds.some((c) => c.key === "used");
-      const isRefer = conds.some((c) => c.key === "refer");
-      const isParallel = conds.some((c) => c.key === "parallel");
-      if (showUsedOnly || showReferOnly) {
-        if (!((showUsedOnly && isUsed) || (showReferOnly && isRefer))) return false;
-      }
-      if (hideParallel && isParallel) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const aP = Number(a.price) || 0;
-      const bP = Number(b.price) || 0;
-      const aS = Number(a.benchmarkScore?.passmarkscore) || 0;
-      const bS = Number(b.benchmarkScore?.passmarkscore) || 0;
-      const a3d = Number(a.benchmarkScore?.["3dmarkscore"]) || 0;
-      const b3d = Number(b.benchmarkScore?.["3dmarkscore"]) || 0;
-
-      if (sortBy === "popularity") {
-        const aScore = Number(a.popularityScore ?? a.mallCount) || 0;
-        const bScore = Number(b.popularityScore ?? b.mallCount) || 0;
-        return bScore - aScore;
-      }
-      if (sortBy === "price") return aP - bP;
-      if (sortBy === "price-desc") return bP - aP;
-      if (sortBy === "score") return bS - aS;
-      if (sortBy === "3dmark") return b3d - a3d;
-      if (sortBy === "value") {
-        const aScore = category === "gpu" ? a3d : aS;
-        const bScore = category === "gpu" ? b3d : bS;
-        const aV = aP > 0 && aScore > 0 ? aScore / aP : 0;
-        const bV = bP > 0 && bScore > 0 ? bScore / bP : 0;
-        return bV - aV;
-      }
-      return String(a.name).localeCompare(String(b.name));
-    }),
-  [parts, search, sortBy, category, brandFilter, chipsetFilter, memCapFilter, memDdrFilter,
-   storageCapFilter, storageTypeFilter, storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
-   showUsedOnly, showReferOnly, hideParallel]);
-
-  const startIdx = (currentPage - 1) * itemsPerPage;
-  const pageItems = filtered.slice(startIdx, startIdx + itemsPerPage);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const catName = CATEGORY_NAMES[category] || category.toUpperCase();
 
-  if (loading) {
-    return (
-      <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
-        <div className="h-8 w-32 bg-gray-200 rounded animate-pulse mb-5" />
-        <div className="space-y-2">
-          {Array(8).fill(0).map((_, i) => <SkeletonCard key={i} />)}
-        </div>
-      </div>
-    );
-  }
+  const pillBase = "px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors";
+  const pillActive = "bg-blue-600 text-white border-blue-600";
+  const pillIdle = "bg-white text-gray-600 border-gray-300 hover:bg-gray-50 hover:border-gray-400";
+  const subActive = "bg-blue-600 text-white border-blue-600";
 
   if (error) {
     return (
@@ -291,18 +192,16 @@ export default function Category() {
     );
   }
 
-  const pillBase = "px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors";
-  const pillActive = "bg-blue-600 text-white border-blue-600";
-  const pillIdle = "bg-white text-gray-600 border-gray-300 hover:bg-gray-50 hover:border-gray-400";
-  const subActive = "bg-blue-600 text-white border-blue-600";
-
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-2xl font-bold text-gray-900">{catName}</h2>
-        <span className="text-sm text-gray-500">총 {filtered.length.toLocaleString()}개</span>
+        <span className="text-sm text-gray-500">
+          {loading ? "로딩 중..." : `총 ${total.toLocaleString()}개`}
+        </span>
       </div>
 
+      {/* 검색 + 정렬 */}
       <div className="flex flex-wrap gap-2 items-center mb-5">
         <input
           type="text"
@@ -439,11 +338,11 @@ export default function Category() {
               </button>
               {STORAGE_CAPS.map((c) => (
                 <button
-                  key={c.label}
-                  onClick={() => setStorageCapFilter(c.label)}
-                  className={`${pillBase} ${storageCapFilter === c.label ? pillActive : pillIdle}`}
+                  key={c}
+                  onClick={() => setStorageCapFilter(c)}
+                  className={`${pillBase} ${storageCapFilter === c ? pillActive : pillIdle}`}
                 >
-                  {c.label}
+                  {c}
                 </button>
               ))}
             </div>
@@ -531,13 +430,18 @@ export default function Category() {
         </label>
       </div>
 
-      {pageItems.length === 0 ? (
+      {/* 부품 목록 */}
+      {loading ? (
+        <div className="border border-gray-200 rounded-xl bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
+          {Array(ITEMS_PER_PAGE).fill(0).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : parts.length === 0 ? (
         <div className="text-center py-16 text-gray-400">조건에 맞는 부품이 없습니다.</div>
       ) : (
         <div className="border border-gray-200 rounded-xl bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
-          {pageItems.map((part) => (
+          {parts.map((part) => (
             <PartCard
-              key={part.id || part._id || part.name}
+              key={part._id || part.name}
               part={part}
               onClick={() => navigate(`/detail/${category}/${encodeURIComponent(part.name)}`)}
             />

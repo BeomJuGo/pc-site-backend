@@ -122,6 +122,48 @@ export const fetchDanawaUrl = async (name) => {
   }
 };
 
+export const fetchFilteredParts = async ({
+  category, page = 1, limit = 24, sort = "popularity",
+  q = "", brand = "all", socket = "all", chipset = "all",
+  memCap = "all", memDdr = "all", storageType = "all",
+  storageIface = "all", storageCap = "all", psuWatt = "all",
+  caseForm = "all", conditionShow = "", conditionHide = "",
+} = {}) => {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  params.set("page", page);
+  params.set("limit", limit);
+  params.set("sort", sort);
+  if (q) params.set("q", q);
+  if (brand && brand !== "all") params.set("brand", brand);
+  if (socket && socket !== "all") params.set("socket", socket);
+  if (chipset && chipset !== "all") params.set("chipset", chipset);
+  if (memCap && memCap !== "all") params.set("memCap", memCap);
+  if (memDdr && memDdr !== "all") params.set("memDdr", memDdr);
+  if (storageType && storageType !== "all") params.set("storageType", storageType);
+  if (storageIface && storageIface !== "all") params.set("storageIface", storageIface);
+  if (storageCap && storageCap !== "all") params.set("storageCap", storageCap);
+  if (psuWatt && psuWatt !== "all") params.set("psuWatt", psuWatt);
+  if (caseForm && caseForm !== "all") params.set("caseForm", caseForm);
+  if (conditionShow) params.set("conditionShow", conditionShow);
+  if (conditionHide) params.set("conditionHide", conditionHide);
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/parts?${params}`);
+    const total = parseInt(res.headers.get("X-Total-Count") || "0");
+    const totalPages = parseInt(res.headers.get("X-Total-Pages") || "1");
+    const data = await res.json();
+    const parts = data.map((p, i) => ({
+      id: i + 1, ...p,
+      benchmarkScore: p.benchmarkScore ?? { passmarkscore: null, cinebenchSingle: null, cinebenchMulti: null, "3dmarkscore": null },
+    }));
+    return { parts, total, totalPages };
+  } catch (e) {
+    console.error("[fetchFilteredParts] error:", e);
+    return { parts: [], total: 0, totalPages: 1 };
+  }
+};
+
 export const fetchSearch = async ({ q, category, priceMin, priceMax, sort = "price_asc", limit = 50 }) => {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
