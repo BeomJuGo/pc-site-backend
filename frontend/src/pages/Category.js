@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchFilteredParts } from "../utils/api";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 import PartCard from "../components/PartCard";
@@ -40,7 +40,6 @@ const STORAGE_CAPS = ["128GB", "256GB", "500GB", "1TB", "2TB", "4TB", "8TB", "12
 
 const ITEMS_PER_PAGE = 24;
 
-// 중고/리퍼/병행수입 데이터가 실제로 존재하는 카테고리
 const CAT_HAS_USED = new Set(["storage", "memory", "gpu", "motherboard"]);
 const CAT_HAS_REFER = new Set(["storage"]);
 const CAT_HAS_PARALLEL = new Set(["storage", "memory"]);
@@ -48,74 +47,114 @@ const CAT_HAS_PARALLEL = new Set(["storage", "memory"]);
 export default function Category() {
   const { category } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [parts, setParts] = useState([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
 
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [sortBy, setSortBy] = useState(() => ["cpu", "gpu"].includes(category) ? "value" : "popularity");
-  const [brandFilter, setBrandFilter] = useState("all");
-  const [chipsetFilter, setChipsetFilter] = useState("all");
-  const [memCapFilter, setMemCapFilter] = useState("all");
-  const [memDdrFilter, setMemDdrFilter] = useState("all");
-  const [storageCapFilter, setStorageCapFilter] = useState("all");
-  const [storageTypeFilter, setStorageTypeFilter] = useState("all");
-  const [storageIfaceFilter, setStorageIfaceFilter] = useState("all");
-  const [cpuSocketFilter, setCpuSocketFilter] = useState("all");
-  const [caseFormFilter, setCaseFormFilter] = useState("all");
-  const [psuWattFilter, setPsuWattFilter] = useState("all");
-  const [showUsedOnly, setShowUsedOnly] = useState(false);
-  const [showReferOnly, setShowReferOnly] = useState(false);
-  const [hideParallel, setHideParallel] = useState(false);
-  const [packTypeFilter, setPackTypeFilter] = useState("all");
+  // Local input state for immediate feedback; URL "q" param is the committed search
+  const [search, setSearch] = useState(searchParams.get("q") || "");
+  const debounceRef = useRef(null);
 
-  // 검색 디바운스 400ms
+  // Derive all filter values from URL params
+  const defaultSort = ["cpu", "gpu"].includes(category) ? "value" : "popularity";
+  const sortBy = searchParams.get("sort") || defaultSort;
+  const brandFilter = searchParams.get("brand") || "all";
+  const chipsetFilter = searchParams.get("chipset") || "all";
+  const memCapFilter = searchParams.get("memCap") || "all";
+  const memDdrFilter = searchParams.get("memDdr") || "all";
+  const storageCapFilter = searchParams.get("storageCap") || "all";
+  const storageTypeFilter = searchParams.get("storageType") || "all";
+  const storageIfaceFilter = searchParams.get("storageIface") || "all";
+  const cpuSocketFilter = searchParams.get("socket") || "all";
+  const caseFormFilter = searchParams.get("caseForm") || "all";
+  const psuWattFilter = searchParams.get("psuWatt") || "all";
+  const showUsedOnly = searchParams.get("used") === "1";
+  const showReferOnly = searchParams.get("refer") === "1";
+  const hideParallel = searchParams.get("hideParallel") === "1";
+  const packTypeFilter = searchParams.get("packType") || "all";
+  const currentPage = parseInt(searchParams.get("page") || "1", 10);
+  const debouncedSearch = searchParams.get("q") || "";
+
+  // Generic filter setter — replaces current history entry (no back-button pollution)
+  const setFilter = (key, val) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (val && val !== "all" && val !== "") next.set(key, val);
+      else next.delete(key);
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  };
+
+  const setBoolFilter = (key, val) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (val) next.set(key, "1");
+      else next.delete(key);
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  };
+
+  const setPage = (p) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (p > 1) next.set("page", String(p));
+      else next.delete("page");
+      return next;
+    }, { replace: true });
+  };
+
+  // Brand change also resets chipset
+  const handleBrandChange = (brand) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (brand && brand !== "all") next.set("brand", brand);
+      else next.delete("brand");
+      next.delete("chipset");
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  };
+
+  // Sort change omits param when it equals the default
+  const handleSortChange = (val) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (val !== defaultSort) next.set("sort", val);
+      else next.delete("sort");
+      next.delete("page");
+      return next;
+    }, { replace: true });
+  };
+
+  // Search: local state updates immediately; URL param updated after 400ms debounce
+  const handleSearchChange = (val) => {
+    setSearch(val);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (val.trim()) next.set("q", val.trim());
+        else next.delete("q");
+        next.delete("page");
+        return next;
+      }, { replace: true });
+    }, 400);
+  };
+
+  // Category change: reset local search input (URL params are already clean because
+  // all category nav links are clean paths with no search params)
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 400);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  // 카테고리 변경 시 전체 초기화
-  useEffect(() => {
-    setBrandFilter("all");
-    setChipsetFilter("all");
-    setMemCapFilter("all");
-    setMemDdrFilter("all");
-    setStorageCapFilter("all");
-    setStorageTypeFilter("all");
-    setStorageIfaceFilter("all");
-    setCpuSocketFilter("all");
-    setCaseFormFilter("all");
-    setPsuWattFilter("all");
-    setShowUsedOnly(false);
-    setShowReferOnly(false);
-    setHideParallel(false);
-    setPackTypeFilter("all");
     setSearch("");
-    setDebouncedSearch("");
-    setSortBy(["cpu", "gpu"].includes(category) ? "value" : "popularity");
-    setCurrentPage(1);
+    clearTimeout(debounceRef.current);
   }, [category]);
 
-  // 필터 변경 시 페이지 1로 리셋
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [
-    category, debouncedSearch, sortBy, brandFilter, chipsetFilter,
-    memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
-    storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
-    showUsedOnly, showReferOnly, hideParallel, packTypeFilter,
-  ]);
-
-  // 브랜드 변경 시 칩셋 초기화
-  useEffect(() => { setChipsetFilter("all"); }, [brandFilter]);
-
-  // 서버에서 데이터 fetch
+  // Fetch data whenever any filter param changes
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -163,6 +202,17 @@ export default function Category() {
     showUsedOnly, showReferOnly, hideParallel, packTypeFilter,
   ]);
 
+  // Scroll restoration: restore saved scroll position after parts load
+  useEffect(() => {
+    if (!loading && parts.length > 0) {
+      const saved = sessionStorage.getItem(`scroll_${category}`);
+      if (saved) {
+        sessionStorage.removeItem(`scroll_${category}`);
+        requestAnimationFrame(() => window.scrollTo(0, parseInt(saved, 10)));
+      }
+    }
+  }, [loading, parts.length, category]);
+
   const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
   const categoryLabel = LABELS[category] || category;
   useSeoMeta({
@@ -172,7 +222,7 @@ export default function Category() {
   });
 
   const brandOptions =
-    category === "gpu" ? ["all", "nvidia", "amd"] :
+    category === "gpu" ? ["all", "amd", "nvidia"] :
     category === "cpu" ? ["all", "intel", "amd"] :
     category === "motherboard" ? ["all", "amd", "intel"] : ["all"];
 
@@ -215,12 +265,12 @@ export default function Category() {
           type="text"
           placeholder="제품명 검색"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => handleSearchChange(e.target.value)}
           className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
         />
         <select
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
+          onChange={(e) => handleSortChange(e.target.value)}
           className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-300 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="popularity">인기순</option>
@@ -237,7 +287,7 @@ export default function Category() {
             {brandOptions.map((brand) => (
               <button
                 key={brand}
-                onClick={() => setBrandFilter(brand)}
+                onClick={() => handleBrandChange(brand)}
                 className={`${pillBase} ${brandFilter === brand ? pillActive : pillIdle}`}
               >
                 {brand === "all" ? "전체" : brand.toUpperCase()}
@@ -252,7 +302,7 @@ export default function Category() {
               {CPU_SOCKETS.map((socket) => (
                 <button
                   key={socket}
-                  onClick={() => setCpuSocketFilter(cpuSocketFilter === socket ? "all" : socket)}
+                  onClick={() => setFilter("socket", cpuSocketFilter === socket ? "" : socket)}
                   className={`${pillBase} ${cpuSocketFilter === socket ? pillActive : pillIdle}`}
                 >
                   {socket}
@@ -267,7 +317,7 @@ export default function Category() {
               ].map(({ value, label }) => (
                 <button
                   key={value}
-                  onClick={() => setPackTypeFilter(value)}
+                  onClick={() => setFilter("packType", value)}
                   className={`${pillBase} ${packTypeFilter === value ? pillActive : pillIdle}`}
                 >
                   {label}
@@ -280,7 +330,7 @@ export default function Category() {
         {category === "motherboard" && brandFilter !== "all" && chipsetOptions.length > 0 && (
           <div className="flex gap-1 flex-wrap">
             <button
-              onClick={() => setChipsetFilter("all")}
+              onClick={() => setFilter("chipset", "")}
               className={`${pillBase} ${chipsetFilter === "all" ? subActive : pillIdle}`}
             >
               전체
@@ -288,7 +338,7 @@ export default function Category() {
             {chipsetOptions.map((cs) => (
               <button
                 key={cs}
-                onClick={() => setChipsetFilter(cs)}
+                onClick={() => setFilter("chipset", cs)}
                 className={`${pillBase} ${chipsetFilter === cs ? subActive : pillIdle}`}
               >
                 {cs.toUpperCase()}
@@ -303,7 +353,7 @@ export default function Category() {
               {MEMORY_DDRS.map((ddr) => (
                 <button
                   key={ddr}
-                  onClick={() => setMemDdrFilter(memDdrFilter === ddr ? "all" : ddr)}
+                  onClick={() => setFilter("memDdr", memDdrFilter === ddr ? "" : ddr)}
                   className={`${pillBase} ${memDdrFilter === ddr ? pillActive : pillIdle}`}
                 >
                   {ddr}
@@ -312,7 +362,7 @@ export default function Category() {
             </div>
             <div className="flex gap-1 flex-wrap">
               <button
-                onClick={() => setMemCapFilter("all")}
+                onClick={() => setFilter("memCap", "")}
                 className={`${pillBase} ${memCapFilter === "all" ? pillActive : pillIdle}`}
               >
                 전체
@@ -320,7 +370,7 @@ export default function Category() {
               {MEMORY_CAPS.map((cap) => (
                 <button
                   key={cap}
-                  onClick={() => setMemCapFilter(cap)}
+                  onClick={() => setFilter("memCap", cap)}
                   className={`${pillBase} ${memCapFilter === cap ? pillActive : pillIdle}`}
                 >
                   {cap}
@@ -336,7 +386,7 @@ export default function Category() {
               {STORAGE_TYPES.map((t) => (
                 <button
                   key={t}
-                  onClick={() => setStorageTypeFilter(storageTypeFilter === t ? "all" : t)}
+                  onClick={() => setFilter("storageType", storageTypeFilter === t ? "" : t)}
                   className={`${pillBase} ${storageTypeFilter === t ? pillActive : pillIdle}`}
                 >
                   {t}
@@ -347,7 +397,7 @@ export default function Category() {
               {STORAGE_IFACES.map((iface) => (
                 <button
                   key={iface}
-                  onClick={() => setStorageIfaceFilter(storageIfaceFilter === iface ? "all" : iface)}
+                  onClick={() => setFilter("storageIface", storageIfaceFilter === iface ? "" : iface)}
                   className={`${pillBase} ${storageIfaceFilter === iface ? pillActive : pillIdle}`}
                 >
                   {iface}
@@ -356,7 +406,7 @@ export default function Category() {
             </div>
             <div className="flex gap-1 flex-wrap">
               <button
-                onClick={() => setStorageCapFilter("all")}
+                onClick={() => setFilter("storageCap", "")}
                 className={`${pillBase} ${storageCapFilter === "all" ? pillActive : pillIdle}`}
               >
                 전체
@@ -364,7 +414,7 @@ export default function Category() {
               {STORAGE_CAPS.map((c) => (
                 <button
                   key={c}
-                  onClick={() => setStorageCapFilter(c)}
+                  onClick={() => setFilter("storageCap", c)}
                   className={`${pillBase} ${storageCapFilter === c ? pillActive : pillIdle}`}
                 >
                   {c}
@@ -377,7 +427,7 @@ export default function Category() {
         {category === "case" && (
           <div className="flex gap-1 flex-wrap">
             <button
-              onClick={() => setCaseFormFilter("all")}
+              onClick={() => setFilter("caseForm", "")}
               className={`${pillBase} ${caseFormFilter === "all" ? pillActive : pillIdle}`}
             >
               전체
@@ -385,7 +435,7 @@ export default function Category() {
             {CASE_FORM_FACTORS.map((ff) => (
               <button
                 key={ff}
-                onClick={() => setCaseFormFilter(ff)}
+                onClick={() => setFilter("caseForm", ff)}
                 className={`${pillBase} ${caseFormFilter === ff ? pillActive : pillIdle}`}
               >
                 {ff}
@@ -397,7 +447,7 @@ export default function Category() {
         {category === "psu" && (
           <div className="flex gap-1 flex-wrap">
             <button
-              onClick={() => setPsuWattFilter("all")}
+              onClick={() => setFilter("psuWatt", "")}
               className={`${pillBase} ${psuWattFilter === "all" ? pillActive : pillIdle}`}
             >
               전체
@@ -405,7 +455,7 @@ export default function Category() {
             {PSU_WATTS.map((w) => (
               <button
                 key={w}
-                onClick={() => setPsuWattFilter(w)}
+                onClick={() => setFilter("psuWatt", w)}
                 className={`${pillBase} ${psuWattFilter === w ? pillActive : pillIdle}`}
               >
                 {w}W
@@ -423,7 +473,7 @@ export default function Category() {
               <input
                 type="checkbox"
                 checked={showUsedOnly}
-                onChange={(e) => setShowUsedOnly(e.target.checked)}
+                onChange={(e) => setBoolFilter("used", e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
               />
               <span className="inline-flex items-center gap-1">
@@ -437,7 +487,7 @@ export default function Category() {
               <input
                 type="checkbox"
                 checked={showReferOnly}
-                onChange={(e) => setShowReferOnly(e.target.checked)}
+                onChange={(e) => setBoolFilter("refer", e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-purple-500 focus:ring-purple-400 cursor-pointer"
               />
               <span className="inline-flex items-center gap-1">
@@ -451,7 +501,7 @@ export default function Category() {
               <input
                 type="checkbox"
                 checked={hideParallel}
-                onChange={(e) => setHideParallel(e.target.checked)}
+                onChange={(e) => setBoolFilter("hideParallel", e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400 cursor-pointer"
               />
               <span className="inline-flex items-center gap-1">
@@ -476,7 +526,10 @@ export default function Category() {
             <PartCard
               key={part._id || part.name}
               part={part}
-              onClick={() => navigate(`/detail/${category}/${encodeURIComponent(part.name)}`)}
+              onClick={() => {
+                sessionStorage.setItem(`scroll_${category}`, String(window.scrollY));
+                navigate(`/detail/${category}/${encodeURIComponent(part.name)}`);
+              }}
             />
           ))}
         </div>
@@ -486,7 +539,7 @@ export default function Category() {
         <div className="flex justify-center mt-6 gap-2 items-center">
           <button
             disabled={currentPage === 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            onClick={() => setPage(Math.max(1, currentPage - 1))}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
             이전
@@ -496,7 +549,7 @@ export default function Category() {
           </span>
           <button
             disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
             다음
