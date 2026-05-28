@@ -40,6 +40,11 @@ const STORAGE_CAPS = ["128GB", "256GB", "500GB", "1TB", "2TB", "4TB", "8TB", "12
 
 const ITEMS_PER_PAGE = 24;
 
+// 중고/리퍼/병행수입 데이터가 실제로 존재하는 카테고리
+const CAT_HAS_USED = new Set(["storage", "memory", "gpu", "motherboard"]);
+const CAT_HAS_REFER = new Set(["storage"]);
+const CAT_HAS_PARALLEL = new Set(["storage", "memory"]);
+
 export default function Category() {
   const { category } = useParams();
   const navigate = useNavigate();
@@ -67,6 +72,7 @@ export default function Category() {
   const [showUsedOnly, setShowUsedOnly] = useState(false);
   const [showReferOnly, setShowReferOnly] = useState(false);
   const [hideParallel, setHideParallel] = useState(false);
+  const [packTypeFilter, setPackTypeFilter] = useState("all");
 
   // 검색 디바운스 400ms
   useEffect(() => {
@@ -89,6 +95,7 @@ export default function Category() {
     setShowUsedOnly(false);
     setShowReferOnly(false);
     setHideParallel(false);
+    setPackTypeFilter("all");
     setSearch("");
     setDebouncedSearch("");
     setSortBy(["cpu", "gpu"].includes(category) ? "value" : "popularity");
@@ -102,7 +109,7 @@ export default function Category() {
     category, debouncedSearch, sortBy, brandFilter, chipsetFilter,
     memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
     storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
-    showUsedOnly, showReferOnly, hideParallel,
+    showUsedOnly, showReferOnly, hideParallel, packTypeFilter,
   ]);
 
   // 브랜드 변경 시 칩셋 초기화
@@ -135,6 +142,7 @@ export default function Category() {
       caseForm: caseFormFilter,
       conditionShow,
       conditionHide,
+      packType: packTypeFilter,
     }).then(({ parts: p, total: t, totalPages: tp }) => {
       if (!active) return;
       setParts(p);
@@ -152,7 +160,7 @@ export default function Category() {
     category, currentPage, debouncedSearch, sortBy, brandFilter, chipsetFilter,
     memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
     storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
-    showUsedOnly, showReferOnly, hideParallel,
+    showUsedOnly, showReferOnly, hideParallel, packTypeFilter,
   ]);
 
   const LABELS = { cpu: "CPU", gpu: "GPU", motherboard: "메인보드", memory: "메모리", storage: "저장장치", case: "케이스", cooler: "쿨러", psu: "파워" };
@@ -239,17 +247,34 @@ export default function Category() {
         )}
 
         {category === "cpu" && (
-          <div className="flex gap-1 flex-wrap">
-            {CPU_SOCKETS.map((socket) => (
-              <button
-                key={socket}
-                onClick={() => setCpuSocketFilter(cpuSocketFilter === socket ? "all" : socket)}
-                className={`${pillBase} ${cpuSocketFilter === socket ? pillActive : pillIdle}`}
-              >
-                {socket}
-              </button>
-            ))}
-          </div>
+          <>
+            <div className="flex gap-1 flex-wrap">
+              {CPU_SOCKETS.map((socket) => (
+                <button
+                  key={socket}
+                  onClick={() => setCpuSocketFilter(cpuSocketFilter === socket ? "all" : socket)}
+                  className={`${pillBase} ${cpuSocketFilter === socket ? pillActive : pillIdle}`}
+                >
+                  {socket}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {[
+                { value: "all", label: "구성 전체" },
+                { value: "standard", label: "일반 정품" },
+                { value: "multipack", label: "멀티팩 정품" },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setPackTypeFilter(value)}
+                  className={`${pillBase} ${packTypeFilter === value ? pillActive : pillIdle}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
 
         {category === "motherboard" && brandFilter !== "all" && chipsetOptions.length > 0 && (
@@ -390,45 +415,53 @@ export default function Category() {
         )}
       </div>
 
-      {/* 상품 상태 필터 */}
-      <div className="flex flex-wrap gap-3 items-center mb-4">
-        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
-          <input
-            type="checkbox"
-            checked={showUsedOnly}
-            onChange={(e) => setShowUsedOnly(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
-          />
-          <span className="inline-flex items-center gap-1">
-            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-200">중고</span>
-            중고만 보기
-          </span>
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
-          <input
-            type="checkbox"
-            checked={showReferOnly}
-            onChange={(e) => setShowReferOnly(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-purple-500 focus:ring-purple-400 cursor-pointer"
-          />
-          <span className="inline-flex items-center gap-1">
-            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700 border-purple-200">리퍼</span>
-            리퍼만 보기
-          </span>
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
-          <input
-            type="checkbox"
-            checked={hideParallel}
-            onChange={(e) => setHideParallel(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400 cursor-pointer"
-          />
-          <span className="inline-flex items-center gap-1">
-            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-yellow-100 text-yellow-700 border-yellow-200">병행수입</span>
-            병행수입 제외
-          </span>
-        </label>
-      </div>
+      {/* 상품 상태 필터 — 데이터가 있는 카테고리에만 표시 */}
+      {(CAT_HAS_USED.has(category) || CAT_HAS_REFER.has(category) || CAT_HAS_PARALLEL.has(category)) && (
+        <div className="flex flex-wrap gap-3 items-center mb-4">
+          {CAT_HAS_USED.has(category) && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+              <input
+                type="checkbox"
+                checked={showUsedOnly}
+                onChange={(e) => setShowUsedOnly(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
+              />
+              <span className="inline-flex items-center gap-1">
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-200">중고</span>
+                중고만 보기
+              </span>
+            </label>
+          )}
+          {CAT_HAS_REFER.has(category) && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+              <input
+                type="checkbox"
+                checked={showReferOnly}
+                onChange={(e) => setShowReferOnly(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-purple-500 focus:ring-purple-400 cursor-pointer"
+              />
+              <span className="inline-flex items-center gap-1">
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700 border-purple-200">리퍼</span>
+                리퍼만 보기
+              </span>
+            </label>
+          )}
+          {CAT_HAS_PARALLEL.has(category) && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+              <input
+                type="checkbox"
+                checked={hideParallel}
+                onChange={(e) => setHideParallel(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400 cursor-pointer"
+              />
+              <span className="inline-flex items-center gap-1">
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-yellow-100 text-yellow-700 border-yellow-200">병행수입</span>
+                병행수입 제외
+              </span>
+            </label>
+          )}
+        </div>
+      )}
 
       {/* 부품 목록 */}
       {loading ? (

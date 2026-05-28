@@ -45,7 +45,7 @@ function buildCategoryQuery(params) {
   const {
     category, q, brand, socket, chipset, memCap, memDdr,
     storageType, storageIface, storageCap, psuWatt, caseForm,
-    conditionShow, conditionHide,
+    conditionShow, conditionHide, packType,
   } = params;
 
   const must = [];
@@ -122,7 +122,7 @@ function buildCategoryQuery(params) {
     }
   }
 
-  const COND_RE = { used: "중고", refer: "리퍼", parallel: "병행수입", multipack: "멀티팩" };
+  const COND_RE = { used: "중고", refer: "리퍼비시", parallel: "병행수입" };
   if (conditionShow) {
     const orConds = conditionShow.split(",").filter(Boolean).map((c) => COND_RE[c]).filter(Boolean).map((r) => ({ name: { $regex: r } }));
     if (orConds.length) must.push({ $or: orConds });
@@ -132,6 +132,9 @@ function buildCategoryQuery(params) {
       if (COND_RE[c]) must.push({ name: { $not: { $regex: COND_RE[c] } } });
     }
   }
+
+  if (packType === "multipack") must.push({ name: { $regex: "멀티팩" } });
+  else if (packType === "standard") must.push({ name: { $not: { $regex: "멀티팩" } } });
 
   if (must.length === 0) return {};
   if (must.length === 1) return must[0];
@@ -162,7 +165,7 @@ router.get("/", setCacheHeaders(60, 1800), async (req, res) => {
     category, page, limit, sort = "popularity",
     q, brand, socket, chipset, memCap, memDdr,
     storageType, storageIface, storageCap, psuWatt, caseForm,
-    conditionShow, conditionHide,
+    conditionShow, conditionHide, packType,
   } = req.query;
 
   try {
@@ -174,7 +177,7 @@ router.get("/", setCacheHeaders(60, 1800), async (req, res) => {
     const query = buildCategoryQuery({
       category, q, brand, socket, chipset, memCap, memDdr,
       storageType, storageIface, storageCap, psuWatt, caseForm,
-      conditionShow, conditionHide,
+      conditionShow, conditionHide, packType,
     });
     const sortConfig = buildSortConfig(sort, category);
 
