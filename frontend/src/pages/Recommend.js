@@ -82,7 +82,7 @@ export default function Recommend() {
       );
       if (res.ok) {
         const data = await res.json();
-        setResults({ parts: data.parts || {}, totalPrice: data.totalPrice || 0, summary: data.summary, reasoning: data.reasoning });
+        setResults({ parts: data.parts || {}, totalPrice: data.totalPrice || 0, summary: data.summary, pros: data.pros, cons: data.cons, reasoning: data.reasoning });
         setLoading(false);
         setPollCount(0);
         setWaitMsg("");
@@ -282,13 +282,38 @@ export default function Recommend() {
             </div>
           )}
 
-          {results.reasoning && (
+          {(results.pros || results.cons || results.reasoning) && (
             <div className="px-5 py-4 bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-xl">
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-3">
                 <span className="text-base">🤖</span>
                 <span className="text-sm font-semibold text-violet-900">AI 추천 이유</span>
               </div>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{results.reasoning}</p>
+              {(results.pros || results.cons) ? (
+                <div className="space-y-2">
+                  {results.pros?.length > 0 && (
+                    <ul className="space-y-1">
+                      {results.pros.map((p, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-800">
+                          <span className="mt-0.5 flex-shrink-0 text-green-500 font-bold">✓</span>
+                          <span>{p}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {results.cons?.length > 0 && (
+                    <ul className="space-y-1 mt-2">
+                      {results.cons.map((c, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                          <span className="mt-0.5 flex-shrink-0 text-amber-500 font-bold">!</span>
+                          <span>{c}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{results.reasoning}</p>
+              )}
             </div>
           )}
 

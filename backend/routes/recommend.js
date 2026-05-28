@@ -617,7 +617,8 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   // ─── AI: 요약문 + 상세 추천 이유 생성 ─────────────────────────────────────
   let aiSummary = null;
-  let aiReasoning = null;
+  let aiPros = null;
+  let aiCons = null;
   try {
     const purposeKr = purpose === "gaming" ? "게이밍" : "작업용";
     const cpuName = chosenCombo.cpu.name;
@@ -643,10 +644,11 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 응답 형식 (JSON):
 {
   "summary": "30자 이내 한 줄 요약 (용도·특징 포함)",
-  "reasoning": "200자 내외의 추천 이유. 다음을 포함: ① 이 CPU/GPU가 이 예산·용도에 적합한 이유 ② 어떤 작업/게임에 적합한지(FHD/QHD/4K, 프로그램명 등 구체적으로) ③ 주의사항이나 팁(있을 시). 자연스러운 한국어 문단으로 작성. 글머리표 사용 금지."
+  "pros": ["이 견적의 장점 1 (15자 이내)", "장점 2", "장점 3"],
+  "cons": ["주의사항 또는 단점 1 (15자 이내)", "단점 2"]
 }
 
-JSON만 출력하고 다른 설명은 금지.`;
+pros는 2~4개, cons는 1~3개. JSON만 출력하고 다른 설명은 금지.`;
 
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -654,24 +656,22 @@ JSON만 출력하고 다른 설명은 금지.`;
       body: JSON.stringify({
         model: "gpt-5.4",
         messages: [{ role: "user", content: prompt }],
-        max_completion_tokens: 600,
+        max_completion_tokens: 400,
       }),
       signal: AbortSignal.timeout(30000),
     });
     if (resp.ok) {
       const d = await resp.json();
       const content = d?.choices?.[0]?.message?.content?.trim() || "";
-      // JSON 파싱 시도 (앞뒤 마크다운 코드블록 제거 후)
       const jsonStr = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
       try {
         const parsed = JSON.parse(jsonStr);
         aiSummary = parsed.summary?.trim() || null;
-        aiReasoning = parsed.reasoning?.trim() || null;
+        aiPros = Array.isArray(parsed.pros) && parsed.pros.length ? parsed.pros.map(String) : null;
+        aiCons = Array.isArray(parsed.cons) && parsed.cons.length ? parsed.cons.map(String) : null;
       } catch (_) {
-        // JSON 파싱 실패 시 첫 줄을 summary, 나머지를 reasoning으로
         const lines = content.split('\n').filter(l => l.trim());
         aiSummary = lines[0]?.slice(0, 50) || null;
-        aiReasoning = lines.slice(1).join(' ').trim() || content;
       }
     }
   } catch (_) { /* summary fallback */ }
@@ -707,7 +707,8 @@ JSON만 출력하고 다른 설명은 금지.`;
       case:    toPartObj(fillCase,    "case"),
     },
     summary: aiSummary || `${budget.toLocaleString()}원 ${purpose === "gaming" ? "게이밍" : "작업용"} PC (${cpuBrand.toUpperCase()}+${gpuBrand.toUpperCase()})`,
-    reasoning: aiReasoning || null,
+    pros: aiPros || null,
+    cons: aiCons || null,
     compatibilityVerified: true,
     _meta: {
       cpuScore:      getCpuScore(chosenCombo.cpu),
