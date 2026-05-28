@@ -227,7 +227,7 @@ export default function Recommend() {
               )}
             </label>
             <div className="flex gap-2">
-              {[["nvidia", "NVIDIA"], ["amd", "AMD"]].map(([val, lbl]) => (
+              {[["amd", "AMD"], ["nvidia", "NVIDIA"]].map(([val, lbl]) => (
                 <button
                   key={val}
                   onClick={() => setGpuBrand(val)}
