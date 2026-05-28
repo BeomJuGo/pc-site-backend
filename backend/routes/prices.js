@@ -67,7 +67,7 @@ async function getPriceData(category, name) {
     category,
     storedPrice: stored?.price ?? null,
     lastUpdated: stored?.updatedAt ?? null,
-    naverMalls: displayMalls.slice(0, 10),
+    naverMalls: displayMalls.slice(0, 20),
     lowestPrice: effectiveLowest,
     lowestMall: effectiveMall,
     priceGap: stored?.price && effectiveLowest > 0 ? stored.price - effectiveLowest : null,

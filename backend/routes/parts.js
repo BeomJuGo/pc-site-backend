@@ -45,7 +45,7 @@ function buildCategoryQuery(params) {
   const {
     category, q, brand, socket, chipset, memCap, memDdr,
     storageType, storageIface, storageCap, psuWatt, caseForm,
-    conditionShow, conditionHide, packType,
+    conditionShow, conditionHide, packType, design,
   } = params;
 
   const must = [];
@@ -136,6 +136,15 @@ function buildCategoryQuery(params) {
   if (packType === "multipack") must.push({ name: { $regex: "멀티팩" } });
   else if (packType === "standard") must.push({ name: { $not: { $regex: "멀티팩" } } });
 
+  if (design && design !== "all" && ["case", "cooler", "memory"].includes(category)) {
+    const DESIGN_RE = {
+      rgb:   "\\bARGB\\b|\\bRGB\\b|DRGB|aRGB|AURA|Mystic\\s*Light",
+      white: "화이트|\\bwhite\\b|아이보리|\\bW\\s*Edition",
+    };
+    const re = DESIGN_RE[design];
+    if (re) must.push({ name: { $regex: re, $options: "i" } });
+  }
+
   if (must.length === 0) return {};
   if (must.length === 1) return must[0];
   return { $and: must };
@@ -165,7 +174,7 @@ router.get("/", setCacheHeaders(60, 1800), async (req, res) => {
     category, page, limit, sort = "popularity",
     q, brand, socket, chipset, memCap, memDdr,
     storageType, storageIface, storageCap, psuWatt, caseForm,
-    conditionShow, conditionHide, packType,
+    conditionShow, conditionHide, packType, design,
   } = req.query;
 
   try {
@@ -177,7 +186,7 @@ router.get("/", setCacheHeaders(60, 1800), async (req, res) => {
     const query = buildCategoryQuery({
       category, q, brand, socket, chipset, memCap, memDdr,
       storageType, storageIface, storageCap, psuWatt, caseForm,
-      conditionShow, conditionHide, packType,
+      conditionShow, conditionHide, packType, design,
     });
     const sortConfig = buildSortConfig(sort, category);
 

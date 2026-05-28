@@ -65,6 +65,75 @@ function getGpuPerfNote(gpuName) {
   return null;
 }
 
+function getRecommendedGames(gpuName) {
+  if (!gpuName) return [];
+  const n = gpuName;
+  if (/RTX\s*5090|RTX\s*4090/i.test(n)) return [
+    { name: "사이버펑크 2077", note: "4K 울트라 100fps+" },
+    { name: "블랙 미스: 오공", note: "4K 울트라 60fps+" },
+    { name: "엘든 링", note: "4K 맥스 60fps+" },
+    { name: "발더스 게이트 3", note: "4K 울트라 60fps+" },
+    { name: "레드 데드 리뎀션 2", note: "4K 울트라 60fps+" },
+  ];
+  if (/RTX\s*5080|RTX\s*4080\s*S|RX\s*9070\s*XT|RX\s*7900\s*XTX/i.test(n)) return [
+    { name: "사이버펑크 2077", note: "4K 울트라 60fps+" },
+    { name: "발더스 게이트 3", note: "4K 울트라 60fps+" },
+    { name: "엘든 링", note: "QHD 맥스 144fps+" },
+    { name: "배틀그라운드", note: "QHD 울트라 165fps+" },
+    { name: "에이펙스 레전드", note: "QHD 최대 165fps+" },
+  ];
+  if (/RTX\s*5070\s*Ti|RTX\s*4070\s*Ti|RX\s*7900\s*XT/i.test(n)) return [
+    { name: "사이버펑크 2077", note: "QHD 울트라 60fps+" },
+    { name: "레드 데드 리뎀션 2", note: "QHD 울트라 60fps+" },
+    { name: "배틀그라운드", note: "QHD 울트라 144fps+" },
+    { name: "포르자 호라이즌 5", note: "4K 익스트림 60fps+" },
+    { name: "발더스 게이트 3", note: "QHD 울트라 60fps+" },
+  ];
+  if (/RTX\s*5070(?!\s*Ti)|RTX\s*4070\s*S|RX\s*9070(?!\s*XT)|RX\s*7800\s*XT/i.test(n)) return [
+    { name: "배틀그라운드", note: "QHD 울트라 144fps" },
+    { name: "에이펙스 레전드", note: "QHD 최대 144fps" },
+    { name: "사이버펑크 2077", note: "QHD 하이 60fps+" },
+    { name: "오버워치 2", note: "QHD 울트라 165fps+" },
+    { name: "로스트아크", note: "QHD 맥스 안정" },
+  ];
+  if (/RTX\s*5060\s*Ti|RTX\s*4070(?!\s*[ST])|RX\s*9060\s*XT|RX\s*7700\s*XT/i.test(n)) return [
+    { name: "배틀그라운드", note: "QHD 높음 144fps" },
+    { name: "에이펙스 레전드", note: "FHD 165fps+" },
+    { name: "발로란트", note: "FHD 240fps+" },
+    { name: "오버워치 2", note: "FHD 울트라 165fps+" },
+    { name: "로스트아크", note: "FHD 맥스 안정" },
+  ];
+  if (/RTX\s*5060(?!\s*Ti)|RTX\s*4060\s*Ti|RX\s*7600|RX\s*6700/i.test(n)) return [
+    { name: "배틀그라운드", note: "FHD 높음 144fps 안정" },
+    { name: "발로란트", note: "FHD 240fps+" },
+    { name: "리그 오브 레전드", note: "FHD 240fps+" },
+    { name: "오버워치 2", note: "FHD 144fps 안정" },
+    { name: "에이펙스 레전드", note: "FHD 144fps 안정" },
+  ];
+  if (/RTX\s*4060(?!\s*Ti)|RX\s*6600|RTX\s*3060/i.test(n)) return [
+    { name: "배틀그라운드", note: "FHD 중간~높음 144fps" },
+    { name: "발로란트", note: "FHD 144fps+" },
+    { name: "리그 오브 레전드", note: "FHD 144fps+" },
+    { name: "에이펙스 레전드", note: "FHD 100~144fps" },
+    { name: "로스트아크", note: "FHD 안정" },
+  ];
+  if (/RTX\s*3050|RX\s*6500|GTX\s*1660|RTX\s*2060/i.test(n)) return [
+    { name: "발로란트", note: "FHD 144fps+" },
+    { name: "리그 오브 레전드", note: "FHD 144fps+" },
+    { name: "배틀그라운드", note: "FHD 낮음 60~100fps" },
+    { name: "에이펙스 레전드", note: "FHD 60~100fps" },
+    { name: "오버워치 2", note: "FHD 중간 60fps+" },
+  ];
+  if (/GTX\s*1060|RX\s*580/i.test(n)) return [
+    { name: "발로란트", note: "FHD 100fps+" },
+    { name: "리그 오브 레전드", note: "FHD 100fps+" },
+    { name: "오버워치 2", note: "FHD 낮음 60fps+" },
+    { name: "에이펙스 레전드", note: "FHD 낮음 60fps" },
+    { name: "마인크래프트", note: "FHD 안정" },
+  ];
+  return [];
+}
+
 const MAX_POLL = 6;
 const POLL_INTERVAL = 10000;
 
@@ -457,6 +526,20 @@ export default function Recommend() {
               </span>
             </div>
           </div>
+
+          {purpose === "gaming" && results.parts?.gpu && getRecommendedGames(results.parts.gpu.name).length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+              <h3 className="text-base font-bold text-gray-900 mb-3">🎮 이 견적으로 즐길 수 있는 게임</h3>
+              <div className="grid grid-cols-1 gap-2">
+                {getRecommendedGames(results.parts.gpu.name).map((game, i) => (
+                  <div key={i} className="flex items-center justify-between py-2 px-3 rounded-lg bg-indigo-50">
+                    <span className="text-sm font-medium text-gray-900">{game.name}</span>
+                    <span className="text-xs text-indigo-600 font-medium">{game.note}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <button
             onClick={() => { setResults(null); setError(null); }}

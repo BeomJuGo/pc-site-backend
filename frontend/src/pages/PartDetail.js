@@ -38,6 +38,7 @@ export default function PartDetail() {
   const [gptSpecSummary, setGptSpecSummary] = useState(null);
 
   const [danawaLoading, setDanawaLoading] = useState(false);
+  const [showAllMalls, setShowAllMalls] = useState(false);
 
   // Phase 1: 핵심 데이터 (빠름) — 즉시 페이지 표시
   useEffect(() => {
@@ -397,7 +398,7 @@ export default function PartDetail() {
               </div>
             )}
             <div className="divide-y divide-gray-100">
-              {mallPrices.naverMalls.slice(0, 5).map((mall, i) => (
+              {mallPrices.naverMalls.slice(0, showAllMalls ? mallPrices.naverMalls.length : 5).map((mall, i) => (
                 <div key={i} className="flex items-center justify-between px-5 py-3">
                   <span className="text-sm text-gray-700">{mall.mallName || "쇼핑몰"}</span>
                   <div className="flex items-center gap-3">
@@ -412,10 +413,18 @@ export default function PartDetail() {
                 </div>
               ))}
             </div>
-            <div className="px-5 py-2 border-t border-gray-100 bg-gray-50">
+            <div className="px-5 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
               <span className="text-xs text-gray-400">
                 총 {mallPrices.mallCount}개 쇼핑몰 • {new Date(mallPrices.checkedAt).toLocaleString("ko-KR")}
               </span>
+              {mallPrices.naverMalls.length > 5 && (
+                <button
+                  onClick={() => setShowAllMalls(v => !v)}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  {showAllMalls ? "접기 ▲" : `더 보기 +${mallPrices.naverMalls.length - 5} ▼`}
+                </button>
+              )}
             </div>
           </div>
         </div>

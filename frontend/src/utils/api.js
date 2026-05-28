@@ -128,7 +128,7 @@ export const fetchFilteredParts = async ({
   memCap = "all", memDdr = "all", storageType = "all",
   storageIface = "all", storageCap = "all", psuWatt = "all",
   caseForm = "all", conditionShow = "", conditionHide = "",
-  packType = "all",
+  packType = "all", design = "all",
 } = {}) => {
   const params = new URLSearchParams();
   if (category) params.set("category", category);
@@ -149,6 +149,7 @@ export const fetchFilteredParts = async ({
   if (conditionShow) params.set("conditionShow", conditionShow);
   if (conditionHide) params.set("conditionHide", conditionHide);
   if (packType && packType !== "all") params.set("packType", packType);
+  if (design && design !== "all") params.set("design", design);
 
   try {
     const res = await fetch(`${BASE_URL}/api/parts?${params}`);

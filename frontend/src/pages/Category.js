@@ -76,6 +76,7 @@ export default function Category() {
   const showReferOnly = searchParams.get("refer") === "1";
   const hideParallel = searchParams.get("hideParallel") === "1";
   const packTypeFilter = searchParams.get("packType") || "all";
+  const designFilter = searchParams.get("design") || "all";
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
   const debouncedSearch = searchParams.get("q") || "";
 
@@ -182,6 +183,7 @@ export default function Category() {
       conditionShow,
       conditionHide,
       packType: packTypeFilter,
+      design: designFilter,
     }).then(({ parts: p, total: t, totalPages: tp }) => {
       if (!active) return;
       setParts(p);
@@ -199,7 +201,7 @@ export default function Category() {
     category, currentPage, debouncedSearch, sortBy, brandFilter, chipsetFilter,
     memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
     storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
-    showUsedOnly, showReferOnly, hideParallel, packTypeFilter,
+    showUsedOnly, showReferOnly, hideParallel, packTypeFilter, designFilter,
   ]);
 
   // Scroll restoration: restore saved scroll position after parts load
@@ -459,6 +461,24 @@ export default function Category() {
                 className={`${pillBase} ${psuWattFilter === w ? pillActive : pillIdle}`}
               >
                 {w}W
+              </button>
+            ))}
+          </div>
+        )}
+
+        {["case", "cooler", "memory"].includes(category) && (
+          <div className="flex gap-1 flex-wrap">
+            {[
+              { value: "all", label: "디자인 전체" },
+              { value: "rgb", label: "RGB" },
+              { value: "white", label: "화이트" },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setFilter("design", value)}
+                className={`${pillBase} ${designFilter === value ? pillActive : pillIdle}`}
+              >
+                {label}
               </button>
             ))}
           </div>
