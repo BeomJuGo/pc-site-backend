@@ -16,6 +16,17 @@ const CATEGORIES = [
   { value: "psu", label: "파워" },
 ];
 
+const CAT_ICONS = {
+  cpu: "🔲",
+  gpu: "🎮",
+  motherboard: "🖥️",
+  memory: "💾",
+  storage: "💿",
+  case: "🗄️",
+  cooler: "❄️",
+  psu: "⚡",
+};
+
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -166,8 +177,20 @@ export default function Search() {
       })()}
 
       {!searched && (
-        <div className="text-center py-16 text-gray-400">
-          검색어를 입력하면 모든 카테고리에서 부품을 찾아드립니다.
+        <div className="py-8">
+          <p className="text-sm text-gray-500 mb-4 text-center">검색어를 입력하거나, 카테고리에서 바로 찾아보세요.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {CATEGORIES.filter((c) => c.value).map((cat) => (
+              <button
+                key={cat.value}
+                onClick={() => navigate(`/category/${cat.value}`)}
+                className="flex flex-col items-center justify-center gap-1.5 py-5 rounded-xl border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-colors shadow-sm"
+              >
+                <span className="text-2xl">{CAT_ICONS[cat.value]}</span>
+                <span className="text-sm font-medium text-gray-700">{cat.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
