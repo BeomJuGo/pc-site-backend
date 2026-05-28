@@ -11,3 +11,21 @@ export const recommendV2Schema = z.object({
   gpuBrand: z.enum(["amd", "nvidia"]).optional().default("nvidia"),
   purpose: z.enum(["gaming", "work"]).optional().default("gaming"),
 });
+
+const lockedPartEntry = z.object({
+  name: z.string().min(1).max(200),
+  price: z.coerce.number().int().min(0).max(10000000).optional().default(0),
+});
+
+export const recommendV2CustomSchema = recommendV2Schema.extend({
+  lockedParts: z.object({
+    cpu:         lockedPartEntry.optional(),
+    gpu:         lockedPartEntry.optional(),
+    motherboard: lockedPartEntry.optional(),
+    memory:      lockedPartEntry.optional(),
+    storage:     lockedPartEntry.optional(),
+    psu:         lockedPartEntry.optional(),
+    cooler:      lockedPartEntry.optional(),
+    case:        lockedPartEntry.optional(),
+  }).optional().default({}),
+});

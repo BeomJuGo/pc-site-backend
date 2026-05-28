@@ -80,6 +80,8 @@ export default function Recommend() {
   const [waitMsg, setWaitMsg] = useState("");
   const pollRef = useRef(null);
   const navigate = useNavigate();
+  const [showOwnedParts, setShowOwnedParts] = useState(false);
+  const [ownedParts, setOwnedParts] = useState({});
 
   useSeoMeta({
     title: "가성비PC | AI PC 견적 추천",
@@ -124,6 +126,31 @@ export default function Recommend() {
     }
   };
 
+  const fetchCustom = async (sel, locked) => {
+    const { budget: b, purpose: p, cpuBrand: cb, gpuBrand: gb } = sel;
+    try {
+      const res = await fetch("/api/recommend/budget-set-v2-custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ budget: b, cpuBrand: cb, gpuBrand: gb, purpose: p, lockedParts: locked }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResults({ parts: data.parts || {}, totalPrice: data.totalPrice || 0, summary: data.summary, pros: data.pros, cons: data.cons, reasoning: data.reasoning });
+        setLoading(false);
+        setWaitMsg("");
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message || body.error || `서버 오류 (${res.status})`);
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      setError(e.message || "추천 요청에 실패했습니다.");
+      setLoading(false);
+      setWaitMsg("");
+    }
+  };
+
   const handleRecommend = () => {
     clearTimeout(pollRef.current);
     setLoading(true);
@@ -131,7 +158,16 @@ export default function Recommend() {
     setResults(null);
     setPollCount(0);
     setWaitMsg("AI 견적을 불러오는 중...");
-    fetchV2({ budget, purpose, cpuBrand, gpuBrand }, 0);
+    const hasLocked = showOwnedParts && Object.values(ownedParts).some(v => v?.name?.trim());
+    if (hasLocked) {
+      const locked = {};
+      for (const [k, v] of Object.entries(ownedParts)) {
+        if (v?.name?.trim()) locked[k] = { name: v.name.trim(), price: Number(v.price) || 0 };
+      }
+      fetchCustom({ budget, purpose, cpuBrand, gpuBrand }, locked);
+    } else {
+      fetchV2({ budget, purpose, cpuBrand, gpuBrand }, 0);
+    }
   };
 
   const info = PURPOSE_INFO[purpose];
@@ -261,6 +297,44 @@ export default function Recommend() {
           </div>
         </div>
 
+        {/* 보유 부품 입력 */}
+        <div className="mb-5">
+          <button
+            type="button"
+            onClick={() => setShowOwnedParts(v => !v)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <span className={`text-xs transition-transform ${showOwnedParts ? 'rotate-90' : ''} inline-block`}>▶</span>
+            보유 부품이 있으신가요? <span className="text-gray-400 font-normal">(선택사항)</span>
+          </button>
+          {showOwnedParts && (
+            <div className="mt-3 space-y-2 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+              <p className="text-xs text-gray-500 mb-3">이미 가진 부품을 입력하면 나머지를 예산에 맞게 추천합니다. 구매 가격이 없으면 0으로 두세요.</p>
+              {Object.entries(PART_LABELS).map(([key, label]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded border w-16 text-center flex-shrink-0 ${PART_COLORS[key]}`}>
+                    {label}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="부품명 (예: RTX 4070)"
+                    value={ownedParts[key]?.name || ""}
+                    onChange={e => setOwnedParts(prev => ({ ...prev, [key]: { ...prev[key], name: e.target.value } }))}
+                    className="flex-1 px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                  />
+                  <input
+                    type="number"
+                    placeholder="가격(원)"
+                    value={ownedParts[key]?.price || ""}
+                    onChange={e => setOwnedParts(prev => ({ ...prev, [key]: { ...prev[key], price: e.target.value } }))}
+                    className="w-28 px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {error && (
           <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
@@ -348,11 +422,25 @@ export default function Recommend() {
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${PART_COLORS[key]}`}>
                       {label}
                     </span>
+                    {part.locked && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        보유
+                      </span>
+                    )}
                   </div>
-                  <PartCard
-                    part={part}
-                    onClick={() => navigate(`/detail/${part.category || key}/${encodeURIComponent(part.name)}`)}
-                  />
+                  {part.locked ? (
+                    <div className="px-4 py-3 flex items-center justify-between">
+                      <span className="text-sm text-gray-800 font-medium">{part.name}</span>
+                      <span className="text-sm text-gray-500">
+                        {part.price > 0 ? `${part.price.toLocaleString()}원` : "보유 중"}
+                      </span>
+                    </div>
+                  ) : (
+                    <PartCard
+                      part={part}
+                      onClick={() => navigate(`/detail/${part.category || key}/${encodeURIComponent(part.name)}`)}
+                    />
+                  )}
                   {key === 'gpu' && purpose === 'gaming' && getGpuPerfNote(part.name) && (
                     <div className="px-4 py-2 text-xs text-indigo-600 bg-indigo-50 flex items-center gap-1.5">
                       🎮 예상 성능: {getGpuPerfNote(part.name)}

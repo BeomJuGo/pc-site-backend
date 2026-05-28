@@ -6,7 +6,7 @@ import { loadParts, extractBoardFormFactor, isCaseCompatible } from "../utils/re
 import { getPopularityScore } from "../utils/naverDatalab.js";
 import logger from "../utils/logger.js";
 import { validate } from "../middleware/validate.js";
-import { recommendV2Schema } from "../schemas/recommend.js";
+import { recommendV2Schema, recommendV2CustomSchema } from "../schemas/recommend.js";
 import { getCache, setCache } from "../utils/responseCache.js";
 
 const OPENAI_API_KEY = config.openaiApiKey;
@@ -272,6 +272,7 @@ const coolerRank = (cooler) => {
 export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", gpuBrand = "nvidia", purpose = "gaming", {
   minCpuScore = 0, prevCpuComboPrice = 0,
   minGpuScore = 0, prevGpuPrice = 0,
+  lockedParts = {},
 } = {}) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY 미설정");
 
@@ -279,6 +280,16 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   const brandWeightDocs = await db.collection("brand_weights").find().toArray().catch(() => []);
   const brandWeightMap = Object.fromEntries(brandWeightDocs.map((d) => [d.category, d.weights || {}]));
+
+  const mkLocked = (name, price = 0) => ({ name, price, _locked: true });
+  const lkCpu     = lockedParts.cpu         ? mkLocked(lockedParts.cpu.name,         lockedParts.cpu.price         ?? 0) : null;
+  const lkGpu     = lockedParts.gpu         ? mkLocked(lockedParts.gpu.name,         lockedParts.gpu.price         ?? 0) : null;
+  const lkBoard   = lockedParts.motherboard ? mkLocked(lockedParts.motherboard.name, lockedParts.motherboard.price ?? 0) : null;
+  const lkMem     = lockedParts.memory      ? mkLocked(lockedParts.memory.name,      lockedParts.memory.price      ?? 0) : null;
+  const lkStorage = lockedParts.storage     ? mkLocked(lockedParts.storage.name,     lockedParts.storage.price     ?? 0) : null;
+  const lkPsu     = lockedParts.psu         ? mkLocked(lockedParts.psu.name,         lockedParts.psu.price         ?? 0) : null;
+  const lkCooler  = lockedParts.cooler      ? mkLocked(lockedParts.cooler.name,      lockedParts.cooler.price      ?? 0) : null;
+  const lkCase    = lockedParts.case        ? mkLocked(lockedParts.case.name,         lockedParts.case.price        ?? 0) : null;
 
   const minBudget = budget;
   // 110% 상한 준수: 저예산(≤1M)에서 budget+100K가 110%보다 커지는 경우 방지
@@ -329,11 +340,12 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   // 부품별 cap 비율 합 = 1.0 (정규화) → 4개 합이 secCap (budget의 20%) 이내
   // 이전 cap 합 1.25였던 버그로 27% 초과 발생 → 0.45/0.25/0.18/0.12로 수정
   const secCap = budget * 0.20;
-  const preStorage = pickPopular(realStorages, "storage", secCap * 0.45);
-  const prePsu     = pickPopular(psus,         "psu",     secCap * 0.25);
-  const preCase    = pickPopular(cases,        "case",    secCap * 0.18);
+  const preStorage = lkStorage ?? pickPopular(realStorages, "storage", secCap * 0.45);
+  const prePsu     = lkPsu     ?? pickPopular(psus,         "psu",     secCap * 0.25);
+  const preCase    = lkCase    ?? pickPopular(cases,        "case",    secCap * 0.18);
   // realCoolers 우선, 없으면 coolers 전체로 폴백 (저예산 12K cap에서 실제 쿨러 없는 경우)
-  const preCooler  = pickPopular(realCoolers, "cooler", secCap * 0.12)
+  const preCooler  = lkCooler
+                  ?? pickPopular(realCoolers, "cooler", secCap * 0.12)
                   ?? pickPopular(coolers,     "cooler", secCap * 0.12);
 
   if (!preStorage || !prePsu || !preCase || !preCooler)
@@ -395,24 +407,43 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   // CPU 가격 상한 (오버킬 방지)
   const cpuPriceCap = budget * cpuPriceCapRatio(budget);
 
-  for (const cpu of cpusSorted) {
-    if (cpu.price > cpuPriceCap) continue;
-    if (cpu.price > budget * 0.65) break;
-
-    const socket = extractCpuSocket(cpu);
-    const bestBoard = pickBoardForCombo(socket);
-    if (!bestBoard) continue;
-
-    const bestMem = pickMemoryForCombo(bestBoard);
-    if (!bestMem) continue;
-
-    allCombos.push({
-      cpu, board: bestBoard, mem: bestMem,
-      comboPrice: cpu.price + bestBoard.price + bestMem.price,
+  let forcedCombo = null;
+  if (lkCpu) {
+    const dbCpu = cpus.find(c => {
+      const cn = (c.name || '').toLowerCase(), ln = lkCpu.name.toLowerCase();
+      return cn.includes(ln) || ln.includes(cn);
     });
+    const cpuRef = dbCpu ? { ...lkCpu, info: dbCpu.info, specSummary: dbCpu.specSummary } : lkCpu;
+    const socket = extractCpuSocket(cpuRef)
+      || (/(?:라이젠|Ryzen).*[789]\d{3}/i.test(lkCpu.name) ? 'AM5' : '')
+      || (/(?:라이젠|Ryzen).*[12345]\d{3}/i.test(lkCpu.name) ? 'AM4' : '');
+    const board = lkBoard ?? (socket ? pickBoardForCombo(socket) : null);
+    const mem   = lkMem   ?? (board  ? pickMemoryForCombo(board)  : null);
+    if (board && mem) {
+      forcedCombo = { cpu: lkCpu, board, mem, comboPrice: lkCpu.price + board.price + mem.price };
+    }
   }
 
-  if (allCombos.length === 0) throw new Error("호환되는 CPU+메인보드+메모리 조합을 찾을 수 없음");
+  if (!forcedCombo) {
+    for (const cpu of cpusSorted) {
+      if (cpu.price > cpuPriceCap) continue;
+      if (cpu.price > budget * 0.65) break;
+
+      const socket = extractCpuSocket(cpu);
+      const bestBoard = pickBoardForCombo(socket);
+      if (!bestBoard) continue;
+
+      const bestMem = pickMemoryForCombo(bestBoard);
+      if (!bestMem) continue;
+
+      allCombos.push({
+        cpu, board: bestBoard, mem: bestMem,
+        comboPrice: cpu.price + bestBoard.price + bestMem.price,
+      });
+    }
+  }
+
+  if (!forcedCombo && allCombos.length === 0) throw new Error("호환되는 CPU+메인보드+메모리 조합을 찾을 수 없음");
 
   // ─── Phase 3: GPU 목록 — 가격 오름차순 ──────────────────────────────────
   const allGpus = [...gpus].filter(p => p.price > 0).sort((a, b) => a.price - b.price);
@@ -454,56 +485,62 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   };
 
   // purpose 비율 내 후보 (없으면 해당 브랜드 최저가 조합으로 폴백)
-  let withinRatio = [...allCombos]
-    .filter(c => isCpuBrand(c.cpu) && c.comboPrice <= maxCpuComboAllowed);
+  let chosenCombo;
+  let comboPool = [];
+  if (forcedCombo) {
+    chosenCombo = forcedCombo;
+  } else {
+    let withinRatio = [...allCombos]
+      .filter(c => isCpuBrand(c.cpu) && c.comboPrice <= maxCpuComboAllowed);
 
-  // 전문가 의견 반영:
-  // - 게이밍 AMD: X3D 시리즈(3D V-Cache) 우선 (프레임 방어)
-  // - 게이밍 Intel: K/KF/KS 시리즈 우선 (고클럭 게이밍 특화)
-  // - 작업용 AMD: X3D 배제 (멀티코어 우선, 9950X 같은 고코어 CPU 선택)
-  // - 작업용 Intel: K/KF 시리즈 우선 (270K처럼 고멀티성능)
-  // 후보가 있을 때만 해당 풀로 좁히고, 없으면 폴백으로 전체 풀 유지
-  if (purpose === "gaming") {
-    if (cpuBrand === "amd") {
-      const x3dPool = withinRatio.filter(c => isX3dCpu(c.cpu));
-      if (x3dPool.length > 0) withinRatio = x3dPool;
-    } else { // intel
-      const kPool = withinRatio.filter(c => isIntelKSeries(c.cpu));
-      if (kPool.length > 0) withinRatio = kPool;
+    // 전문가 의견 반영:
+    // - 게이밍 AMD: X3D 시리즈(3D V-Cache) 우선 (프레임 방어)
+    // - 게이밍 Intel: K/KF/KS 시리즈 우선 (고클럭 게이밍 특화)
+    // - 작업용 AMD: X3D 배제 (멀티코어 우선, 9950X 같은 고코어 CPU 선택)
+    // - 작업용 Intel: K/KF 시리즈 우선 (270K처럼 고멀티성능)
+    // 후보가 있을 때만 해당 풀로 좁히고, 없으면 폴백으로 전체 풀 유지
+    if (purpose === "gaming") {
+      if (cpuBrand === "amd") {
+        const x3dPool = withinRatio.filter(c => isX3dCpu(c.cpu));
+        if (x3dPool.length > 0) withinRatio = x3dPool;
+      } else { // intel
+        const kPool = withinRatio.filter(c => isIntelKSeries(c.cpu));
+        if (kPool.length > 0) withinRatio = kPool;
+      }
+    } else if (purpose === "work") {
+      if (cpuBrand === "amd") {
+        const nonX3dPool = withinRatio.filter(c => !isX3dCpu(c.cpu));
+        if (nonX3dPool.length > 0) withinRatio = nonX3dPool;
+      } else { // intel
+        // 작업용 Intel은 K 시리즈 우선 (멀티코어 풀 성능)
+        const kPool = withinRatio.filter(c => isIntelKSeries(c.cpu));
+        if (kPool.length > 0) withinRatio = kPool;
+      }
     }
-  } else if (purpose === "work") {
-    if (cpuBrand === "amd") {
-      const nonX3dPool = withinRatio.filter(c => !isX3dCpu(c.cpu));
-      if (nonX3dPool.length > 0) withinRatio = nonX3dPool;
-    } else { // intel
-      // 작업용 Intel은 K 시리즈 우선 (멀티코어 풀 성능)
-      const kPool = withinRatio.filter(c => isIntelKSeries(c.cpu));
-      if (kPool.length > 0) withinRatio = kPool;
-    }
+
+    withinRatio.sort(scoreDesc);
+
+    comboPool = withinRatio.length > 0
+      ? withinRatio
+      : [...allCombos].filter(c => isCpuBrand(c.cpu)).sort((a, b) => a.comboPrice - b.comboPrice);
+
+    if (comboPool.length === 0)
+      throw new Error(`${budget.toLocaleString()}원 예산에서 ${cpuBrand.toUpperCase()} CPU 조합을 찾을 수 없음`);
+
+    chosenCombo = comboPool.find(cpuFloor) ?? comboPool[0];
   }
-
-  withinRatio.sort(scoreDesc);
-
-  const comboPool = withinRatio.length > 0
-    ? withinRatio
-    : [...allCombos].filter(c => isCpuBrand(c.cpu)).sort((a, b) => a.comboPrice - b.comboPrice);
-
-  if (comboPool.length === 0)
-    throw new Error(`${budget.toLocaleString()}원 예산에서 ${cpuBrand.toUpperCase()} CPU 조합을 찾을 수 없음`);
-
-  let chosenCombo = comboPool.find(cpuFloor) ?? comboPool[0];
 
   // GPU 예산: 이 CPU 조합 기준으로 계산 + purpose별 하드캡 (작업용 35%)
   const gpuAbsoluteCap = GPU_RATIO_BY_PURPOSE[purpose] != null ? budget * GPU_RATIO_BY_PURPOSE[purpose] : Infinity;
   const gpuCap = Math.min(maxBudget - secondaryTotal - chosenCombo.comboPrice, gpuAbsoluteCap);
-  const gpuPool = [...allGpus]
+  const gpuPool = lkGpu ? [] : [...allGpus]
     .filter(g => isGpuBrand(g) && g.price < gpuCap)
     .sort((a, b) => {
       const sa = getGpuScore(a), sb = getGpuScore(b);
       if (sa !== sb) return sb - sa;
       return b.price - a.price;
     });
-  let chosenGpu = gpuPool.find(gpuFloor) ?? gpuPool[0] ?? null;
+  let chosenGpu = lkGpu ?? (gpuPool.find(gpuFloor) ?? gpuPool[0] ?? null);
 
   // ─── Phase 4.5: PSU·쿨러 TDP 매칭 (전문가 의견 반영) ─────────────────────
   // CPU/GPU TDP 기반으로 권장 PSU 와트와 쿨러 등급 계산.
@@ -525,7 +562,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   // PSU 와트 충족 PSU로 교체 (보조부품 cap 안에서, 신뢰 브랜드 우선)
   // 보조부품 비율 20% 유지를 위해 PSU도 secCap의 일정 비율 이내로 제한
-  if (extractPsuWatt(fillPsu) < requiredWatt) {
+  if (!lkPsu && extractPsuWatt(fillPsu) < requiredWatt) {
     const psuCap = Math.min(secCap * 0.45, maxBudget - currentTotalWithoutPart(fillPsu));
     const candidates = psus
       .filter(p => p.price > 0 && extractPsuWatt(p) >= requiredWatt && p.price <= psuCap);
@@ -535,7 +572,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   }
 
   // 쿨러 등급 충족 쿨러로 교체 (보조부품 cap 안에서, 신뢰 브랜드 우선)
-  if (coolerRank(fillCooler) < requiredCoolerTier) {
+  if (!lkCooler && coolerRank(fillCooler) < requiredCoolerTier) {
     const coolerCap = Math.min(secCap * 0.30, maxBudget - currentTotalWithoutPart(fillCooler));
     const candidates = realCoolers
       .filter(c => c.price > 0 && coolerRank(c) >= requiredCoolerTier && c.price <= coolerCap);
@@ -552,10 +589,10 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
 
   // ─── 보조부품 gap fill 헬퍼 (Phase 5 / Phase 6c 공유) ─────────────────────
   const fillCandidates = [
-    { arr: realStorages, get: () => fillStorage, set: (v) => { fillStorage = v; }, cap: secCap * 0.45 },
-    { arr: psus,         get: () => fillPsu,     set: (v) => { fillPsu = v;     }, cap: secCap * 0.25 },
-    { arr: cases,        get: () => fillCase,    set: (v) => { fillCase = v;    }, cap: secCap * 0.18 },
-    { arr: realCoolers,  get: () => fillCooler,  set: (v) => { fillCooler = v;  }, cap: secCap * 0.12 },
+    ...(!lkStorage ? [{ arr: realStorages, get: () => fillStorage, set: (v) => { fillStorage = v; }, cap: secCap * 0.45 }] : []),
+    ...(!lkPsu     ? [{ arr: psus,         get: () => fillPsu,     set: (v) => { fillPsu = v;     }, cap: secCap * 0.25 }] : []),
+    ...(!lkCase    ? [{ arr: cases,        get: () => fillCase,    set: (v) => { fillCase = v;    }, cap: secCap * 0.18 }] : []),
+    ...(!lkCooler  ? [{ arr: realCoolers,  get: () => fillCooler,  set: (v) => { fillCooler = v;  }, cap: secCap * 0.12 }] : []),
   ];
   const runSecondaryGapFill = () => {
     const gfWindow = maxBudget - minBudget;
@@ -580,7 +617,7 @@ export async function buildCompatibleSetWithAIV2(budget, db, cpuBrand = "amd", g
   const utilFloor = budget * 0.90;
 
   // Phase 6a: GPU 업그레이드 (같은 브랜드, 더 비싼/좋은 GPU로 남은 budget 활용)
-  if (calcTotal() < utilFloor && chosenGpu) {
+  if (!lkGpu && calcTotal() < utilFloor && chosenGpu) {
     const gpuUpgradeBudget = maxBudget - calcTotal() + chosenGpu.price;
     const betterGpu = allGpus
       .filter(g => isGpuBrand(g) && g.price > chosenGpu.price && g.price <= gpuUpgradeBudget)
@@ -676,7 +713,7 @@ pros는 2~4개, cons는 1~3개. JSON만 출력하고 다른 설명은 금지.`;
     }
   } catch (_) { /* summary fallback */ }
 
-  const toPartObj = (p, cat) => p ? { name: p.name, price: p.price, image: p.image || null, category: cat } : null;
+  const toPartObj = (p, cat) => p ? { name: p.name, price: p.price, image: p.image || null, category: cat, ...(p._locked && { locked: true }) } : null;
 
   const basePrice = fillStorage.price + fillPsu.price + fillCase.price + fillCooler.price;
   const finalTotal = basePrice + chosenCombo.comboPrice + (chosenGpu?.price || 0);
@@ -868,6 +905,22 @@ router.post("/budget-set-v2/refresh-all", async (req, res) => {
     }
     logger.info(`budget-set-v2 refresh-all 완료: 성공 ${success}개, 실패 ${fail}개`);
   })();
+});
+
+// POST /api/recommend/budget-set-v2-custom — 사용자 보유 부품(lockedParts) 포함 즉시 계산 (캐시 없음)
+router.post("/budget-set-v2-custom", validate(recommendV2CustomSchema, "body"), async (req, res) => {
+  const { budget, cpuBrand, gpuBrand, purpose, lockedParts } = req.body;
+  const db = getDB();
+  if (!db) return res.status(500).json({ error: "DATABASE_ERROR", message: "DB 연결 실패" });
+  try {
+    const result = await buildCompatibleSetWithAIV2(budget, db, cpuBrand, gpuBrand, purpose, {
+      lockedParts: lockedParts || {},
+    });
+    res.json(result);
+  } catch (err) {
+    logger.error(`budget-set-v2-custom 오류: ${err.message}`);
+    res.status(500).json({ error: "추천 생성 실패", message: err.message });
+  }
 });
 
 export default router;
