@@ -40,6 +40,55 @@ function computeTrend(priceHistory, days) {
   return { days, min, max, avg, first: prices[0], last: prices.at(-1), change, count: prices.length };
 }
 
+// 제품명에서 출시 연도를 추론 (GPU/CPU 세대, 칩셋, 메모리 규격 기반)
+function inferReleaseYear(name) {
+  const n = name || "";
+  // NVIDIA GPU
+  if (/RTX\s*50[0-9]{2}/i.test(n)) return 2025;
+  if (/RTX\s*40[0-9]{2}/i.test(n)) return 2023;
+  if (/RTX\s*30[0-9]{2}/i.test(n)) return 2021;
+  if (/RTX\s*20[0-9]{2}/i.test(n)) return 2019;
+  if (/GTX\s*16[0-9]{2}/i.test(n)) return 2019;
+  if (/GTX\s*10[0-9]{2}/i.test(n)) return 2017;
+  // AMD GPU
+  if (/RX\s*9[0-9]{3}/i.test(n)) return 2025;
+  if (/RX\s*7[0-9]{3}/i.test(n)) return 2023;
+  if (/RX\s*6[0-9]{3}/i.test(n)) return 2021;
+  if (/RX\s*5[0-9]{3}/i.test(n)) return 2020;
+  // AMD Ryzen (모델 번호 첫자리 = 세대)
+  if (/(?:라이젠|Ryzen)\s*\d+\s+9[0-9]{3}/i.test(n)) return 2024;
+  if (/(?:라이젠|Ryzen)\s*\d+\s+7[0-9]{3}/i.test(n)) return 2023;
+  if (/(?:라이젠|Ryzen)\s*\d+\s+5[0-9]{3}/i.test(n)) return 2021;
+  if (/(?:라이젠|Ryzen)\s*\d+\s+3[0-9]{3}/i.test(n)) return 2019;
+  if (/(?:라이젠|Ryzen)\s*\d+\s+2[0-9]{3}/i.test(n)) return 2018;
+  // Intel Core Ultra
+  if (/Core\s*Ultra\s*[23][0-9]{2}/i.test(n)) return 2025;
+  if (/Core\s*Ultra\s*[0-9]{3}/i.test(n)) return 2024;
+  // Intel Core i-시리즈 (14세대~8세대)
+  if (/i[3579]-1[45][0-9]{3}/i.test(n)) return 2024;
+  if (/i[3579]-13[0-9]{3}/i.test(n)) return 2023;
+  if (/i[3579]-12[0-9]{3}/i.test(n)) return 2022;
+  if (/i[3579]-11[0-9]{3}/i.test(n)) return 2021;
+  if (/i[3579]-10[0-9]{3}/i.test(n)) return 2020;
+  if (/i[3579]-[89][0-9]{3}/i.test(n)) return 2018;
+  // 메인보드 칩셋
+  if (/\b(Z890|B860|B840|X870)\b/i.test(n)) return 2024;
+  if (/\b(Z790|B760|B660|X670E?|B650E?)\b/i.test(n)) return 2022;
+  if (/\b(Z690|B560|H570)\b/i.test(n)) return 2021;
+  if (/\b(Z590|B550|X570)\b/i.test(n)) return 2020;
+  if (/\b(Z490|B460|H410)\b/i.test(n)) return 2020;
+  if (/\b(Z390|B365|B360|X470|B450)\b/i.test(n)) return 2018;
+  if (/\b(Z370|X370|B350|A320)\b/i.test(n)) return 2017;
+  // 메모리 규격
+  if (/DDR5/i.test(n)) return 2022;
+  if (/DDR4/i.test(n)) return 2017;
+  if (/DDR3/i.test(n)) return 2012;
+  // NVMe/SSD 세대
+  if (/PCIe\s*5\.0|Gen\s*5/i.test(n)) return 2023;
+  if (/PCIe\s*4\.0|Gen\s*4/i.test(n)) return 2020;
+  return 2018;
+}
+
 // 카테고리 목록 필터를 MongoDB 쿼리로 변환
 function buildCategoryQuery(params) {
   const {
@@ -158,6 +207,7 @@ function buildSortConfig(sort, category) {
     case "score":      return { sortDoc: { "benchmarkScore.passmarkscore": -1 }, isValue: false };
     case "3dmark":     return { sortDoc: { "benchmarkScore.3dmarkscore": -1 }, isValue: false };
     case "latest":     return { sortDoc: { _id: -1 }, isValue: false };
+    case "release":    return { isRelease: true };
     case "value": {
       const scoreField = VALUE_SCORE[category];
       if (scoreField) return { isValue: true, scoreField };
@@ -205,6 +255,11 @@ router.get("/", setCacheHeaders(60, 1800), async (req, res) => {
       const [result] = await db.collection("parts").aggregate(pipeline).toArray();
       parts = result?.data || [];
       total = result?.count?.[0]?.total || 0;
+    } else if (sortConfig.isRelease) {
+      const all = await db.collection("parts").find(query).project({ priceHistory: 0 }).toArray();
+      all.sort((a, b) => inferReleaseYear(b.name) - inferReleaseYear(a.name));
+      total = all.length;
+      parts = all.slice(skip, skip + limitNum);
     } else {
       [parts, total] = await Promise.all([
         db.collection("parts").find(query).project({ priceHistory: 0 }).sort(sortConfig.sortDoc).skip(skip).limit(limitNum).toArray(),
