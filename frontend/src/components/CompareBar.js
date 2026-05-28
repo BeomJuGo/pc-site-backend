@@ -48,7 +48,12 @@ export default function CompareBar() {
           </button>
           <button
             onClick={() => navigate("/compare")}
-            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm"
+            disabled={items.length < 2}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all shadow-sm ${
+              items.length < 2
+                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
           >
             비교하기 →
           </button>
