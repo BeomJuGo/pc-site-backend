@@ -279,7 +279,7 @@ export default function Category() {
           {(category === "cpu" || category === "gpu") && <option value="value">가성비순</option>}
           {category === "gpu" && <option value="3dmark">3DMark 점수순</option>}
           {category === "cpu" && <option value="score">PassMark 점수순</option>}
-          <option value="name">이름순</option>
+          <option value="latest">최신 추가순</option>
         </select>
 
         {brandOptions.length > 1 && (

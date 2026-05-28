@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useSeoMeta } from "../hooks/useSeoMeta";
 
-const LAST_UPDATED = "2026-05-11";
+const LAST_UPDATED = "2026-05-28";
 
 const BUDGET_ROWS = [
   { budget: "50만원 이하", purpose: "사무·인터넷·유튜브", cpu: "i3-12100F / Ryzen 5 5500", gpu: "내장그래픽 or GT 1030", ram: "16GB DDR4", storage: "500GB NVMe SSD", tip: "게임 불가, 문서·영상 시청 최적" },
@@ -48,7 +48,7 @@ const ARTICLES = [
       <div className="space-y-5 text-gray-600 leading-relaxed">
         <p>
           PC를 처음 조립할 때 가장 먼저 정해야 할 것은 <strong>예산</strong>과 <strong>용도</strong>입니다.
-          같은 예산이라도 게임용·작업용·사무용에 따라 부품 배분이 크게 달라집니다.
+          같은 예산이라도 게임용·작업용에 따라 부품 배분이 크게 달라집니다.
           아래 표는 2026년 기준 예산 구간별 추천 구성입니다.
         </p>
 
@@ -82,9 +82,8 @@ const ARTICLES = [
 
         <h3 className="text-lg font-semibold text-gray-800 mt-6 mb-2">부품별 예산 배분 원칙</h3>
         <ul className="list-disc list-inside space-y-1.5">
-          <li><strong>게임용:</strong> GPU 40~45% / CPU 20~25% / 메인보드+메모리 20% / 나머지 부품 15%</li>
-          <li><strong>작업용(영상편집·3D):</strong> CPU 30% / GPU 30% / 메모리 20% / 나머지 20%</li>
-          <li><strong>사무용:</strong> CPU 35% / SSD 20% / 메인보드+메모리 30% / GPU 최소화</li>
+          <li><strong>게이밍용:</strong> GPU 50% / CPU 30% / 나머지 부품 20% — X3D CPU 우선 선택</li>
+          <li><strong>작업용(영상편집·3D·AI):</strong> CPU 45% / GPU 35% / 나머지 20% — 멀티코어 CPU 우선</li>
         </ul>
 
         <p className="text-sm text-blue-600 mt-4">

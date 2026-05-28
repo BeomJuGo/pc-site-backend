@@ -275,6 +275,22 @@ export default function PartDetail() {
           </div>
         </div>
 
+        {priceHistory.length > 0 && (() => {
+          const earliest = priceHistory.reduce((min, e) => (!min || new Date(e.date) < new Date(min) ? e.date : min), null);
+          const totalDays = earliest ? Math.floor((Date.now() - new Date(earliest)) / (24 * 60 * 60 * 1000)) : 0;
+          const fmtDate = earliest ? earliest.slice(0, 10).replace(/-/g, ".") : "";
+          return (
+            <div className="flex items-center gap-3 mb-2 text-xs text-gray-400">
+              <span>수집 시작: {fmtDate}</span>
+              {totalDays < period && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-200">
+                  현재 {totalDays}일 데이터만 존재
+                </span>
+              )}
+            </div>
+          );
+        })()}
+
         {filteredHistory.length > 0 && chartMin !== null && (
           <div className="flex gap-2 mb-3 text-xs">
             <span className="px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-500">

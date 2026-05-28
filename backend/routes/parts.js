@@ -148,7 +148,7 @@ function buildSortConfig(sort, category) {
     case "price-desc": return { sortDoc: { price: -1 }, isValue: false };
     case "score":      return { sortDoc: { "benchmarkScore.passmarkscore": -1 }, isValue: false };
     case "3dmark":     return { sortDoc: { "benchmarkScore.3dmarkscore": -1 }, isValue: false };
-    case "name":       return { sortDoc: { name: 1 }, isValue: false };
+    case "latest":     return { sortDoc: { _id: -1 }, isValue: false };
     case "value": {
       const scoreField = VALUE_SCORE[category];
       if (scoreField) return { isValue: true, scoreField };
