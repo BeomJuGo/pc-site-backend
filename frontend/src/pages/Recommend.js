@@ -50,6 +50,21 @@ const PURPOSE_INFO = {
   },
 };
 
+function getGpuPerfNote(gpuName) {
+  if (!gpuName) return null;
+  const n = gpuName;
+  if (/RTX\s*5090|RTX\s*4090/i.test(n)) return "4K 100fps+ (최신 AAA 게임 기준)";
+  if (/RTX\s*5080|RTX\s*4080\s*S|RX\s*9070\s*XT|RX\s*7900\s*XTX/i.test(n)) return "4K 60fps+ / QHD 165fps+";
+  if (/RTX\s*5070\s*Ti|RTX\s*4070\s*Ti|RX\s*7900\s*XT/i.test(n)) return "4K 60fps / QHD 144fps+ (사이버펑크 2077 기준)";
+  if (/RTX\s*5070(?!\s*Ti)|RTX\s*4070\s*S|RX\s*9070(?!\s*XT)|RX\s*7800\s*XT/i.test(n)) return "QHD 144fps (배그·에이펙스 기준)";
+  if (/RTX\s*5060\s*Ti|RTX\s*4070(?!\s*[ST])|RX\s*9060\s*XT|RX\s*7700\s*XT/i.test(n)) return "QHD 100fps+ / FHD 165fps+";
+  if (/RTX\s*5060(?!\s*Ti)|RTX\s*4060\s*Ti|RX\s*7600|RX\s*6700/i.test(n)) return "FHD 144fps 안정 (배그·발로란트 기준)";
+  if (/RTX\s*4060(?!\s*Ti)|RX\s*6600|RTX\s*3060/i.test(n)) return "FHD 100~144fps (옵션 조정 필요)";
+  if (/RTX\s*3050|RX\s*6500|GTX\s*1660|RTX\s*2060/i.test(n)) return "FHD 60~100fps (중간 설정 기준)";
+  if (/GTX\s*1060|RX\s*580/i.test(n)) return "FHD 60fps (중~하 설정 기준)";
+  return null;
+}
+
 const MAX_POLL = 6;
 const POLL_INTERVAL = 10000;
 
@@ -338,6 +353,11 @@ export default function Recommend() {
                     part={part}
                     onClick={() => navigate(`/detail/${part.category || key}/${encodeURIComponent(part.name)}`)}
                   />
+                  {key === 'gpu' && purpose === 'gaming' && getGpuPerfNote(part.name) && (
+                    <div className="px-4 py-2 text-xs text-indigo-600 bg-indigo-50 flex items-center gap-1.5">
+                      🎮 예상 성능: {getGpuPerfNote(part.name)}
+                    </div>
+                  )}
                 </div>
               );
             })}
