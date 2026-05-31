@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
@@ -28,6 +28,11 @@ function PageLoader() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Render 무료 서버 cold start 완화: 앱 초기 로드 시 경량 ping으로 서버 웜업
+    fetch("/api/parts?category=cpu&limit=1", { signal: AbortSignal.timeout(30000) }).catch(() => {});
+  }, []);
+
   return (
     <CompareProvider>
       <Router>

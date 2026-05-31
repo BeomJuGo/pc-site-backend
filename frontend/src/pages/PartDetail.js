@@ -392,9 +392,18 @@ export default function PartDetail() {
           </h3>
           <div className="border border-gray-200 rounded-xl bg-white overflow-hidden shadow-sm">
             {mallPrices.lowestPrice && (
-              <div className="px-5 py-3 bg-blue-50 border-b border-gray-200 flex items-center justify-between">
-                <span className="text-sm text-blue-700">최저가 ({mallPrices.lowestMall})</span>
-                <span className="text-lg font-bold text-blue-700">{Number(mallPrices.lowestPrice).toLocaleString()}원</span>
+              <div className="px-5 py-3 bg-blue-50 border-b border-gray-200 flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-sm text-blue-700">
+                    최저가 ({mallPrices.lowestMall ?? 'DB 기준'})
+                  </span>
+                  {mallPrices.priceRise > 0 && mallPrices.storedPrice > 0 && (
+                    <div className="text-xs text-amber-600 mt-0.5">
+                      ↑ 전일 대비 {mallPrices.priceRise.toLocaleString()}원 상승 (이전: {Number(mallPrices.storedPrice).toLocaleString()}원)
+                    </div>
+                  )}
+                </div>
+                <span className="text-lg font-bold text-blue-700 flex-shrink-0">{Number(mallPrices.lowestPrice).toLocaleString()}원</span>
               </div>
             )}
             <div className="divide-y divide-gray-100">

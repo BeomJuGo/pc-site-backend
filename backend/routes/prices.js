@@ -49,18 +49,16 @@ async function getPriceData(category, name) {
   const { price: lowestNaver, outlierRemoved } = selectRobustLowest(sorted);
   // 표시용 malls 리스트에서도 이상치로 판정된 아이템들 제거해 일관성 유지
   const displayMalls = sorted.slice(outlierRemoved);
-  const lowestMall = displayMalls[0]?.mallName ?? null;
+  const lowestNaverMall = displayMalls[0]?.mallName ?? null;
   const validation = validateNaverPrice(queryName, rawItems, stored?.price ?? null);
 
-  // 일일 업데이트로 검증된 storedPrice와 실시간 Naver 최저가 중 낮은 값 사용.
-  // Naver 검색 결과는 시간에 따라 달라지므로, 이미 검증된 DB 가격보다 높아질 수 있음.
-  const effectiveLowest = (() => {
-    if (lowestNaver > 0 && stored?.price > 0) return Math.min(lowestNaver, stored.price);
-    if (lowestNaver > 0) return lowestNaver;
-    if (stored?.price > 0) return stored.price;
-    return null;
-  })();
-  const effectiveMall = lowestNaver > 0 && lowestNaver <= (stored?.price ?? Infinity) ? lowestMall : null;
+  // 실시간 Naver 최저가를 우선 사용해 표시 가격과 쇼핑몰 목록이 항상 일치하도록 함.
+  // Naver 결과가 없을 때만 DB 저장 가격으로 폴백.
+  const lowestPrice = lowestNaver > 0 ? lowestNaver : (stored?.price > 0 ? stored.price : null);
+  const lowestMall = lowestNaver > 0 ? lowestNaverMall : null;
+  // DB 기록 가격보다 현재 가격이 높으면 priceRise 양수 (가격 상승)
+  const priceRise = lowestNaver > 0 && stored?.price > 0 && lowestNaver > stored.price
+    ? lowestNaver - stored.price : null;
 
   const result = {
     name: stored?.name || name,
@@ -68,9 +66,9 @@ async function getPriceData(category, name) {
     storedPrice: stored?.price ?? null,
     lastUpdated: stored?.updatedAt ?? null,
     naverMalls: displayMalls.slice(0, 20),
-    lowestPrice: effectiveLowest,
-    lowestMall: effectiveMall,
-    priceGap: stored?.price && effectiveLowest > 0 ? stored.price - effectiveLowest : null,
+    lowestPrice,
+    lowestMall,
+    priceRise,
     inStock: displayMalls.length > 0,
     mallCount: displayMalls.length,
     validation,

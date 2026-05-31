@@ -75,6 +75,7 @@ export default function Category() {
   const showUsedOnly = searchParams.get("used") === "1";
   const showReferOnly = searchParams.get("refer") === "1";
   const hideParallel = searchParams.get("hideParallel") === "1";
+  const hideUsed = searchParams.get("hideUsed") === "1";
   const packTypeFilter = searchParams.get("packType") || "all";
   const designFilter = searchParams.get("design") || "all";
   const currentPage = parseInt(searchParams.get("page") || "1", 10);
@@ -162,7 +163,8 @@ export default function Category() {
     setError(null);
 
     const conditionShow = [showUsedOnly && "used", showReferOnly && "refer"].filter(Boolean).join(",");
-    const conditionHide = hideParallel ? "parallel" : "";
+    const hideConditions = [hideParallel && "parallel", hideUsed && "used", hideUsed && "refer"].filter(Boolean);
+    const conditionHide = hideConditions.join(",");
 
     fetchFilteredParts({
       category,
@@ -201,7 +203,7 @@ export default function Category() {
     category, currentPage, debouncedSearch, sortBy, brandFilter, chipsetFilter,
     memCapFilter, memDdrFilter, storageCapFilter, storageTypeFilter,
     storageIfaceFilter, cpuSocketFilter, caseFormFilter, psuWattFilter,
-    showUsedOnly, showReferOnly, hideParallel, packTypeFilter, designFilter,
+    showUsedOnly, showReferOnly, hideParallel, hideUsed, packTypeFilter, designFilter,
   ]);
 
   // Scroll restoration: restore saved scroll position after parts load
@@ -490,18 +492,54 @@ export default function Category() {
       {(CAT_HAS_USED.has(category) || CAT_HAS_REFER.has(category) || CAT_HAS_PARALLEL.has(category)) && (
         <div className="flex flex-wrap gap-3 items-center mb-4">
           {CAT_HAS_USED.has(category) && (
-            <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
-              <input
-                type="checkbox"
-                checked={showUsedOnly}
-                onChange={(e) => setBoolFilter("used", e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
-              />
-              <span className="inline-flex items-center gap-1">
-                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-200">중고</span>
-                중고만 보기
-              </span>
-            </label>
+            <>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={hideUsed}
+                  onChange={(e) => {
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      if (e.target.checked) {
+                        next.set("hideUsed", "1");
+                        next.delete("used");
+                        next.delete("refer");
+                      } else {
+                        next.delete("hideUsed");
+                      }
+                      next.delete("page");
+                      return next;
+                    }, { replace: true });
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                />
+                <span className="text-sm">새상품만 보기</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={showUsedOnly}
+                  onChange={(e) => {
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      if (e.target.checked) {
+                        next.set("used", "1");
+                        next.delete("hideUsed");
+                      } else {
+                        next.delete("used");
+                      }
+                      next.delete("page");
+                      return next;
+                    }, { replace: true });
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400 cursor-pointer"
+                />
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-100 text-amber-700 border-amber-200">중고</span>
+                  중고만 보기
+                </span>
+              </label>
+            </>
           )}
           {CAT_HAS_REFER.has(category) && (
             <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-gray-700 hover:text-gray-900">
