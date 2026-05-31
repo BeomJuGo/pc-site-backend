@@ -29,7 +29,7 @@ function PageLoader() {
 
 export default function App() {
   useEffect(() => {
-    // Render 무료 서버 cold start 완화: 앱 초기 로드 시 경량 ping으로 서버 웜업
+    // Vercel 서버리스 함수 cold start 완화: 앱 초기 로드 시 경량 ping으로 함수 웜업
     fetch("/api/parts?category=cpu&limit=1", { signal: AbortSignal.timeout(30000) }).catch(() => {});
   }, []);
 
