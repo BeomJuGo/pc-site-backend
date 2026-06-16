@@ -111,13 +111,14 @@ export default function Category() {
     }, { replace: true });
   };
 
-  // Brand change also resets chipset
+  // Brand change also resets chipset and socket (sockets are brand-specific)
   const handleBrandChange = (brand) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (brand && brand !== "all") next.set("brand", brand);
       else next.delete("brand");
       next.delete("chipset");
+      next.delete("socket");
       next.delete("page");
       return next;
     }, { replace: true });
@@ -232,6 +233,12 @@ export default function Category() {
 
   const chipsetOptions = category === "motherboard" ? CHIPSET_MAP[brandFilter] || [] : [];
 
+  // CPU sockets are brand-specific: Intel uses LGA, AMD uses AM4/AM5
+  const socketOptions =
+    brandFilter === "amd" ? ["AM4", "AM5"] :
+    brandFilter === "intel" ? ["LGA1700", "LGA1851"] :
+    CPU_SOCKETS;
+
   const catName = CATEGORY_NAMES[category] || category.toUpperCase();
 
   const pillBase = "px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors";
@@ -303,7 +310,7 @@ export default function Category() {
         {category === "cpu" && (
           <>
             <div className="flex gap-1 flex-wrap">
-              {CPU_SOCKETS.map((socket) => (
+              {socketOptions.map((socket) => (
                 <button
                   key={socket}
                   onClick={() => setFilter("socket", cpuSocketFilter === socket ? "" : socket)}
